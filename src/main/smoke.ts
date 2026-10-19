@@ -60,9 +60,12 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
 
     const hookDir = process.env.MC_SMOKE_HOOKS
     if (hookDir) {
+      // MC_SMOKE_MODEL picks a cheaper or available model, e.g. haiku.
+      const model = process.env.MC_SMOKE_MODEL
+      const promptArgs = [...(model ? ['--model', model] : []), '-p', 'Reply with exactly the word: pong']
       const run = await runClaude(deps, {
         cwd: hookDir,
-        args: ['-p', 'Reply with exactly the word: pong'],
+        args: promptArgs,
         kind: 'claude',
         cols: 100,
         rows: 20
@@ -77,7 +80,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
           const s = window.__mcSmoke
           const before = s.agents().length
           await s.launch({ cwd: ${JSON.stringify(hookDir)}, projectName: 'smoke', title: 'smoke agent',
-                           args: ['-p', 'Reply with exactly the word: pong'] })
+                           args: ${JSON.stringify(promptArgs)} })
           const seen = []
           const started = Date.now()
           while (Date.now() - started < 90000) {

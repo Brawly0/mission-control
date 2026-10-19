@@ -50,4 +50,4 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 
 ### Hook test
 
-`MC_SMOKE_HOOKS=<empty folder>` makes the smoke test also send one tiny real prompt (`claude -p`) from that folder and list the hook events that reached the app. Expected: `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, all with the session id the app assigned. This uses a small amount of your Claude usage and needs `claude` to be logged in.
+`MC_SMOKE_HOOKS=<empty folder>` makes the smoke test also send one tiny real prompt (`claude -p`) from that folder and list the hook events that reached the app. Expected: `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, all with the session id the app assigned. This uses a small amount of your Claude usage and needs `claude` to be logged in. Set `MC_SMOKE_MODEL=haiku` to use a cheaper model.
