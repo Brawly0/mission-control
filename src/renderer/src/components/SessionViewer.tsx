@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
+import { Copy, Play } from 'lucide-react'
 import type { SessionDetail, SessionSummary } from '@shared/types'
+import { useToast } from '../toast'
+import { Button, IconButton } from './ui'
 
 interface Props {
   session: SessionSummary
@@ -8,8 +11,10 @@ interface Props {
 }
 
 export default function SessionViewer({ session, onResume }: Props) {
+  const toast = useToast()
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -24,31 +29,50 @@ export default function SessionViewer({ session, onResume }: Props) {
     }
   }, [session.projectKey, session.id])
 
+  // Open at the end of the conversation, where the latest work is.
+  useEffect(() => {
+    if (detail && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [detail])
+
   return (
     <div className="session-viewer">
-      <div className="session-viewer-header">
-        <div>
-          <div className="session-viewer-title">{session.title}</div>
-          <div className="muted mono small">
-            {session.id} · started {new Date(session.startedAt).toLocaleString()}
+      <div className="session-viewer-head">
+        <div className="session-viewer-title">
+          <div className="ellipsis strong">{session.title}</div>
+          <div className="muted small">
+            Started {new Date(session.startedAt).toLocaleString()}
+            {detail && ` · ${detail.messages.length} messages`}
           </div>
         </div>
-        <button className="btn primary" onClick={onResume}>
-          ▶ Resume
-        </button>
+        <IconButton
+          icon={Copy}
+          label="Copy session id"
+          size={14}
+          onClick={() => {
+            navigator.clipboard.writeText(session.id)
+            toast('info', 'Session id copied', session.id)
+          }}
+        />
+        <Button variant="primary" size="sm" icon={Play} onClick={onResume}>
+          Resume
+        </Button>
       </div>
-      <div className="messages">
+      <div className="messages scroll" ref={scrollRef}>
         {error && <div className="error">{error}</div>}
         {!detail && !error && <div className="muted pad">Reading chat…</div>}
-        {detail?.truncated && <div className="muted pad">Showing the latest {detail.messages.length} messages.</div>}
+        {detail?.truncated && <div className="muted pad center">Showing the latest {detail.messages.length} messages</div>}
         {detail?.messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
             <div className="message-role">
               {m.role === 'user' ? 'You' : 'Claude'}
-              {m.timestamp > 0 && <span className="muted"> · {new Date(m.timestamp).toLocaleString()}</span>}
+              {m.timestamp > 0 && (
+                <span className="message-time">
+                  {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
             </div>
             <div className="message-text">
-              {m.role === 'assistant' ? <Markdown>{m.text}</Markdown> : <pre>{m.text}</pre>}
+              {m.role === 'assistant' ? <Markdown>{m.text}</Markdown> : <div className="user-text">{m.text}</div>}
             </div>
           </div>
         ))}

@@ -8,17 +8,43 @@ src/
     index.ts       window + IPC registration
     claudeData.ts  reads ~/.claude/projects (projects, sessions, chat transcripts)
     pty.ts         spawns claude / PowerShell in pseudo-terminals (ConPTY)
-    store.ts       the app's own JSON store (pins, manually added folders, open agents)
+    store.ts       the app's own JSON store (pins, added folders, open agents, UI state, window bounds)
     hookServer.ts  local HTTP endpoint that receives Claude Code hook calls
+    git.ts         git status, worktrees, diffs, commit, merge (runs the git CLI)
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
   renderer/    React UI
-    src/App.tsx              app state: projects, agents, layout
+    src/App.tsx              app state: projects, git info, agents, views, command palette
     src/terminalBus.ts       routes PTY output to the right terminal pane
     src/agentStatus.ts       hook event -> agent status, and what each status looks like
-    src/components/          Sidebar, ProjectView, SessionViewer, DocsPanel, AgentsView, TerminalPane
+    src/toast.tsx            in-app messages (useToast)
+    src/components/
+      ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
+      Sidebar, HomeView, ProjectView, SessionViewer, DocsPanel
+      AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
 ```
+
+## UI
+
+Three views share one window: **Home** (dashboard), **Project** (Chats / Changes / Docs tabs) and **Agents** (terminals in tabs or a grid, with an optional review panel). All three stay mounted and are hidden with `visibility`, so terminals keep running and keep their scrollback when you switch.
+
+- Icons come from `lucide-react`. Colors, radii and fonts are CSS variables at the top of `styles.css`; the accent is Claude's terracotta `#d97757`.
+- Grid cells use container queries to drop detail (branch chip, timer, status text) when they get narrow.
+- Selected project, view, layout and the worktree toggle are saved through `ui:set`; window bounds are saved by the main process on close.
+
+## Worktrees
+
+"New session in worktree" calls `git.createWorktree`, which:
+
+1. Creates branch `mc/agent-xxxx` from the main checkout's current branch.
+2. Adds a worktree at `<repo>/.claude/worktrees/agent-xxxx`, where Claude Code keeps its own worktrees.
+3. Adds `.claude/worktrees/` to `.git/info/exclude`, a local file that's never committed, so the main checkout stays clean.
+
+The agent runs with that folder as its working directory. **Review** shows `git diff <merge-base>` plus untracked files.
+
+- **Merge** refuses if the worktree has uncommitted changes, if the main checkout is on a different branch, or if the main checkout is dirty. Otherwise it runs `git merge --no-ff`.
+- **Discard** asks for confirmation in a native dialog in the main process. It then stops every terminal whose working folder is inside the worktree (Windows locks a folder that is in use) and runs `git worktree remove --force` and `git branch -D`, retrying briefly while Windows releases the folder. It only ever touches `mc/` branches under `.claude/worktrees/`.
 
 ## Data sources
 

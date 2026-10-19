@@ -39,6 +39,17 @@ const api: MissionControlApi = {
   loadSavedAgents: () => ipcRenderer.invoke('agents:loadSaved'),
   sessionExists: (id) => ipcRenderer.invoke('sessions:exists', id),
   focusWindow: () => ipcRenderer.send('window:focus'),
+
+  recentSessions: (limit) => ipcRenderer.invoke('sessions:recent', limit),
+  gitInfoMany: (paths) => ipcRenderer.invoke('git:infoMany', paths),
+  createWorktree: (path) => ipcRenderer.invoke('git:createWorktree', path),
+  getChanges: (path, base) => ipcRenderer.invoke('git:changes', path, base),
+  commitAll: (path, message) => ipcRenderer.invoke('git:commitAll', path, message),
+  mergeWorktree: (wt) => ipcRenderer.invoke('git:mergeWorktree', wt),
+  removeWorktree: (wt) => ipcRenderer.invoke('git:removeWorktree', wt),
+  getUiState: () => ipcRenderer.invoke('ui:get'),
+  setUiState: (patch) => ipcRenderer.send('ui:set', patch),
+
   smoke: Boolean(process.env.MC_SMOKE)
 }
 

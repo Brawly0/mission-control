@@ -1,7 +1,7 @@
 {
   "name": "mission-control",
   "productName": "Mission Control",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A Windows desktop hub for Claude Code: projects, sessions, docs and multiple live agents in one place.",
   "private": true,
   "main": "./out/main/index.js",
@@ -27,6 +27,7 @@
     "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
+    "lucide-react": "^1.59.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
@@ -36,8 +37,14 @@
   "build": {
     "appId": "com.brawly0.missioncontrol",
     "productName": "Mission Control",
-    "files": ["out/**/*"],
-    "asarUnpack": ["node_modules/@lydell/**"],
-    "win": { "target": "nsis" }
+    "files": [
+      "out/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/@lydell/**"
+    ],
+    "win": {
+      "target": "nsis"
+    }
   }
 }

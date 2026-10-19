@@ -1,7 +1,15 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { SavedAgent } from '../shared/types'
+import type { SavedAgent, UiState } from '../shared/types'
+
+export interface WindowBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+  maximized: boolean
+}
 
 /**
  * The app's own data. Claude Code's files are never written to; everything
@@ -12,9 +20,11 @@ export interface StoreData {
   pinned: string[]
   /** Agents that were open when the app last closed, offered for restore on next start. */
   savedAgents: SavedAgent[]
+  ui: UiState
+  window?: WindowBounds
 }
 
-const defaults: StoreData = { manualProjects: [], pinned: [], savedAgents: [] }
+const defaults: StoreData = { manualProjects: [], pinned: [], savedAgents: [], ui: {} }
 
 function storePath(): string {
   return join(app.getPath('userData'), 'store.json')

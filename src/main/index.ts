@@ -1,25 +1,39 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import type { DocFile, HookEvent, SavedAgent, TerminalInfo, TerminalSpec } from '../shared/types'
-import { getSession, listProjects, listSessions, normalizePath, sessionExists } from './claudeData'
+import type { DocFile, HookEvent, SavedAgent, TerminalInfo, TerminalSpec, UiState, WorktreeInfo } from '../shared/types'
+import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists } from './claudeData'
+import { commitAll, createWorktree, getChanges, gitInfoMany, mergeWorktree, removeWorktree } from './git'
 import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
-import { agentEnv, killAllTerminals, killTerminal, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
-import { loadStore, updateStore } from './store'
+import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
+import { loadStore, updateStore, type WindowBounds } from './store'
 import { runSmoke } from './smoke'
 
 let mainWindow: BrowserWindow | null = null
 
+/** Last window position and size, if it still fits on a connected screen. */
+function savedBounds(): WindowBounds | undefined {
+  if (process.env.MC_SMOKE) return undefined
+  const b = loadStore().window
+  if (!b) return undefined
+  const area = screen.getDisplayMatching(b).workArea
+  const visible = b.x < area.x + area.width - 100 && b.y < area.y + area.height - 100 && b.x + b.width > area.x + 100 && b.y >= area.y - 20
+  return visible ? b : undefined
+}
+
 function createWindow(): void {
+  const bounds = savedBounds()
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: bounds?.width ?? 1440,
+    height: bounds?.height ?? 900,
+    x: bounds?.x,
+    y: bounds?.y,
     minWidth: 960,
     minHeight: 600,
     title: 'Mission Control',
-    backgroundColor: '#0f1115',
+    backgroundColor: '#0d0f14',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -39,6 +53,16 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  if (bounds?.maximized) mainWindow.maximize()
+
+  mainWindow.on('close', () => {
+    const win = mainWindow
+    if (!win || process.env.MC_SMOKE) return
+    const b = win.getNormalBounds()
+    updateStore((s) => {
+      s.window = { ...b, maximized: win.isMaximized() }
+    })
+  })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -188,6 +212,38 @@ function registerIpc(): void {
   })
   ipcMain.handle('agents:loadSaved', () => loadStore().savedAgents)
   ipcMain.handle('sessions:exists', (_e, id: string) => sessionExists(id))
+  ipcMain.handle('sessions:recent', (_e, limit: number) => recentSessions(limit))
+
+  ipcMain.handle('git:infoMany', (_e, paths: string[]) => gitInfoMany(paths))
+  ipcMain.handle('git:createWorktree', (_e, projectPath: string) => createWorktree(projectPath))
+  ipcMain.handle('git:changes', (_e, path: string, base?: string) => getChanges(path, base))
+  ipcMain.handle('git:commitAll', (_e, path: string, message: string) => commitAll(path, message))
+  ipcMain.handle('git:mergeWorktree', (_e, wt: WorktreeInfo) => mergeWorktree(wt))
+  ipcMain.handle('git:removeWorktree', async (_e, wt: WorktreeInfo) => {
+    // Deleting work is permanent, so the confirmation lives here rather than in the UI.
+    const { response } = await dialog.showMessageBox(mainWindow!, {
+      type: 'warning',
+      buttons: ['Delete worktree', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Discard worktree',
+      message: `Delete the worktree and branch "${wt.branch}"?`,
+      detail: `${wt.path}\n\nAgents running in it are stopped. Any changes in it that were not merged are lost for good.`
+    })
+    if (response !== 0) return false
+    await killTerminalsIn(wt.path)
+    await removeWorktree(wt)
+    return true
+  })
+
+  ipcMain.handle('ui:get', () => loadStore().ui)
+  ipcMain.on('ui:set', (_e, patch: Partial<UiState>) => {
+    if (process.env.MC_SMOKE) return
+    updateStore((s) => {
+      s.ui = { ...s.ui, ...patch }
+    })
+  })
+
   ipcMain.on('window:focus', () => {
     if (!mainWindow) return
     if (mainWindow.isMinimized()) mainWindow.restore()

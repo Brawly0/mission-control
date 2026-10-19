@@ -51,3 +51,7 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 ### Hook test
 
 `MC_SMOKE_HOOKS=<empty folder>` makes the smoke test also send one tiny real prompt (`claude -p`) from that folder and list the hook events that reached the app. Expected: `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, all with the session id the app assigned. This uses a small amount of your Claude usage and needs `claude` to be logged in. Set `MC_SMOKE_MODEL=haiku` to use a cheaper model.
+
+### UI tour and worktree test
+
+`MC_SMOKE_UI=<git repo with at least one commit>` screenshots Home, the project tabs, the command palette and the Agents grid with the review panel (as `<MC_SMOKE>-<name>.png`). It also runs the worktree flow on that repo: create, change a file, commit, merge into the base branch, stop the agent, delete. Use a throwaway repo, because the test merges into it. The repo is shown as a project only while the test runs.

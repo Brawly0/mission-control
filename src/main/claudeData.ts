@@ -2,7 +2,7 @@ import { createReadStream, existsSync, promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline'
-import type { ChatMessage, Project, SessionDetail, SessionSummary } from '../shared/types'
+import type { ChatMessage, Project, RecentSession, SessionDetail, SessionSummary } from '../shared/types'
 import { loadStore } from './store'
 
 /**
@@ -191,6 +191,22 @@ export async function listProjects(): Promise<Project[]> {
   return [...byPath.values()]
     .filter((p) => p.manual || existsSync(p.path) || p.sessionCount > 0)
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
+}
+
+/** The most recently updated sessions across all projects, for the Home view. */
+export async function recentSessions(limit: number): Promise<RecentSession[]> {
+  const projects = (await listProjects()).filter((p) => p.key && !p.worktree)
+  // Only the most active projects can contain the newest sessions.
+  const candidates = projects.sort((a, b) => b.lastActivity - a.lastActivity).slice(0, limit)
+  const lists = await Promise.all(
+    candidates.map(async (p) =>
+      (await listSessions(p.key)).slice(0, limit).map((s) => ({ ...s, projectName: p.name, projectPath: p.path }))
+    )
+  )
+  return lists
+    .flat()
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, limit)
 }
 
 /** True when some project folder has a transcript for this session (a session with no prompts has none). */

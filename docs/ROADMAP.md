@@ -15,11 +15,14 @@
 - [x] Rename agent tabs (double-click)
 - [x] Restore open agents after restarting the app (exact session via `--session-id` + `--resume`)
 
-## v0.3: Parallel agents without conflicts
-- [ ] Remember the last selected project, layout and window size
-- [ ] "New agent in worktree": create a git worktree and branch per agent automatically
-- [ ] Diff panel: review an agent's changes, then merge or discard
-- [ ] Git status badges in the sidebar (branch, dirty, ahead/behind)
+## ✅ v0.3: Parallel agents without conflicts + new UI
+- [x] Remember the last selected project, view, layout and window size
+- [x] "New session in worktree": a git worktree and `mc/agent-xxxx` branch per agent
+- [x] Review panel: an agent's diff next to its terminal; commit, merge into the base branch, or discard
+- [x] Changes tab on every git project (uncommitted changes, commit all)
+- [x] Git badges in the sidebar and project header (branch, changed files, ahead/behind)
+- [x] Redesigned UI: Home dashboard, project avatars, icons, page tabs, status bar, toasts
+- [x] Command palette (Ctrl+K, or Ctrl+Shift+P inside a terminal)
 
 ## v0.4: Organization
 - [ ] Tags and groups for projects (Work / Trading / Games …)
@@ -30,7 +33,7 @@
 ## v0.5: Tasks
 - [ ] Kanban board: a card is a task; "Start" launches an agent on it
 - [ ] Headless agents with `claude -p --output-format stream-json`, with progress in the card
-- [ ] Command palette (Ctrl+K) and a global hotkey / tray icon
+- [ ] Global hotkey and tray icon
 
 ## Later
 - [ ] Installer and auto-update (`electron-builder`)

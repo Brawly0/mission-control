@@ -1,13 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Project, SavedAgent } from '@shared/types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Bell,
+  Bot,
+  FolderOpen,
+  FolderPlus,
+  GitFork,
+  History,
+  House,
+  LayoutGrid,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Rows2,
+  Terminal,
+  X
+} from 'lucide-react'
+import type { GitInfo, Project, RecentSession, SavedAgent } from '@shared/types'
 import Sidebar from './components/Sidebar'
+import HomeView from './components/HomeView'
 import ProjectView from './components/ProjectView'
 import AgentsView from './components/AgentsView'
-import type { Agent, AgentLayout, LaunchOptions } from './types'
+import StatusBar from './components/StatusBar'
+import CommandPalette, { type Command } from './components/CommandPalette'
+import { Button } from './components/ui'
+import type { Agent, AgentLayout, LaunchOptions, View } from './types'
 import { onActivity } from './terminalBus'
 import { statusFromHook } from './agentStatus'
-
-type View = 'project' | 'agents'
+import { useToast } from './toast'
+import { errorMessage } from './util'
 
 function loadNotifyPref(): boolean {
   try {
@@ -18,40 +38,82 @@ function loadNotifyPref(): boolean {
 }
 
 export default function App() {
+  const toast = useToast()
   const [projects, setProjects] = useState<Project[]>([])
+  const [git, setGit] = useState<Record<string, GitInfo>>({})
   const [loading, setLoading] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [view, setView] = useState<View>('project')
+  const [view, setView] = useState<View>('home')
   const [agents, setAgents] = useState<Agent[]>([])
   const [activeAgent, setActiveAgent] = useState<string | null>(null)
   const [layout, setLayout] = useState<AgentLayout>('tabs')
+  const [showWorktrees, setShowWorktrees] = useState(false)
   const [lastOutput, setLastOutput] = useState<Record<string, number>>({})
   const [notify, setNotify] = useState(loadNotifyPref)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [recentForPalette, setRecentForPalette] = useState<RecentSession[]>([])
   /** Agents from the last run that haven't been restored or dismissed yet; null until loaded. */
   const [pendingRestore, setPendingRestore] = useState<SavedAgent[] | null>(null)
+  const [uiLoaded, setUiLoaded] = useState(false)
   const [, setTick] = useState(0)
 
-  // Hook events arrive outside React's render cycle; refs give them current values.
+  // Hook events and timers run outside React's render cycle; refs give them current values.
   const agentsRef = useRef(agents)
   agentsRef.current = agents
   const uiRef = useRef({ view, activeAgent, notify })
   uiRef.current = { view, activeAgent, notify }
+  const projectsRef = useRef(projects)
+  projectsRef.current = projects
+
+  // ---------- data ----------
+  const refreshGit = useCallback(async () => {
+    const paths = new Set<string>()
+    for (const p of projectsRef.current) if (!p.worktree || showWorktrees) paths.add(p.path)
+    for (const a of agentsRef.current) paths.add(a.projectPath)
+    if (paths.size === 0) return
+    const info = await window.mc.gitInfoMany([...paths])
+    setGit((prev) => ({ ...prev, ...info }))
+  }, [showWorktrees])
 
   const refreshProjects = useCallback(async () => {
     setLoading(true)
     try {
       const list = await window.mc.listProjects()
       setProjects(list)
-      setSelectedPath((cur) => cur ?? list[0]?.path ?? null)
+      projectsRef.current = list
+      setSelectedPath((cur) => (cur && list.some((p) => p.path === cur) ? cur : (list.find((p) => !p.worktree)?.path ?? null)))
+      refreshGit()
     } finally {
       setLoading(false)
     }
+  }, [refreshGit])
+
+  useEffect(() => {
+    window.mc.getUiState().then((ui) => {
+      if (ui.selectedPath) setSelectedPath(ui.selectedPath)
+      if (ui.view) setView(ui.view)
+      if (ui.layout) setLayout(ui.layout)
+      if (ui.showWorktrees) setShowWorktrees(true)
+      setUiLoaded(true)
+      refreshProjects()
+    })
+    window.mc.loadSavedAgents().then(setPendingRestore)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    refreshProjects()
-    window.mc.loadSavedAgents().then(setPendingRestore)
-  }, [refreshProjects])
+    if (uiLoaded) window.mc.setUiState({ selectedPath: selectedPath ?? undefined, view, layout, showWorktrees })
+  }, [uiLoaded, selectedPath, view, layout, showWorktrees])
+
+  // Keep git badges fresh: on an interval and whenever the window regains focus.
+  useEffect(() => {
+    const timer = setInterval(refreshGit, 15000)
+    window.addEventListener('focus', refreshGit)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refreshGit)
+    }
+  }, [refreshGit])
 
   // Track when each terminal last printed output, for agents without hook status.
   useEffect(() => {
@@ -99,49 +161,79 @@ export default function App() {
               }
         )
       )
+      // A finished turn usually means files changed.
+      if (event.event === 'Stop') refreshGit()
       const ui = uiRef.current
       const lookingAtIt = document.hasFocus() && ui.view === 'agents' && ui.activeAgent === agent.id
       if (change?.notify && ui.notify && !lookingAtIt) {
-        const body =
-          change.status === 'done' ? 'Finished. Your turn.' : change.message || 'Claude needs your input.'
+        const body = change.status === 'done' ? 'Finished. Your turn.' : change.message || 'Claude needs your input.'
         const n = new Notification(agent.title, { body, silent: false })
         n.onclick = () => focusAgent(agent.id)
       }
     })
-  }, [focusAgent])
+  }, [focusAgent, refreshGit])
 
   // Remember open agents so they can be reopened after a restart.
   useEffect(() => {
     if (pendingRestore === null) return
     const open: SavedAgent[] = agents
       .filter((a) => !a.exited)
-      .map(({ title, cwd, projectName, kind, sessionId }) => ({ title, cwd, projectName, kind, sessionId }))
+      .map(({ title, cwd, projectName, projectPath, kind, sessionId, worktree }) => ({ title, cwd, projectName, projectPath, kind, sessionId, worktree }))
     window.mc.saveAgents([...pendingRestore, ...open])
   }, [agents, pendingRestore])
 
-  const launch = useCallback(async (opts: LaunchOptions) => {
-    const kind = opts.kind ?? 'claude'
-    const info = await window.mc.ptySpawn({ cwd: opts.cwd, args: opts.args ?? [], kind, cols: 120, rows: 30 })
-    const agent: Agent = {
-      id: info.id,
-      title: opts.title,
-      cwd: opts.cwd,
-      projectName: opts.projectName,
-      kind,
-      sessionId: info.sessionId,
-      exited: false,
-      startedAt: Date.now()
-    }
-    setAgents((a) => [...a, agent])
-    setActiveAgent(info.id)
-    setView('agents')
-  }, [])
+  // ---------- actions ----------
+  const launch = useCallback(
+    async (opts: LaunchOptions) => {
+      const kind = opts.kind ?? 'claude'
+      try {
+        const info = await window.mc.ptySpawn({ cwd: opts.cwd, args: opts.args ?? [], kind, cols: 120, rows: 30 })
+        const agent: Agent = {
+          id: info.id,
+          title: opts.title,
+          cwd: opts.cwd,
+          projectName: opts.projectName,
+          projectPath: opts.projectPath ?? opts.cwd,
+          kind,
+          sessionId: info.sessionId,
+          worktree: opts.worktree,
+          exited: false,
+          startedAt: Date.now()
+        }
+        setAgents((a) => [...a, agent])
+        setActiveAgent(info.id)
+        setView('agents')
+      } catch (e) {
+        toast('error', 'Could not start the agent', errorMessage(e))
+      }
+    },
+    [toast]
+  )
+
+  const launchWorktree = useCallback(
+    async (project: Project) => {
+      try {
+        const wt = await window.mc.createWorktree(project.path)
+        toast('success', 'Worktree created', `${wt.branch} from ${wt.base}`)
+        await launch({
+          cwd: wt.path,
+          projectName: project.name,
+          projectPath: project.path,
+          title: `${project.name} · ${wt.branch.replace(/^mc\//, '')}`,
+          worktree: wt
+        })
+      } catch (e) {
+        toast('error', 'Could not create a worktree', errorMessage(e))
+      }
+    },
+    [launch, toast]
+  )
 
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
     if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current }
-  }, [launch])
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects }
+  }, [launch, refreshProjects])
 
   const restoreAll = useCallback(async () => {
     const saved = pendingRestore ?? []
@@ -152,8 +244,10 @@ export default function App() {
       await launch({
         cwd: s.cwd,
         projectName: s.projectName,
+        projectPath: s.projectPath,
         title: s.title,
         kind: s.kind,
+        worktree: s.worktree,
         args: canResume ? ['--resume', s.sessionId!] : []
       })
     }
@@ -176,89 +270,165 @@ export default function App() {
     setAgents((list) => list.map((a) => (a.id === id ? { ...a, exited: true, exitCode: code } : a)))
   }, [])
 
-  const toggleNotify = () => {
-    const next = !notify
-    setNotify(next)
-    try {
-      localStorage.setItem('mc.notify', next ? 'on' : 'off')
-    } catch {
-      /* preference just won't persist */
+  const toggleNotify = useCallback(() => {
+    setNotify((cur) => {
+      const next = !cur
+      try {
+        localStorage.setItem('mc.notify', next ? 'on' : 'off')
+      } catch {
+        /* preference just won't persist */
+      }
+      return next
+    })
+  }, [])
+
+  const openProject = useCallback((path: string) => {
+    setSelectedPath(path)
+    setView('project')
+  }, [])
+
+  const addProject = useCallback(async () => {
+    const path = await window.mc.addProject()
+    if (path) {
+      await refreshProjects()
+      openProject(path)
     }
-  }
+  }, [refreshProjects, openProject])
 
   const selected = projects.find((p) => p.path === selectedPath) ?? null
-  const running = agents.filter((a) => !a.exited).length
-  const needYou = agents.filter((a) => !a.exited && (a.hookStatus === 'needs-input' || a.hookStatus === 'done')).length
+  const newInSelected = useCallback(() => {
+    if (selected) launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · new` })
+  }, [selected, launch])
+
+  const resumeRecent = useCallback(
+    (s: RecentSession) =>
+      launch({ cwd: s.cwd || s.projectPath, projectName: s.projectName, projectPath: s.projectPath, title: s.title.slice(0, 48), args: ['--resume', s.id] }),
+    [launch]
+  )
+
+  // ---------- command palette ----------
+  const openPalette = useCallback(() => {
+    setPaletteOpen(true)
+    window.mc.recentSessions(15).then(setRecentForPalette)
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const inTerminal = (e.target as HTMLElement | null)?.closest?.('.terminal-host')
+      // Ctrl+K works everywhere except inside a terminal, where shells use it; Ctrl+Shift+P works everywhere.
+      if ((e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'k' && !inTerminal) || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p')) {
+        e.preventDefault()
+        e.stopPropagation()
+        openPalette()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [openPalette])
+
+  const commands = useMemo<Command[]>(() => {
+    const list: Command[] = [
+      { id: 'go-home', group: 'Go to', title: 'Home', icon: House, run: () => setView('home') },
+      { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') }
+    ]
+    if (selected) {
+      list.push(
+        { id: 'new', group: 'Actions', title: `New Claude session in ${selected.name}`, icon: Play, run: newInSelected },
+        { id: 'new-wt', group: 'Actions', title: `New session in a worktree of ${selected.name}`, icon: GitFork, keywords: 'branch parallel', run: () => launchWorktree(selected) },
+        {
+          id: 'continue',
+          group: 'Actions',
+          title: `Continue last chat in ${selected.name}`,
+          icon: RotateCcw,
+          run: () => launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · continued`, args: ['--continue'] })
+        },
+        {
+          id: 'shell',
+          group: 'Actions',
+          title: `PowerShell in ${selected.name}`,
+          icon: Terminal,
+          run: () => launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · shell`, kind: 'shell' })
+        }
+      )
+    }
+    list.push(
+      { id: 'layout', group: 'Actions', title: layout === 'tabs' ? 'Show agents in a grid' : 'Show agents as tabs', icon: layout === 'tabs' ? LayoutGrid : Rows2, run: () => setLayout(layout === 'tabs' ? 'grid' : 'tabs') },
+      { id: 'notify', group: 'Actions', title: notify ? 'Turn notifications off' : 'Turn notifications on', icon: Bell, run: toggleNotify },
+      { id: 'add', group: 'Actions', title: 'Add a project folder…', icon: FolderPlus, run: addProject },
+      { id: 'refresh', group: 'Actions', title: 'Refresh projects', icon: RefreshCw, run: refreshProjects }
+    )
+    for (const a of agents.filter((x) => !x.exited)) {
+      list.push({ id: `agent-${a.id}`, group: 'Agents', title: a.title, hint: a.projectName, icon: Bot, run: () => focusAgent(a.id) })
+    }
+    for (const p of projects.filter((x) => showWorktrees || !x.worktree)) {
+      list.push({ id: `proj-${p.path}`, group: 'Projects', title: p.name, hint: p.path, icon: FolderOpen, keywords: p.path, run: () => openProject(p.path) })
+    }
+    for (const s of recentForPalette) {
+      list.push({ id: `chat-${s.id}`, group: 'Resume a chat', title: s.title, hint: s.projectName, icon: History, keywords: s.projectName, run: () => resumeRecent(s) })
+    }
+    return list
+  }, [selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent])
 
   return (
     <div className="app">
       <Sidebar
         projects={projects}
+        git={git}
         loading={loading}
         selectedPath={selectedPath}
+        view={view}
         agents={agents}
-        onSelect={(path) => {
-          setSelectedPath(path)
-          setView('project')
-        }}
+        showWorktrees={showWorktrees}
+        onToggleWorktrees={setShowWorktrees}
+        onSelect={openProject}
+        onNavigate={setView}
+        onOpenPalette={openPalette}
         onRefresh={refreshProjects}
-        onAdd={async () => {
-          const path = await window.mc.addProject()
-          if (path) {
-            await refreshProjects()
-            setSelectedPath(path)
-          }
-        }}
+        onAdd={addProject}
       />
       <main className="main">
-        <header className="topbar">
-          <nav className="view-switch">
-            <button className={view === 'project' ? 'active' : ''} onClick={() => setView('project')}>
-              Project
+        {pendingRestore && pendingRestore.length > 0 && (
+          <div className="restore-banner">
+            <RotateCcw size={15} />
+            <span>
+              {pendingRestore.length} {pendingRestore.length === 1 ? 'agent was' : 'agents were'} open when you last closed Mission Control.
+            </span>
+            <Button size="sm" variant="primary" onClick={restoreAll}>
+              Restore
+            </Button>
+            <button className="banner-close" onClick={() => setPendingRestore([])} aria-label="Dismiss">
+              <X size={15} />
             </button>
-            <button className={view === 'agents' ? 'active' : ''} onClick={() => setView('agents')}>
-              Agents
-              {agents.length > 0 && (
-                <span className="badge">
-                  {running}/{agents.length}
-                </span>
-              )}
-              {needYou > 0 && (
-                <span className="badge attention" title="Agents waiting for you">
-                  {needYou}
-                </span>
-              )}
-            </button>
-          </nav>
-          {pendingRestore && pendingRestore.length > 0 && (
-            <div className="restore-banner">
-              <span>
-                {pendingRestore.length} {pendingRestore.length === 1 ? 'agent' : 'agents'} open last time
-              </span>
-              <button className="btn small primary" onClick={restoreAll}>
-                Restore
-              </button>
-              <button className="btn small" onClick={() => setPendingRestore([])}>
-                Dismiss
-              </button>
-            </div>
-          )}
-          <button
-            className={`icon-btn notify-toggle ${notify ? 'on' : ''}`}
-            onClick={toggleNotify}
-            title={notify ? 'Notifications on' : 'Notifications off'}
-          >
-            {notify ? '🔔' : '🔕'}
-          </button>
-        </header>
+          </div>
+        )}
         <div className="view-body">
+          <div className={view === 'home' ? 'view-pane' : 'view-pane hidden'}>
+            <HomeView
+              agents={agents}
+              lastOutput={lastOutput}
+              projects={projects}
+              visible={view === 'home'}
+              onOpenAgent={focusAgent}
+              onOpenProject={openProject}
+              onResume={resumeRecent}
+              onNewSession={(p) => launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
+            />
+          </div>
           <div className={view === 'project' ? 'view-pane' : 'view-pane hidden'}>
             {selected ? (
-              <ProjectView key={selected.path} project={selected} onLaunch={launch} onChanged={refreshProjects} />
+              <ProjectView
+                key={selected.path}
+                project={selected}
+                git={git[selected.path]}
+                visible={view === 'project'}
+                onLaunch={launch}
+                onLaunchWorktree={launchWorktree}
+                onChanged={() => {
+                  refreshProjects()
+                }}
+              />
             ) : (
-              <div className="empty">
-                {loading ? 'Loading projects…' : 'No projects yet. Add a folder from the sidebar.'}
-              </div>
+              <div className="muted pad">{loading ? 'Loading projects…' : 'No projects yet. Add a folder from the sidebar.'}</div>
             )}
           </div>
           <div className={view === 'agents' ? 'view-pane' : 'view-pane hidden'}>
@@ -268,19 +438,31 @@ export default function App() {
               layout={layout}
               visible={view === 'agents'}
               lastOutput={lastOutput}
+              git={git}
               onSelect={setActiveAgent}
               onClose={closeAgent}
               onRename={renameAgent}
               onExit={markExited}
               onLayout={setLayout}
-              onNew={() =>
-                selected &&
-                launch({ cwd: selected.path, projectName: selected.name, title: `${selected.name} · new` })
-              }
+              onNew={newInSelected}
+              onGitChanged={refreshGit}
             />
           </div>
         </div>
+        <StatusBar
+          view={view}
+          project={selected}
+          git={selected ? git[selected.path] : undefined}
+          agents={agents}
+          notify={notify}
+          onToggleNotify={toggleNotify}
+          onShowAttention={() => {
+            const a = agents.find((x) => !x.exited && x.hookStatus === 'needs-input')
+            if (a) focusAgent(a.id)
+          }}
+        />
       </main>
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
     </div>
   )
 }

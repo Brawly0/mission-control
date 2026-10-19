@@ -7,6 +7,8 @@ import type { TerminalInfo, TerminalSpec } from '../shared/types'
 type Listener = { data: (id: string, data: string) => void; exit: (id: string, code: number) => void }
 
 const terminals = new Map<string, pty.IPty>()
+/** Working folder of each terminal, so a worktree can be freed before it is deleted. */
+const terminalCwd = new Map<string, string>()
 
 /** Finds an executable on PATH, honouring PATHEXT the way cmd.exe does. */
 export function whichSync(name: string): string | null {
@@ -66,9 +68,11 @@ export function spawnTerminal(spec: TerminalSpec, listener: Listener, id: string
     env: agentEnv()
   })
   terminals.set(id, proc)
+  terminalCwd.set(id, existsSync(spec.cwd) ? spec.cwd : '')
   proc.onData((data) => listener.data(id, data))
   proc.onExit(({ exitCode }) => {
     terminals.delete(id)
+    terminalCwd.delete(id)
     listener.exit(id, exitCode)
   })
   return { id, pid: proc.pid }
@@ -100,4 +104,29 @@ export function killTerminal(id: string): void {
 
 export function killAllTerminals(): void {
   for (const id of [...terminals.keys()]) killTerminal(id)
+}
+
+/**
+ * Stops every terminal running inside `folder` and waits for them to exit.
+ * Windows keeps a folder locked while a process has it as its working directory.
+ */
+export async function killTerminalsIn(folder: string): Promise<string[]> {
+  const norm = (p: string) => p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
+  const prefix = norm(folder)
+  const ids = [...terminalCwd.entries()]
+    .filter(([id, cwd]) => terminals.has(id) && (norm(cwd) === prefix || norm(cwd).startsWith(prefix + '\\')))
+    .map(([id]) => id)
+  if (ids.length === 0) return []
+  const exited = ids.map(
+    (id) =>
+      new Promise<void>((resolve) => {
+        const proc = terminals.get(id)
+        if (!proc) return resolve()
+        proc.onExit(() => resolve())
+        setTimeout(resolve, 3000)
+      })
+  )
+  ids.forEach(killTerminal)
+  await Promise.all(exited)
+  return ids
 }

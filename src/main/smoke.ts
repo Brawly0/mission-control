@@ -1,7 +1,11 @@
 import { app, type BrowserWindow } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions } from './claudeData'
+import { commitAll, createWorktree, getChanges, mergeWorktree, removeWorktree } from './git'
+import { killTerminalsIn } from './pty'
+import { updateStore } from './store'
 
 interface SmokeDeps {
   launchTerminal: (spec: TerminalSpec) => TerminalInfo
@@ -39,6 +43,86 @@ function runClaude(deps: SmokeDeps, spec: TerminalSpec): Promise<{ output: strin
     info = deps.launchTerminal(spec)
     setTimeout(done, 90_000)
   })
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * MC_SMOKE_UI=<git repo with a commit>: screenshots each screen, then runs the worktree flow on that
+ * repo: create, change a file, read the diff, commit, merge into the base branch, delete.
+ */
+async function uiTour(win: BrowserWindow, outFile: string, repo: string): Promise<void> {
+  const shot = async (name: string) => {
+    await sleep(700)
+    const file = outFile.replace(/\.png$/, `-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const click = (selector: string, text: string) =>
+    js(`[...document.querySelectorAll(${JSON.stringify(selector)})].find(e => e.textContent.includes(${JSON.stringify(text)}))?.click()`)
+
+  await js(`window.__mcSmoke.setView('home')`)
+  await shot('home')
+
+  // Show the throwaway repo as a project for the duration of the tour.
+  updateStore((s) => {
+    s.manualProjects.push(repo)
+  })
+  try {
+    await projectTour()
+  } finally {
+    updateStore((s) => {
+      s.manualProjects = s.manualProjects.filter((p) => p !== repo)
+    })
+  }
+
+  async function projectTour() {
+  await js(`window.__mcSmoke.refresh()`)
+  await sleep(800)
+  await js(`window.__mcSmoke.selectProject(${JSON.stringify(repo)}); window.__mcSmoke.setView('project')`)
+  writeFileSync(join(repo, 'README.md'), '# Demo repo\n\nAn uncommitted edit in the main checkout.\n')
+  await sleep(600)
+  await shot('project-chats')
+  await click('.page-tabs button', 'Changes')
+  await shot('project-changes')
+  await click('.page-tabs button', 'Docs')
+  await shot('project-docs')
+  // Restore the main checkout so the merge below can run.
+  writeFileSync(join(repo, 'README.md'), '# Demo repo\n')
+
+  await js(`window.__mcSmoke.openPalette()`)
+  await shot('palette')
+  await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+
+  // Worktree flow against the throwaway repo.
+  const wt = await createWorktree(repo)
+  log('worktree:', wt.branch, 'from', wt.base, 'at', wt.path)
+  writeFileSync(join(wt.path, 'agent-note.md'), '# Written by an agent\n\nHello from the worktree.\n')
+  const before = await getChanges(wt.path, wt.base)
+  log('changes before commit:', before.files.map((f) => `${f.status} ${f.path}`), 'commits:', before.commits.length)
+  await commitAll(wt.path, 'Add agent note')
+  const after = await getChanges(wt.path, wt.base)
+  log('after commit: files', after.files.length, 'commits', after.commits)
+  log('merge:', (await mergeWorktree(wt)).split('\n')[0])
+  log('file in main checkout after merge:', existsSync(join(repo, 'agent-note.md')))
+
+  // Show it in the UI: two agents in a grid, the first in the worktree, with the review panel open.
+  await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(wt.path)}, projectName: 'demo-repo', projectPath: ${JSON.stringify(repo)}, title: 'demo · ${wt.branch.replace('mc/', '')}', kind: 'shell', worktree: ${JSON.stringify(wt)} })`)
+  writeFileSync(join(wt.path, 'agent-note.md'), '# Written by an agent\n\nHello from the worktree.\nA second, uncommitted line.\n')
+  await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(process.cwd())}, projectName: 'claude-hub', title: 'claude-hub · shell', kind: 'shell' })`)
+  await click('.segmented button', 'Grid')
+  await click('.agent-tab', 'agent-')
+  await sleep(300)
+  await click('.agent-bar-end button', 'Review')
+  await sleep(2500)
+  await shot('agents-review')
+
+  // Same order as the Discard button: stop agents in the worktree, then delete it.
+  log('stopped agents in worktree:', (await killTerminalsIn(wt.path)).length)
+  await removeWorktree(wt)
+  log('worktree removed:', !existsSync(wt.path))
+  }
 }
 
 /**
@@ -127,6 +211,8 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     const image = await win.webContents.capturePage()
     writeFileSync(outFile, image.toPNG())
     log('screenshot:', outFile)
+
+    if (process.env.MC_SMOKE_UI) await uiTour(win, outFile, process.env.MC_SMOKE_UI)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

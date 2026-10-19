@@ -2,9 +2,13 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.2)
+## Features (v0.3)
 
-- **Projects sidebar**: found automatically from `~/.claude/projects`, plus any folder you add. Pin favorites; worktrees and scratch folders are hidden by default.
+- **Home dashboard**: what every agent is doing, who needs you, recent chats across all projects, and one-click "New session" per project.
+- **Command palette** (`Ctrl+K`, or `Ctrl+Shift+P` inside a terminal): jump to any project, agent or chat, or run any action.
+- **Projects sidebar**: found automatically from `~/.claude/projects`, plus any folder you add. Each shows its git branch, a dot for uncommitted changes, and how many agents run in it. Pin favorites; worktrees and scratch folders are hidden by default.
+- **Parallel agents without conflicts**: "New session in worktree" gives an agent its own git worktree and `mc/agent-xxxx` branch. **Review** opens the agent's diff next to its terminal, where you can commit, merge it into the base branch, or discard it.
+- **Changes tab**: every git project shows its uncommitted changes as a diff, with "Commit all".
 - **Chat browser**: every past session per project, with title, date and size. Search them, read the full conversation, or **Resume** it with one click.
 - **Live agents**: start `claude` (new, continue or resume) or a plain PowerShell inside the app. View them as tabs or a grid, with status lights:
   - 🟢 working
@@ -17,7 +21,7 @@ A Windows desktop hub for **Claude Code**: see all your projects and past chats,
 - **Docs panel**: reads and edits `CLAUDE.md`, `README.md`, `AGENTS.md` and Markdown in `docs/` and `.claude/`.
 - **Quick open**: Windows Terminal, VS Code or Explorer in the project folder.
 
-Mission Control **never writes to Claude Code's files**. Your own data (pins, added folders) lives in `%APPDATA%\Mission Control\store.json`.
+Mission Control **never writes to Claude Code's files**. It remembers your last project, view, layout and window size. Your own data (pins, added folders, open agents) lives in `%APPDATA%\Mission Control\store.json`.
 
 ## Getting started
 

@@ -1,3 +1,5 @@
+import type { WorktreeInfo } from '@shared/types'
+
 /** Status reported by Claude Code hooks; exact, unlike the output-timing guess. */
 export type HookStatus = 'ready' | 'working' | 'needs-input' | 'done'
 
@@ -7,8 +9,12 @@ export interface Agent {
   title: string
   cwd: string
   projectName: string
+  /** The project this agent belongs to (its main folder, even when it runs in a worktree). */
+  projectPath: string
   kind: 'claude' | 'shell'
   sessionId?: string
+  /** Set when the agent runs in its own worktree + branch. */
+  worktree?: WorktreeInfo
   exited: boolean
   exitCode?: number
   startedAt: number
@@ -18,11 +24,14 @@ export interface Agent {
 }
 
 export type AgentLayout = 'tabs' | 'grid'
+export type View = 'home' | 'project' | 'agents'
 
 export interface LaunchOptions {
   cwd: string
   projectName: string
+  projectPath?: string
   title: string
   kind?: 'claude' | 'shell'
   args?: string[]
+  worktree?: WorktreeInfo
 }

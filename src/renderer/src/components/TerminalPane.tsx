@@ -10,10 +10,10 @@ interface Props {
 }
 
 const theme = {
-  background: '#0b0d12',
-  foreground: '#d7dae0',
-  cursor: '#e8a87c',
-  selectionBackground: '#3a4150',
+  background: '#0a0c10',
+  foreground: '#dfe2ea',
+  cursor: '#d97757',
+  selectionBackground: '#33405a',
   black: '#1b1e25',
   brightBlack: '#5c6370'
 }
