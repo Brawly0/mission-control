@@ -193,6 +193,17 @@ export async function listProjects(): Promise<Project[]> {
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
 }
 
+/** True when some project folder has a transcript for this session (a session with no prompts has none). */
+export async function sessionExists(sessionId: string): Promise<boolean> {
+  if (!/^[\w-]+$/.test(sessionId)) return false
+  try {
+    const keys = await fs.readdir(claudeProjectsDir)
+    return keys.some((key) => existsSync(join(claudeProjectsDir, key, `${sessionId}.jsonl`)))
+  } catch {
+    return false
+  }
+}
+
 export async function getSession(projectKey: string, sessionId: string): Promise<SessionDetail> {
   const file = join(claudeProjectsDir, projectKey, `${sessionId}.jsonl`)
   const summary = await summarizeSession(projectKey, file)

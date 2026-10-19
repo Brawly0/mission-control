@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import type { Agent, AgentLayout } from '../types'
+import { displayStatus } from '../agentStatus'
 import TerminalPane from './TerminalPane'
 
 interface Props {
@@ -9,22 +11,46 @@ interface Props {
   lastOutput: Record<string, number>
   onSelect: (id: string) => void
   onClose: (id: string) => void
+  onRename: (id: string, title: string) => void
   onExit: (id: string, code: number) => void
   onLayout: (layout: AgentLayout) => void
   onNew: () => void
 }
 
-/** Output in the last few seconds means the agent is busy; silence means it is idle or waiting for you. */
-const WORKING_MS = 2500
-
-function status(agent: Agent, last: number | undefined): { cls: string; label: string } {
-  if (agent.exited) return { cls: 'exited', label: `exited (${agent.exitCode ?? '?'})` }
-  if (last && Date.now() - last < WORKING_MS) return { cls: 'working', label: 'working' }
-  return { cls: 'idle', label: 'idle / waiting' }
+function TabTitle({ agent, onRename }: { agent: Agent; onRename: (title: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  if (draft === null) {
+    return (
+      <span className="agent-tab-title" onDoubleClick={() => setDraft(agent.title)} title="Double-click to rename">
+        {agent.title}
+      </span>
+    )
+  }
+  const commit = () => {
+    const t = draft.trim()
+    if (t) onRename(t)
+    setDraft(null)
+  }
+  return (
+    <input
+      className="tab-rename"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={commit}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') setDraft(null)
+        e.stopPropagation()
+      }}
+    />
+  )
 }
 
 export default function AgentsView(props: Props) {
-  const { agents, activeId, layout, visible, lastOutput, onSelect, onClose, onExit, onLayout, onNew } = props
+  const { agents, activeId, layout, visible, lastOutput, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
 
   if (agents.length === 0) {
     return (
@@ -42,16 +68,16 @@ export default function AgentsView(props: Props) {
     <div className="agents">
       <div className="agent-tabs">
         {agents.map((a) => {
-          const st = status(a, lastOutput[a.id])
+          const st = displayStatus(a, lastOutput[a.id])
           return (
             <div
               key={a.id}
-              className={`agent-tab ${a.id === activeId ? 'active' : ''}`}
+              className={`agent-tab ${a.id === activeId ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''}`}
               onClick={() => onSelect(a.id)}
               title={`${a.cwd}\n${st.label}`}
             >
               <span className={`dot ${st.cls}`} />
-              <span className="agent-tab-title">{a.title}</span>
+              <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} />
               <button
                 className="close"
                 onClick={(e) => {
@@ -84,18 +110,18 @@ export default function AgentsView(props: Props) {
       >
         {agents.map((a) => {
           const shown = layout === 'grid' || a.id === activeId
-          const st = status(a, lastOutput[a.id])
+          const st = displayStatus(a, lastOutput[a.id])
           return (
             <div
               key={a.id}
-              className={`agent-cell ${shown ? '' : 'stacked-hidden'} ${a.id === activeId ? 'focused' : ''}`}
+              className={`agent-cell ${shown ? '' : 'stacked-hidden'} ${a.id === activeId ? 'focused' : ''} ${st.cls === 'needs-input' ? 'attention' : ''}`}
               onMouseDown={() => onSelect(a.id)}
             >
               {layout === 'grid' && (
                 <div className="agent-cell-header">
                   <span className={`dot ${st.cls}`} />
-                  <span className="agent-tab-title">{a.title}</span>
-                  <span className="muted small">{st.label}</span>
+                  <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} />
+                  <span className="muted small status-label">{st.label}</span>
                 </div>
               )}
               <TerminalPane

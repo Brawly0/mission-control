@@ -55,6 +55,30 @@ export interface TerminalSpec {
 export interface TerminalInfo {
   id: string
   pid: number
+  /** Session id for claude terminals: assigned via --session-id for new sessions, or the one being resumed. */
+  sessionId?: string
+}
+
+/** A Claude Code hook call reported by one of the app's agents. */
+export interface HookEvent {
+  agentId: string
+  /** hook_event_name, e.g. 'UserPromptSubmit', 'Stop', 'Notification'. */
+  event: string
+  sessionId?: string
+  message?: string
+  notificationType?: string
+  /** SessionStart source: 'startup' | 'resume' | 'clear' | 'compact'. */
+  source?: string
+  at: number
+}
+
+/** What is remembered about an open agent so it can be reopened after a restart. */
+export interface SavedAgent {
+  title: string
+  cwd: string
+  projectName: string
+  kind: 'claude' | 'shell'
+  sessionId?: string
 }
 
 export interface MissionControlApi {
@@ -77,4 +101,10 @@ export interface MissionControlApi {
   ptyKill(id: string): void
   onPtyData(cb: (id: string, data: string) => void): () => void
   onPtyExit(cb: (id: string, code: number) => void): () => void
+
+  onHookEvent(cb: (event: HookEvent) => void): () => void
+  saveAgents(agents: SavedAgent[]): void
+  loadSavedAgents(): Promise<SavedAgent[]>
+  sessionExists(sessionId: string): Promise<boolean>
+  focusWindow(): void
 }

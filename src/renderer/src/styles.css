@@ -11,6 +11,8 @@
   --green: #5fd38d;
   --yellow: #f0c75e;
   --red: #ef6b6b;
+  --orange: #ff9447;
+  --blue: #6aa8ff;
   --radius: 8px;
   color-scheme: dark;
 }
@@ -102,9 +104,22 @@ ul {
   border-bottom: 1px solid var(--border);
   background: var(--bg-2);
 }
-.topbar-title {
+.notify-toggle {
   margin-left: auto;
-  color: var(--muted);
+  font-size: 14px;
+  opacity: 0.6;
+}
+.notify-toggle.on {
+  opacity: 1;
+}
+.restore-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 12px;
+  border: 1px solid var(--accent-2);
+  border-radius: var(--radius);
+  background: rgba(232, 168, 124, 0.08);
   font-size: 12px;
 }
 
@@ -140,6 +155,9 @@ ul {
   color: #111;
   font-size: 11px;
   font-weight: 600;
+}
+.badge.attention {
+  background: var(--orange);
 }
 
 .view-body {
@@ -239,6 +257,18 @@ ul {
 }
 .dot.idle {
   background: var(--yellow);
+}
+.dot.needs-input {
+  background: var(--orange);
+  box-shadow: 0 0 8px var(--orange);
+  animation: pulse 0.6s infinite alternate;
+}
+.dot.done {
+  background: var(--blue);
+}
+.dot.ready {
+  background: var(--blue);
+  opacity: 0.55;
 }
 .dot.exited {
   background: var(--red);
@@ -604,6 +634,20 @@ ul {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.agent-tab.attention:not(.active) {
+  border-color: var(--orange);
+  color: var(--text);
+}
+.tab-rename {
+  width: 160px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent-2);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
 .agent-tab .close {
   width: 20px;
   height: 20px;
@@ -661,8 +705,15 @@ ul {
   background: var(--bg-2);
   font-size: 12px;
 }
-.agent-cell-header .muted {
+.agent-cell-header .status-label {
   margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+.agent-stage.grid .agent-cell.attention {
+  border-color: var(--orange);
 }
 .terminal-host {
   flex: 1;

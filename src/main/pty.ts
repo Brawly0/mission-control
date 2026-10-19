@@ -37,9 +37,8 @@ function resolveCommand(spec: TerminalSpec): { file: string; args: string[] } {
   return { file: claudePath, args: spec.args }
 }
 
-export function spawnTerminal(spec: TerminalSpec, listener: Listener): TerminalInfo {
+export function spawnTerminal(spec: TerminalSpec, listener: Listener, id: string = randomUUID()): TerminalInfo {
   const { file, args } = resolveCommand(spec)
-  const id = randomUUID()
   const proc = pty.spawn(file, args, {
     name: 'xterm-256color',
     cwd: existsSync(spec.cwd) ? spec.cwd : process.env.USERPROFILE,

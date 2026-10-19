@@ -46,3 +46,7 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 | Terminal says "claude was not found on PATH" | Install Claude Code, check `where claude`, restart the app |
 | A project shows a strange path | The real path is read from session files. Folders with no readable session fall back to decoding the folder name, which is lossy. |
 | Chat list is slow the first time | Large session files are scanned once, then cached by modification time |
+
+### Hook test
+
+`MC_SMOKE_HOOKS=<empty folder>` makes the smoke test also send one tiny real prompt (`claude -p`) from that folder and list the hook events that reached the app. Expected: `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, all with the session id the app assigned. This uses a small amount of your Claude usage and needs `claude` to be logged in.

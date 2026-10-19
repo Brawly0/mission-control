@@ -2,14 +2,18 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.1)
+## Features (v0.2)
 
 - **Projects sidebar**: found automatically from `~/.claude/projects`, plus any folder you add. Pin favorites; worktrees and scratch folders are hidden by default.
 - **Chat browser**: every past session per project, with title, date and size. Search them, read the full conversation, or **Resume** it with one click.
 - **Live agents**: start `claude` (new, continue or resume) or a plain PowerShell inside the app. View them as tabs or a grid, with status lights:
-  - 🟢 working: printed output in the last few seconds
-  - 🟡 idle / waiting for you
+  - 🟢 working
+  - 🟠 needs you (permission prompt or question)
+  - 🔵 done, your turn
   - 🔴 exited
+
+  Status comes from Claude Code hooks, so it's exact. You get a Windows notification when an agent finishes or needs you (toggle with 🔔), and clicking it jumps to that agent.
+- **Rename and restore**: double-click a tab to rename it. Agents still open when you close the app are offered for restore next time, resuming the exact same chats.
 - **Docs panel**: reads and edits `CLAUDE.md`, `README.md`, `AGENTS.md` and Markdown in `docs/` and `.claude/`.
 - **Quick open**: Windows Terminal, VS Code or Explorer in the project folder.
 

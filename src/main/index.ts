@@ -1,11 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import type { DocFile, TerminalSpec } from '../shared/types'
-import { getSession, listProjects, listSessions, normalizePath } from './claudeData'
+import type { DocFile, HookEvent, SavedAgent, TerminalInfo, TerminalSpec } from '../shared/types'
+import { getSession, listProjects, listSessions, normalizePath, sessionExists } from './claudeData'
+import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
 import { killAllTerminals, killTerminal, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
-import { updateStore } from './store'
+import { loadStore, updateStore } from './store'
 import { runSmoke } from './smoke'
 
 let mainWindow: BrowserWindow | null = null
@@ -65,6 +67,44 @@ async function listDocs(projectPath: string): Promise<DocFile[]> {
   return docs
 }
 
+/** Starts a terminal; claude terminals get hook reporting and a known session id. */
+export function launchTerminal(spec: TerminalSpec): TerminalInfo {
+  const id = randomUUID()
+  let sessionId: string | undefined
+  let args = spec.args
+  if (spec.kind === 'claude') {
+    const resumeAt = args.indexOf('--resume')
+    if (resumeAt >= 0) {
+      sessionId = args[resumeAt + 1]
+    } else if (!args.includes('--continue')) {
+      // Choosing the id up front lets the app restore this exact session later.
+      sessionId = randomUUID()
+      args = ['--session-id', sessionId, ...args]
+    }
+    args = ['--settings', hookSettingsFor(id), ...args]
+  }
+  const info = spawnTerminal(
+    { ...spec, args },
+    {
+      data: (tid, data) => {
+        mainWindow?.webContents.send('pty:data', tid, data)
+        ptyTaps.forEach((tap) => tap.data?.(tid, data))
+      },
+      exit: (tid, code) => {
+        removeHookSettings(tid)
+        mainWindow?.webContents.send('pty:exit', tid, code)
+        ptyTaps.forEach((tap) => tap.exit?.(tid, code))
+      }
+    },
+    id
+  )
+  return { ...info, sessionId }
+}
+
+/** Extra observers of terminal output and hook events (used by the smoke test). */
+export const ptyTaps = new Set<{ data?: (id: string, d: string) => void; exit?: (id: string, code: number) => void }>()
+export const hookTaps = new Set<(e: HookEvent) => void>()
+
 function registerIpc(): void {
   ipcMain.handle('projects:list', () => listProjects())
   ipcMain.handle('sessions:list', (_e, key: string) => listSessions(key))
@@ -116,31 +156,58 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('pty:spawn', (_e, spec: TerminalSpec) =>
-    spawnTerminal(spec, {
-      data: (id, data) => mainWindow?.webContents.send('pty:data', id, data),
-      exit: (id, code) => mainWindow?.webContents.send('pty:exit', id, code)
-    })
-  )
+  ipcMain.handle('pty:spawn', (_e, spec: TerminalSpec) => launchTerminal(spec))
   ipcMain.on('pty:write', (_e, id: string, data: string) => writeTerminal(id, data))
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => resizeTerminal(id, cols, rows))
-  ipcMain.on('pty:kill', (_e, id: string) => killTerminal(id))
+  ipcMain.on('pty:kill', (_e, id: string) => {
+    killTerminal(id)
+    removeHookSettings(id)
+  })
+
+  ipcMain.on('agents:save', (_e, agents: SavedAgent[]) => {
+    // While quitting, terminals exit one by one; don't let that wipe the list we want to restore.
+    if (quitting) return
+    updateStore((s) => {
+      s.savedAgents = agents
+    })
+  })
+  ipcMain.handle('agents:loadSaved', () => loadStore().savedAgents)
+  ipcMain.handle('sessions:exists', (_e, id: string) => sessionExists(id))
+  ipcMain.on('window:focus', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
 }
 
-app.whenReady().then(() => {
+let quitting = false
+
+app.setAppUserModelId('com.brawly0.missioncontrol') // needed for Windows toast notifications
+
+app.whenReady().then(async () => {
+  await startHookServer((event) => {
+    mainWindow?.webContents.send('hook:event', event)
+    hookTaps.forEach((tap) => tap(event))
+  })
   registerIpc()
   createWindow()
   if (process.env.MC_SMOKE && mainWindow) {
     const win = mainWindow
-    win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!))
+    win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps }))
   }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-app.on('before-quit', () => killAllTerminals())
+app.on('before-quit', () => {
+  quitting = true
+  killAllTerminals()
+  stopHookServer()
+})
 app.on('window-all-closed', () => {
+  quitting = true
   killAllTerminals()
   if (process.platform !== 'darwin') app.quit()
 })

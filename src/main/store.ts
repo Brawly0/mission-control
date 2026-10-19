@@ -1,17 +1,20 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { SavedAgent } from '../shared/types'
 
 /**
  * The app's own data. Claude Code's files are never written to; everything
- * the user adds (manual projects, pins, later tags and notes) lives here.
+ * the user adds (manual projects, pins, open agents, later tags and notes) lives here.
  */
 export interface StoreData {
   manualProjects: string[]
   pinned: string[]
+  /** Agents that were open when the app last closed, offered for restore on next start. */
+  savedAgents: SavedAgent[]
 }
 
-const defaults: StoreData = { manualProjects: [], pinned: [] }
+const defaults: StoreData = { manualProjects: [], pinned: [], savedAgents: [] }
 
 function storePath(): string {
   return join(app.getPath('userData'), 'store.json')

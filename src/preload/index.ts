@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MissionControlApi } from '../shared/types'
+import type { HookEvent, MissionControlApi } from '../shared/types'
 
 const api: MissionControlApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -28,7 +28,17 @@ const api: MissionControlApi = {
     const handler = (_e: unknown, id: string, code: number) => cb(id, code)
     ipcRenderer.on('pty:exit', handler)
     return () => ipcRenderer.removeListener('pty:exit', handler)
-  }
+  },
+
+  onHookEvent: (cb) => {
+    const handler = (_e: unknown, event: HookEvent) => cb(event)
+    ipcRenderer.on('hook:event', handler)
+    return () => ipcRenderer.removeListener('hook:event', handler)
+  },
+  saveAgents: (agents) => ipcRenderer.send('agents:save', agents),
+  loadSavedAgents: () => ipcRenderer.invoke('agents:loadSaved'),
+  sessionExists: (id) => ipcRenderer.invoke('sessions:exists', id),
+  focusWindow: () => ipcRenderer.send('window:focus')
 }
 
 contextBridge.exposeInMainWorld('mc', api)

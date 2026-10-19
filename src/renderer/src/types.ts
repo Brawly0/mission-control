@@ -1,13 +1,20 @@
+/** Status reported by Claude Code hooks; exact, unlike the output-timing guess. */
+export type HookStatus = 'ready' | 'working' | 'needs-input' | 'done'
+
 export interface Agent {
-  /** PTY id from the main process. */
+  /** PTY id from the main process; also the id hook events are tagged with. */
   id: string
   title: string
   cwd: string
   projectName: string
   kind: 'claude' | 'shell'
+  sessionId?: string
   exited: boolean
   exitCode?: number
   startedAt: number
+  hookStatus?: HookStatus
+  /** Last notification text from Claude, e.g. "Claude needs your permission to use Bash". */
+  statusMessage?: string
 }
 
 export type AgentLayout = 'tabs' | 'grid'

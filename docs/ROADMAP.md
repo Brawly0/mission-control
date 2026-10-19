@@ -9,13 +9,14 @@
 - [x] Docs panel with view and edit
 - [x] Open in Windows Terminal / VS Code / Explorer
 
-## v0.2: Real agent status
-- [ ] Claude Code **hooks** (`Notification`, `Stop`, `UserPromptSubmit`) post to a local endpoint in the app, giving exact "waiting for you" and "done" states instead of the output-timing heuristic
-- [ ] Windows toast notification when an agent needs input
-- [ ] Rename agent tabs; restore open agents (`--resume`) after restarting the app
-- [ ] Remember the last selected project, layout and window size
+## ✅ v0.2: Real agent status
+- [x] Claude Code **hooks** report to a local endpoint in the app, giving exact working / needs-you / done states
+- [x] Windows notification when an agent finishes or needs permission; clicking it opens that agent
+- [x] Rename agent tabs (double-click)
+- [x] Restore open agents after restarting the app (exact session via `--session-id` + `--resume`)
 
 ## v0.3: Parallel agents without conflicts
+- [ ] Remember the last selected project, layout and window size
 - [ ] "New agent in worktree": create a git worktree and branch per agent automatically
 - [ ] Diff panel: review an agent's changes, then merge or discard
 - [ ] Git status badges in the sidebar (branch, dirty, ahead/behind)
