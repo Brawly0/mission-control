@@ -45,6 +45,7 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 |---|---|
 | Terminal says "claude was not found on PATH" | Install Claude Code, check `where claude`, restart the app |
 | A project shows a strange path | The real path is read from session files. Folders with no readable session fall back to decoding the folder name, which is lossy. |
+| Agents fail with "OAuth session expired" | Log the CLI in with `claude auth login` in a normal terminal; `claude auth status` should show `"loggedIn": true`. The desktop app's login is separate. |
 | Chat list is slow the first time | Large session files are scanned once, then cached by modification time |
 
 ### Hook test

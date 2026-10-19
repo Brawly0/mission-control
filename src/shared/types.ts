@@ -9,7 +9,7 @@ export interface Project {
   pinned: boolean
   /** True when this project only exists in the app's own store (added by hand). */
   manual: boolean
-  /** True for Claude Code worktrees (.claude/worktrees/...) and desktop scratch workspaces; hidden by default. */
+  /** True for Claude Code worktrees, desktop scratch workspaces and temp folders; hidden by default. */
   worktree: boolean
 }
 
@@ -107,4 +107,6 @@ export interface MissionControlApi {
   loadSavedAgents(): Promise<SavedAgent[]>
   sessionExists(sessionId: string): Promise<boolean>
   focusWindow(): void
+  /** True while the self-test runs (MC_SMOKE); the UI then exposes a small test handle. */
+  smoke: boolean
 }

@@ -137,6 +137,12 @@ export default function App() {
     setView('agents')
   }, [])
 
+  // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
+  useEffect(() => {
+    if (!window.mc.smoke) return
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current }
+  }, [launch])
+
   const restoreAll = useCallback(async () => {
     const saved = pendingRestore ?? []
     setPendingRestore([])

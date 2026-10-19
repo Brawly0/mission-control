@@ -38,7 +38,8 @@ const api: MissionControlApi = {
   saveAgents: (agents) => ipcRenderer.send('agents:save', agents),
   loadSavedAgents: () => ipcRenderer.invoke('agents:loadSaved'),
   sessionExists: (id) => ipcRenderer.invoke('sessions:exists', id),
-  focusWindow: () => ipcRenderer.send('window:focus')
+  focusWindow: () => ipcRenderer.send('window:focus'),
+  smoke: Boolean(process.env.MC_SMOKE)
 }
 
 contextBridge.exposeInMainWorld('mc', api)

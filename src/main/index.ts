@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { DocFile, HookEvent, SavedAgent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { getSession, listProjects, listSessions, normalizePath, sessionExists } from './claudeData'
 import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
-import { killAllTerminals, killTerminal, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
+import { agentEnv, killAllTerminals, killTerminal, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
 import { loadStore, updateStore } from './store'
 import { runSmoke } from './smoke'
 
@@ -146,11 +146,12 @@ function registerIpc(): void {
     const wt = whichSync('wt')
     const claudeArgs = ['claude', ...args]
     if (wt) {
-      spawn(wt, ['-d', cwd, ...claudeArgs], { detached: true, stdio: 'ignore' }).unref()
+      spawn(wt, ['-d', cwd, ...claudeArgs], { detached: true, stdio: 'ignore', env: agentEnv() }).unref()
     } else {
       spawn('cmd.exe', ['/c', 'start', 'powershell', '-NoExit', '-Command', claudeArgs.join(' ')], {
         cwd,
         detached: true,
+        env: agentEnv(),
         stdio: 'ignore'
       }).unref()
     }
@@ -166,7 +167,7 @@ function registerIpc(): void {
 
   ipcMain.on('agents:save', (_e, agents: SavedAgent[]) => {
     // While quitting, terminals exit one by one; don't let that wipe the list we want to restore.
-    if (quitting) return
+    if (quitting || process.env.MC_SMOKE) return
     updateStore((s) => {
       s.savedAgents = agents
     })

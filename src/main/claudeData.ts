@@ -165,7 +165,7 @@ export async function listProjects(): Promise<Project[]> {
         lastActivity: stats[0].s.mtimeMs,
         pinned: pinned.has(normalizePath(path)),
         manual: false,
-        worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]/i.test(path)
+        worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]|[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(path)
       }
       // Two keys can resolve to the same folder; keep the more recently used one.
       const existing = byPath.get(normalizePath(path))

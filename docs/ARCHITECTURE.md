@@ -57,6 +57,7 @@ curl forwards the hook's JSON input to `hookServer.ts`, which sends it to the re
 | Stop | done | yes |
 
 - The user's own `~/.claude/settings.json` is never touched. `--settings` only adds to it for that one process.
+- If Mission Control was started from inside a Claude Code session, that session's `CLAUDECODE` / `CLAUDE_CODE_*` / `ANTHROPIC_BASE_URL` variables are stripped from agents (`agentEnv()` in `pty.ts`), so agents use your own CLI login.
 - The port is random and the URL carries a per-run secret, so other local processes can't post fake events.
 - Settings files are deleted when an agent exits and cleared at every startup.
 

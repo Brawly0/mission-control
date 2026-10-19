@@ -37,6 +37,25 @@ function resolveCommand(spec: TerminalSpec): { file: string; args: string[] } {
   return { file: claudePath, args: spec.args }
 }
 
+/**
+ * The environment for agents. If Mission Control itself was started from inside a Claude Code
+ * session, that session's host variables (child-session flags, host-managed auth, API base URL)
+ * would make every agent behave like its sub-process and fail to authenticate; drop them.
+ */
+export function agentEnv(): Record<string, string> {
+  const env: Record<string, string> = {}
+  const insideClaude = Boolean(process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT)
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue
+    if (insideClaude && /^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_.*|CLAUDE_AGENT_SDK_.*|CLAUDE_PREVIEW_.*|ANTHROPIC_BASE_URL)$/.test(key)) {
+      continue
+    }
+    env[key] = value
+  }
+  env.FORCE_COLOR = '1'
+  return env
+}
+
 export function spawnTerminal(spec: TerminalSpec, listener: Listener, id: string = randomUUID()): TerminalInfo {
   const { file, args } = resolveCommand(spec)
   const proc = pty.spawn(file, args, {
@@ -44,7 +63,7 @@ export function spawnTerminal(spec: TerminalSpec, listener: Listener, id: string
     cwd: existsSync(spec.cwd) ? spec.cwd : process.env.USERPROFILE,
     cols: Math.max(spec.cols, 20),
     rows: Math.max(spec.rows, 5),
-    env: { ...process.env, FORCE_COLOR: '1' } as Record<string, string>
+    env: agentEnv()
   })
   terminals.set(id, proc)
   proc.onData((data) => listener.data(id, data))

@@ -70,7 +70,55 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
       log('prompt output:', JSON.stringify(run.output.slice(0, 200)))
       log('assigned session id:', run.info.sessionId)
       log('hook events:', run.hooks.map((h) => `${h.event}${h.sessionId === run.info.sessionId ? '' : ` (session ${h.sessionId})`}`))
+
+      // Same thing through the UI: launch from the renderer and record the agent's status as it changes.
+      const statuses: string[] = await win.webContents.executeJavaScript(`
+        (async () => {
+          const s = window.__mcSmoke
+          const before = s.agents().length
+          await s.launch({ cwd: ${JSON.stringify(hookDir)}, projectName: 'smoke', title: 'smoke agent',
+                           args: ['-p', 'Reply with exactly the word: pong'] })
+          const seen = []
+          const started = Date.now()
+          while (Date.now() - started < 90000) {
+            const a = s.agents()[before]
+            const st = a ? (a.hookStatus || 'none') + (a.exited ? '+exited' : '') : 'missing'
+            if (seen[seen.length - 1] !== st) seen.push(st)
+            if (a && a.exited) break
+            await new Promise(r => setTimeout(r, 50))
+          }
+          return seen
+        })()
+      `)
+      log('UI status sequence:', statuses.join(' -> '))
     }
+
+    // Replay a full turn's hook events (same shape curl delivers) into a live UI agent and record its status.
+    await win.webContents.executeJavaScript(`
+      window.__mcSmoke.launch({ cwd: ${JSON.stringify(process.cwd())}, projectName: 'smoke', title: 'replay agent', kind: 'shell' })
+    `)
+    const agentId: string = await win.webContents.executeJavaScript(
+      `window.__mcSmoke.agents()[window.__mcSmoke.agents().length - 1].id`
+    )
+    const turn = [
+      { event: 'SessionStart', source: 'startup' },
+      { event: 'UserPromptSubmit' },
+      { event: 'PostToolUse' },
+      { event: 'Notification', notificationType: 'permission_prompt', message: 'Claude needs your permission to use Bash' },
+      { event: 'PostToolUse' },
+      { event: 'Stop' },
+      { event: 'Notification', notificationType: 'idle_prompt', message: 'Claude is waiting for your input' }
+    ]
+    const seen: string[] = []
+    for (const e of turn) {
+      win.webContents.send('hook:event', { agentId, sessionId: 'replay', at: Date.now(), ...e })
+      await new Promise((r) => setTimeout(r, 150))
+      const st: string = await win.webContents.executeJavaScript(
+        `(() => { const a = window.__mcSmoke.agents().find(x => x.id === ${JSON.stringify(agentId)}); return a.hookStatus + (a.statusMessage ? ' (' + a.statusMessage + ')' : '') })()`
+      )
+      seen.push(`${e.event}${e.notificationType ? ':' + e.notificationType : ''} => ${st}`)
+    }
+    log('replayed turn:\n  ' + seen.join('\n  '))
 
     await new Promise((r) => setTimeout(r, 2000))
     const image = await win.webContents.capturePage()
