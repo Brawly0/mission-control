@@ -127,6 +127,32 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     const image = await win.webContents.capturePage()
     writeFileSync(outFile, image.toPNG())
     log('screenshot:', outFile)
+
+    // Close the window while an agent is still printing, like a user clicking X with agents running.
+    // Any main-process exception is logged instead of shown as a dialog, so the test can report it.
+    process.on('uncaughtException', (e) => log('UNCAUGHT', e.message))
+    const flood = deps.launchTerminal({
+      cwd: process.cwd(),
+      args: [],
+      kind: 'shell',
+      cols: 100,
+      rows: 20
+    })
+    // Open a second agent in the UI too, so its output is mid-flight in the renderer path.
+    await win.webContents.executeJavaScript(
+      `window.__mcSmoke.launch({ cwd: ${JSON.stringify(process.cwd())}, projectName: 'smoke', title: 'flood', kind: 'shell' })`
+    )
+    const { writeTerminal } = await import('./pty')
+    writeTerminal(flood.id, 'while ($true) { "flood $(Get-Date -Format o)" }\r')
+    const uiId: string = await win.webContents.executeJavaScript(
+      `window.__mcSmoke.agents()[window.__mcSmoke.agents().length - 1].id`
+    )
+    writeTerminal(uiId, 'while ($true) { "flood $(Get-Date -Format o)" }\r')
+    await new Promise((r) => setTimeout(r, 1500))
+    log('closing window with 2 agents printing')
+    win.close()
+    await new Promise((r) => setTimeout(r, 3000))
+    log('close test finished')
   } catch (e) {
     log('FAILED', e)
   } finally {

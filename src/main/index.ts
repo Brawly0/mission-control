@@ -38,6 +38,20 @@ function createWindow(): void {
     shell.openExternal(url)
     return { action: 'deny' }
   })
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+}
+
+/**
+ * Sends to the renderer only while it still exists. Terminals keep emitting output for a
+ * moment after the window closes; sending to a destroyed window throws in the main process.
+ */
+function sendToWindow(channel: string, ...args: unknown[]): void {
+  const win = mainWindow
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send(channel, ...args)
 }
 
 const DOC_NAMES = ['CLAUDE.md', 'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'CHANGELOG.md']
@@ -87,12 +101,12 @@ export function launchTerminal(spec: TerminalSpec): TerminalInfo {
     { ...spec, args },
     {
       data: (tid, data) => {
-        mainWindow?.webContents.send('pty:data', tid, data)
+        sendToWindow('pty:data', tid, data)
         ptyTaps.forEach((tap) => tap.data?.(tid, data))
       },
       exit: (tid, code) => {
         removeHookSettings(tid)
-        mainWindow?.webContents.send('pty:exit', tid, code)
+        sendToWindow('pty:exit', tid, code)
         ptyTaps.forEach((tap) => tap.exit?.(tid, code))
       }
     },
@@ -188,7 +202,7 @@ app.setAppUserModelId('com.brawly0.missioncontrol') // needed for Windows toast 
 
 app.whenReady().then(async () => {
   await startHookServer((event) => {
-    mainWindow?.webContents.send('hook:event', event)
+    sendToWindow('hook:event', event)
     hookTaps.forEach((tap) => tap(event))
   })
   registerIpc()
