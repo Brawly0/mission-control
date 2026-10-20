@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist": "electron-vite build && electron-builder --win",
     "release": "electron-vite build && electron-builder --win --publish always",
+    "publish-release": "node scripts/release.mjs",
     "icon": "electron scripts/render-icon.cjs"
   },
   "dependencies": {
@@ -60,7 +61,7 @@
         "provider": "github",
         "owner": "Brawly0",
         "repo": "mission-control-releases",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ],
     "nsis": {

@@ -144,13 +144,13 @@
 Installed copies update from the public repo [Brawly0/mission-control-releases](https://github.com/Brawly0/mission-control-releases). It holds only installers; the source stays in this private repo.
 
 1. Bump `version` in `package.json` (for example 0.6.0 → 0.6.1). Auto-update only offers a higher version.
-2. Publish, using the GitHub CLI's token for this one command:
+2. Publish (uses your `gh` login for this run only):
 
    ```powershell
-   $env:GH_TOKEN = gh auth token; npm run release; Remove-Item env:GH_TOKEN
+   npm run publish-release -- "What changed in this version"
    ```
 
-   electron-builder uploads `Mission Control Setup <version>.exe`, its `.blockmap` and `latest.yml` to a release named after the version.
+   `scripts/release.mjs` creates a **draft** release `v<version>` first, then builds and uploads the installer, its `.blockmap` and `latest.yml` into it. It checks that all three files are there before publishing the draft as the latest release. Creating the draft up front matters: electron-builder uploads files in parallel, and on an empty draft each upload can create its own release.
 3. Running copies notice within 6 hours (or at their next start, or with **Settings → Check now**). They download in the background and show **Update ready · Restart** in the status bar.
 
 `MC_SMOKE_UPDATE=1` on a packaged build checks the releases repo and downloads (but doesn't install) any newer version, logging each step.
