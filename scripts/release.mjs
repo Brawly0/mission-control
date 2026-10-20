@@ -14,8 +14,8 @@ const { version } = JSON.parse(readFileSync(new URL('../package.json', import.me
 const tag = `v${version}`
 const notes = process.argv[2] ?? `Mission Control ${version}.`
 
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], shell: process.platform === 'win32', ...opts })
-const gh = (...args) => run('gh', args)
+// gh is a real executable, so no shell: arguments with spaces (titles, notes) arrive intact.
+const gh = (...args) => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 32 * 1024 * 1024 })
 
 const existing = JSON.parse(gh('api', `repos/${REPO}/releases`, '--paginate')).filter((r) => r.tag_name === tag)
 if (existing.some((r) => !r.draft)) {
