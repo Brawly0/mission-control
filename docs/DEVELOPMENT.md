@@ -55,3 +55,14 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 ### UI tour and worktree test
 
 `MC_SMOKE_UI=<git repo with at least one commit>` screenshots Home, the project tabs, the command palette and the Agents grid with the review panel (as `<MC_SMOKE>-<name>.png`). It also runs the worktree flow on that repo: create, change a file, commit, merge into the base branch, stop the agent, delete. Use a throwaway repo, because the test merges into it. The repo is shown as a project only while the test runs.
+
+## Packaging
+
+`npm run dist` builds `release/Mission Control Setup <version>.exe` with electron-builder (NSIS, one-click, per-user). The app icon is `build/icon.svg`; run `npm run icon` after editing it to regenerate `build/icon.png`, which electron-builder turns into the `.ico`.
+
+To test a packaged build without installing it, use the smoke test on `release/win-unpacked/Mission Control.exe`. A packaged Windows app has no console, so set `MC_SMOKE_LOG=<file>` to get the log:
+
+```powershell
+$env:MC_SMOKE = "$PWD\smoke.png"; $env:MC_SMOKE_LOG = "$PWD\smoke.log"
+& ".\release\win-unpacked\Mission Control.exe"; Get-Content smoke.log
+```

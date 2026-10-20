@@ -1,5 +1,5 @@
 import { app, type BrowserWindow } from 'electron'
-import { existsSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions } from './claudeData'
@@ -13,7 +13,14 @@ interface SmokeDeps {
   hookTaps: Set<(e: HookEvent) => void>
 }
 
-const log = (...a: unknown[]) => console.log('[smoke]', ...a)
+/** Logs to stdout, and to MC_SMOKE_LOG if set (a packaged Windows app has no console). */
+const log = (...a: unknown[]) => {
+  console.log('[smoke]', ...a)
+  if (process.env.MC_SMOKE_LOG) {
+    const line = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')
+    appendFileSync(process.env.MC_SMOKE_LOG, `[smoke] ${line}\n`)
+  }
+}
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, '').trim()
 
 /** Runs a claude terminal to completion through the real launch path; returns its output and hook events. */

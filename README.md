@@ -23,7 +23,18 @@ A Windows desktop hub for **Claude Code**: see all your projects and past chats,
 
 Mission Control **never writes to Claude Code's files**. It remembers your last project, view, layout and window size. Your own data (pins, added folders, open agents) lives in `%APPDATA%\Mission Control\store.json`.
 
-## Getting started
+## Install
+
+```bash
+npm install
+npm run dist
+```
+
+Then run `release\Mission Control Setup <version>.exe`. It installs for your user only (no admin rights needed) into `%LOCALAPPDATA%\Programs\mission-control` and adds **Desktop** and **Start menu** shortcuts. To update, run `npm run dist` again and run the new installer. To uninstall, use Windows **Settings → Apps**. Your pins and saved agents in `%APPDATA%\Mission Control` are kept.
+
+The installer isn't code-signed, so Windows SmartScreen may warn the first time you run it. Click **More info → Run anyway**.
+
+## Develop
 
 Requirements: Windows 10/11, Node.js 20+, and [Claude Code](https://claude.com/claude-code) (`claude` on your PATH).
 
@@ -37,7 +48,8 @@ npm run dev
 | `npm run dev` | Run the app with hot reload |
 | `npm run build` | Build to `out/` |
 | `npm run typecheck` | Type-check main and renderer |
-| `npm run dist` | Build a Windows installer into `dist/` |
+| `npm run dist` | Build the Windows installer into `release/` |
+| `npm run icon` | Re-render `build/icon.png` from `build/icon.svg` |
 
 ## Documentation
 

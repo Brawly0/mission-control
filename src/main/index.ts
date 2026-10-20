@@ -33,6 +33,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     title: 'Mission Control',
+    icon: join(__dirname, '../../build/icon.png'),
     backgroundColor: '#0d0f14',
     autoHideMenuBar: true,
     webPreferences: {
