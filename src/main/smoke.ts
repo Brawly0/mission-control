@@ -243,6 +243,13 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     writeFileSync(outFile, image.toPNG())
     log('screenshot:', outFile)
 
+    // The chat index runs in a worker; make sure it starts and answers (also inside a packaged build).
+    for (let i = 0; i < 120 && (await win.webContents.executeJavaScript('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+    const idx = await win.webContents.executeJavaScript('window.mc.indexStatus()')
+    log('index status:', `${idx.sessions} chats, ${idx.messages} messages${idx.error ? `, error: ${idx.error}` : ''}`)
+    const hits = await win.webContents.executeJavaScript(`window.mc.search('claude', { limit: 5 }).then(h => h.length)`)
+    log('index search hits:', hits)
+
     if (process.env.MC_SMOKE_UI) await uiTour(win, outFile, process.env.MC_SMOKE_UI)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
