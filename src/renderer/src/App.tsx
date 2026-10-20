@@ -55,6 +55,8 @@ import { onActivity } from './terminalBus'
 import { statusFromHook } from './agentStatus'
 import { useToast } from './toast'
 import { errorMessage } from './util'
+import { LookContext, makeLookUp } from './projectLook'
+import { worktreeParent } from '@shared/projectLook'
 
 function loadNotifyPref(): boolean {
   try {
@@ -67,6 +69,7 @@ function loadNotifyPref(): boolean {
 export default function App() {
   const toast = useToast()
   const [projects, setProjects] = useState<Project[]>([])
+  const lookUp = useMemo(() => makeLookUp(projects), [projects])
   const [git, setGit] = useState<Record<string, GitInfo>>({})
   const [loading, setLoading] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -456,7 +459,10 @@ export default function App() {
 
   const openProject = useCallback((path: string) => {
     // Paths from the index may differ in letter case from the project list.
-    const match = projectsRef.current.find((p) => p.path.toLowerCase() === path.toLowerCase())
+    // Chats from a worktree live under the worktree's project.
+    const same = (p: Project, q: string) => p.path.toLowerCase() === q.toLowerCase()
+    const parent = worktreeParent(path)?.parent
+    const match = projectsRef.current.find((p) => same(p, path)) ?? (parent ? projectsRef.current.find((p) => same(p, parent)) : undefined)
     if (match?.worktree) setShowWorktrees(true)
     setSelectedPath(match?.path ?? path)
     setView('project')
@@ -568,6 +574,7 @@ export default function App() {
   }, [selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent])
 
   return (
+    <LookContext.Provider value={lookUp}>
     <div className="app">
       <Sidebar
         projects={projects}
@@ -786,5 +793,6 @@ export default function App() {
       )}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
+    </LookContext.Provider>
   )
 }

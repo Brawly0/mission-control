@@ -93,7 +93,7 @@ export default function HomeView({ agents, lastOutput, projects, visible, onOpen
               return (
                 <button key={a.id} className={`agent-card status-${st.cls}`} onClick={() => onOpenAgent(a.id)}>
                   <div className="agent-card-top">
-                    <Avatar name={a.projectName} size={26} />
+                    <Avatar name={a.projectName} path={a.projectPath} size={26} />
                     <div className="agent-card-title">
                       <div className="ellipsis">{a.title}</div>
                       <div className="muted small ellipsis">
@@ -132,7 +132,7 @@ export default function HomeView({ agents, lastOutput, projects, visible, onOpen
             {recent?.length === 0 && <EmptyState icon={Sparkles} title="No chats yet" />}
             {recent?.map((s) => (
               <div key={s.id} className="recent-row">
-                <Avatar name={s.projectName} size={26} />
+                <Avatar name={s.projectName} path={s.projectPath} size={26} />
                 <button className="recent-main" onClick={() => onOpenProject(s.projectPath)}>
                   <div className="ellipsis">{s.title}</div>
                   <div className="muted small">
@@ -157,7 +157,7 @@ export default function HomeView({ agents, lastOutput, projects, visible, onOpen
             {topProjects.map((p) => (
               <div key={p.path} className="project-tile">
                 <button className="project-tile-main" onClick={() => onOpenProject(p.path)}>
-                  <Avatar name={p.name} size={34} />
+                  <Avatar name={p.name} path={p.path} size={34} />
                   <div className="project-tile-text">
                     <div className="ellipsis strong">{p.name}</div>
                     <div className="muted small">

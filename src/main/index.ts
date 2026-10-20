@@ -13,12 +13,14 @@ import type {
   TemplateInput,
   ProjectMeta,
   SavedAgent,
+  SearchHit,
   Task,
   TaskColumn,
   TaskRun,
   TerminalInfo,
   TerminalSpec,
   UiState,
+  UsageReport,
   WorktreeInfo
 } from '../shared/types'
 import {
@@ -42,13 +44,14 @@ import {
 import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
 import { deleteTemplate, listTemplates, runTemplate, saveTemplate, startScheduler, stopScheduler } from './templates'
 import { checkForUpdates, initUpdater, installUpdate, setAutoCheck, updateStatus } from './updater'
-import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists, setProjectMeta } from './claudeData'
+import { getSession, listProjects, listSessions, normalizePath, recentSessions, renameSession, sessionExists, setProjectMeta } from './claudeData'
 import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
 import { commitAll, createWorktree, getChanges, gitInfoMany, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { allBudgets, checkBudgetWarnings } from './budget'
 import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
 import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, terminalCount, writeTerminal, whichSync } from './pty'
 import { loadStore, updateStore, type WindowBounds } from './store'
+import { worktreeParent } from '../shared/projectLook'
 import { runSmoke } from './smoke'
 
 let mainWindow: BrowserWindow | null = null
@@ -211,7 +214,8 @@ export const hookTaps = new Set<(e: HookEvent) => void>()
 
 function registerIpc(): void {
   ipcMain.handle('projects:list', () => listProjects())
-  ipcMain.handle('sessions:list', (_e, key: string) => listSessions(key))
+  ipcMain.handle('sessions:list', (_e, key: string | string[]) => listSessions(key))
+  ipcMain.handle('sessions:rename', (_e, id: string, title: string) => renameSession(id, title))
   ipcMain.handle('sessions:get', (_e, key: string, id: string) => getSession(key, id))
 
   ipcMain.handle('projects:add', async () => {
@@ -303,9 +307,35 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('projects:setMeta', (_e, path: string, patch: Partial<ProjectMeta>) => setProjectMeta(path, patch))
-  ipcMain.handle('index:search', (_e, query: string, opts?: object) => queryIndex('search', query, opts ?? {}))
-  ipcMain.handle('index:usage', (_e, since: number) => queryIndex('usageReport', since))
-  ipcMain.handle('index:sessionUsage', (_e, key: string) => queryIndex('sessionUsage', key))
+  // Usage from a project's worktrees counts toward the project, matching how the sidebar lists chats.
+  const foldWorktrees = (rows: UsageReport['byProject']): UsageReport['byProject'] => {
+    const out = new Map<string, UsageReport['byProject'][number]>()
+    for (const r of rows) {
+      const path = worktreeParent(r.projectPath)?.parent ?? r.projectPath
+      const id = normalizePath(path || r.projectKey)
+      const cur = out.get(id)
+      if (!cur) {
+        out.set(id, { ...r, projectPath: path })
+        continue
+      }
+      const sum = cur as unknown as Record<string, unknown>
+      for (const [k, v] of Object.entries(r)) if (typeof v === 'number') sum[k] = ((sum[k] as number) ?? 0) + v
+    }
+    return [...out.values()].sort((a, b) => b.cost - a.cost)
+  }
+  // Chat titles you set in Mission Control live in the store, not the index.
+  const ownTitles = <T extends { sessionId: string; title: string }>(rows: T[]): T[] => {
+    const titles = loadStore().chatTitles
+    return rows.map((r) => (titles[r.sessionId] ? { ...r, title: titles[r.sessionId] } : r))
+  }
+  ipcMain.handle('index:search', async (_e, query: string, opts?: object) =>
+    ownTitles((await queryIndex('search', query, opts ?? {})) as SearchHit[])
+  )
+  ipcMain.handle('index:usage', async (_e, since: number) => {
+    const report = (await queryIndex('usageReport', since)) as UsageReport
+    return { ...report, byProject: foldWorktrees(report.byProject), topSessions: ownTitles(report.topSessions) }
+  })
+  ipcMain.handle('index:sessionUsage', (_e, key: string | string[]) => queryIndex('sessionUsage', key))
   ipcMain.handle('index:status', () => indexStatus())
   ipcMain.on('index:run', () => reindex())
 

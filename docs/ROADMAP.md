@@ -55,6 +55,12 @@
 - [x] Guardrails: default task budget, monthly project budgets with 80% warning, automation holds when over budget or plan usage is high
 - [x] Unit tests (Vitest) and Windows CI (GitHub Actions)
 
+## ✅ v0.8: Names and icons
+- [x] Project names from the README title, with a one-line description; your own name, icon and color per project
+- [x] Icons guessed from the folder name and README, shown everywhere a project appears
+- [x] Chats from a project's Claude Code worktrees listed under the project, labeled with the worktree
+- [x] Rename chats in the app; Claude Code's automatic chat names used when there's no /rename title
+
 ## Next ideas
 - [ ] Code signing so Windows SmartScreen stops warning
 - [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches

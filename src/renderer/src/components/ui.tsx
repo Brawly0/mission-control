@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { avatarHue, initials } from '../util'
+import { ICONS, useLook } from '../projectLook'
+import type { ProjectIcon } from '@shared/projectLook'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
@@ -36,8 +38,16 @@ export function IconButton({ icon: Icon, label, active, size = 16, className = '
   )
 }
 
-export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
-  const hue = avatarHue(name)
+/**
+ * A project's badge: its icon in its color when the project is known (by path or name),
+ * else its initials. `icon`/`hue` override, e.g. for the live preview in the icon picker.
+ */
+export function Avatar({ name, path, size = 28, icon, hue: hueProp }: { name: string; path?: string; size?: number; icon?: ProjectIcon; hue?: number }) {
+  const lookUp = useLook()
+  const look = lookUp(path) ?? lookUp(name)
+  const hue = hueProp ?? look?.hue ?? avatarHue(name)
+  const Icon = ICONS[icon ?? look?.icon ?? 'Folder']
+  const showIcon = !!(icon ?? look?.icon)
   return (
     <span
       className="avatar"
@@ -50,7 +60,7 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
         borderColor: `hsl(${hue} 45% 32%)`
       }}
     >
-      {initials(name)}
+      {showIcon ? <Icon size={Math.round(size * 0.56)} strokeWidth={size < 20 ? 2.2 : 1.9} /> : initials(name)}
     </span>
   )
 }

@@ -3,6 +3,7 @@ import { ExternalLink, Play, RefreshCw, TextSearch } from 'lucide-react'
 import type { IndexStatus, Project, SearchHit } from '@shared/types'
 import { basename, errorMessage, timeAgo } from '../util'
 import { Avatar, Button, EmptyState, IconButton, Segmented } from './ui'
+import { useLook } from '../projectLook'
 
 interface Props {
   visible: boolean
@@ -27,6 +28,7 @@ function Snippet({ text }: { text: string }) {
 }
 
 export default function SearchView({ visible, projects, status, onOpen, onResume }: Props) {
+  const look = useLook()
   const [query, setQuery] = useState('')
   const [role, setRole] = useState<Role>('all')
   const [projectKey, setProjectKey] = useState('')
@@ -46,7 +48,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
     }
     const timer = setTimeout(() => {
       window.mc
-        .search(q, { role: role === 'all' ? undefined : role, projectKey: projectKey || undefined, limit: 150 })
+        .search(q, { role: role === 'all' ? undefined : role, projectKey: projects.find((p) => p.key === projectKey)?.keys ?? (projectKey || undefined), limit: 150 })
         .then((h) => {
           setHits(h)
           setError(null)
@@ -63,7 +65,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
     return [...map.values()]
   }, [hits])
 
-  const indexedProjects = projects.filter((p) => p.key && !p.worktree)
+  const indexedProjects = projects.filter((p) => p.keys.length && !p.worktree)
 
   return (
     <div className="search-view">
@@ -121,11 +123,11 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
         )}
         {grouped.map((group) => {
           const first = group[0]
-          const name = basename(first.projectPath) || 'Unknown project'
+          const name = look(first.projectPath)?.name ?? (basename(first.projectPath) || 'Unknown project')
           return (
             <article key={first.sessionId} className="result card">
               <div className="result-head">
-                <Avatar name={name} size={26} />
+                <Avatar name={name} path={first.projectPath} size={26} />
                 <button className="result-title" onClick={() => onOpen(first.projectPath, first.sessionId)}>
                   <div className="ellipsis strong">{first.title}</div>
                   <div className="muted small">

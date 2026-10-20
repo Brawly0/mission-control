@@ -29,6 +29,7 @@ import { displayStatus } from '../agentStatus'
 import { dependencyState, dependentsOf } from '@shared/deps'
 import { elapsed, formatCost, timeAgo } from '../util'
 import { Avatar, Button, EmptyState } from './ui'
+import { useLook } from '../projectLook'
 
 interface Props {
   tasks: Task[]
@@ -66,6 +67,7 @@ function TaskCard({
   onOpenAgent,
   onToggleQueued
 }: { task: Task; all: Task[]; agent?: Agent; queuePos?: number } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent' | 'onToggleQueued'>) {
+  const look = useLook()
   const run = task.run
   const running = task.column === 'running'
   const agentStatus = agent ? displayStatus(agent, undefined) : null
@@ -96,8 +98,8 @@ function TaskCard({
         {task.templateId && <Repeat size={12} className="muted template-mark" aria-label="From a template" />}
       </div>
       <div className="task-meta">
-        <Avatar name={task.projectName} size={18} />
-        <span className="ellipsis">{task.projectName}</span>
+        <Avatar name={task.projectName} path={task.projectPath} size={18} />
+        <span className="ellipsis">{look(task.projectPath)?.name ?? task.projectName}</span>
         <span className={`mode-badge mode-${task.mode}`} title={task.mode === 'headless' ? 'Runs in the background' : 'Opens an agent terminal'}>
           {task.mode === 'headless' ? <Zap size={11} /> : <SquareTerminal size={11} />}
           {task.mode === 'headless' ? 'Headless' : 'Interactive'}

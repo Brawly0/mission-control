@@ -292,7 +292,7 @@ export default function TemplatesDialog({ templates, projects, onClose, onUse }:
                 const s = tpl.schedule
                 return (
                   <li key={tpl.id} className="template-row">
-                    <Avatar name={tpl.projectName ?? tpl.name} size={30} />
+                    <Avatar name={tpl.projectName ?? tpl.name} path={tpl.projectPath} size={30} />
                     <div className="template-main">
                       <div className="strong ellipsis">{tpl.name}</div>
                       <div className="muted small template-sub">

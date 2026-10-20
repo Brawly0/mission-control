@@ -173,3 +173,5 @@ Installed copies update from the public repo [Brawly0/mission-control-releases](
 5. The monthly budget guard holding a queued task.
 
 Everything it creates is removed, and your settings are restored.
+
+`MC_SMOKE_NAMES=<project folder name, e.g. WBP>` logs every project's name, icon and chat count, lists that project's chats (with worktree labels), renames one chat and puts it back, and screenshots the chats and the Name and icon dialog. Free.

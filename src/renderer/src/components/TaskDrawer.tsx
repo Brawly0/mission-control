@@ -29,6 +29,7 @@ import { elapsed, errorMessage, formatCost } from '../util'
 import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, IconButton } from './ui'
+import { useLook } from '../projectLook'
 
 interface Props {
   task: Task
@@ -70,6 +71,7 @@ function statusIcon(t: Task) {
 }
 
 export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
+  const look = useLook()
   const toast = useToast()
   const [tab, setTab] = useState<'activity' | 'changes'>('activity')
   const [prompt, setPrompt] = useState(task.prompt)
@@ -127,7 +129,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
 
       <div className="drawer-meta">
         <span className="chip">
-          <Avatar name={task.projectName} size={14} /> {task.projectName}
+          <Avatar name={task.projectName} path={task.projectPath} size={14} /> {look(task.projectPath)?.name ?? task.projectName}
         </span>
         <span className="chip">{task.mode === 'headless' ? 'Headless' : 'Interactive'}</span>
         <span className="chip">{task.permission === 'bypassPermissions' ? 'Bypass checks' : task.permission}</span>

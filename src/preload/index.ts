@@ -11,6 +11,7 @@ function on<T>(channel: string, cb: (value: T) => void): () => void {
 const api: MissionControlApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
   listSessions: (key) => ipcRenderer.invoke('sessions:list', key),
+  renameSession: (id, title) => ipcRenderer.invoke('sessions:rename', id, title),
   getSession: (key, id) => ipcRenderer.invoke('sessions:get', key, id),
   addProject: () => ipcRenderer.invoke('projects:add'),
   removeProject: (path) => ipcRenderer.invoke('projects:remove', path),

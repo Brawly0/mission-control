@@ -12,6 +12,7 @@ import {
   GitFork,
   History,
   MessagesSquare,
+  Pencil,
   Play,
   RotateCcw,
   SquareTerminal,
@@ -27,6 +28,7 @@ import DocsPanel from './DocsPanel'
 import ChangesPanel from './ChangesPanel'
 import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
+import IdentityDialog from './IdentityDialog'
 import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
 
 interface Props {
@@ -46,29 +48,34 @@ type Tab = 'overview' | 'chats' | 'changes' | 'docs'
 
 export default function ProjectView({ project, git, visible, groups, focus, budget, onLaunch, onLaunchWorktree, onChanged }: Props) {
   const [gitInitOpen, setGitInitOpen] = useState(false)
+  const [identityOpen, setIdentityOpen] = useState(false)
+  const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [usage, setUsage] = useState<Record<string, UsageTotals>>({})
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<SessionSummary | null>(null)
-  const [tab, setTab] = useState<Tab>(project.key ? 'chats' : 'overview')
+  const [tab, setTab] = useState<Tab>(project.keys.length ? 'chats' : 'overview')
+  // The project's own chats plus those from its worktrees.
+  const keysId = project.keys.join('|')
 
   useEffect(() => {
-    if (!project.key) {
+    if (!project.keys.length) {
       setSessions([])
       setUsage({})
       return
     }
     setLoading(true)
     window.mc
-      .listSessions(project.key)
+      .listSessions(project.keys)
       .then((list) => {
         setSessions(list)
         setSelected((cur) => cur ?? list[0] ?? null)
       })
       .finally(() => setLoading(false))
-    window.mc.sessionUsage(project.key).then(setUsage).catch(() => setUsage({}))
-  }, [project.key])
+    window.mc.sessionUsage(project.keys).then(setUsage).catch(() => setUsage({}))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keysId])
 
   useEffect(() => {
     if (!focus) return
@@ -84,11 +91,21 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
 
   const q = filter.trim().toLowerCase()
   const visibleSessions = q
-    ? sessions.filter((s) => s.title.toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q))
+    ? sessions.filter((s) => s.title.toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q) || !!s.worktree?.includes(q))
     : sessions
 
   const base = { cwd: project.path, projectName: project.name, projectPath: project.path }
   const newSession = () => onLaunch({ ...base, title: `${project.name} · new` })
+  const saveTitle = async () => {
+    if (!renaming) return
+    const { id, draft } = renaming
+    setRenaming(null)
+    await window.mc.renameSession(id, draft)
+    const list = await window.mc.listSessions(project.keys)
+    setSessions(list)
+    setSelected((cur) => (cur ? list.find((x) => x.id === cur.id) ?? cur : cur))
+  }
+
   const resume = (s: SessionSummary) =>
     onLaunch({ ...base, cwd: s.cwd || project.path, title: s.title.slice(0, 48), args: ['--resume', s.id] })
 
@@ -96,15 +113,19 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
     <div className="project-view">
       <header className="page-head">
         <div className="page-title">
-          <Avatar name={project.name} size={42} />
+          <button className="avatar-button" title="Change name and icon" onClick={() => setIdentityOpen(true)}>
+            <Avatar name={project.name} path={project.path} size={42} />
+          </button>
           <div className="page-title-text">
             <h1>
               {project.name}
               {project.pinned && <Star size={14} className="pin-star" fill="currentColor" />}
+              <IconButton icon={Pencil} label="Change name and icon" size={13} className="rename-btn" onClick={() => setIdentityOpen(true)} />
             </h1>
+            {project.description && <div className="page-subtitle">{project.description}</div>}
             <div className="chips">
               <span className="chip mono" title={project.path}>
-                <FolderOpen size={12} /> {shortPath(project.path)}
+                <FolderOpen size={12} /> {project.name === project.folderName ? shortPath(project.path) : project.folderName}
               </span>
               {git?.isRepo ? (
                 <span className="chip">
@@ -238,18 +259,55 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
                 {visibleSessions.map((s) => (
                   <li key={s.id}>
                     <div className={`session-item ${selected?.id === s.id ? 'selected' : ''}`} onClick={() => setSelected(s)}>
-                      <div className="session-title">{s.title}</div>
+                      {renaming?.id === s.id ? (
+                        <input
+                          className="session-title-input"
+                          autoFocus
+                          value={renaming.draft}
+                          placeholder="Empty brings back the automatic title"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setRenaming({ id: s.id, draft: e.target.value })}
+                          onBlur={saveTitle}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveTitle()
+                            if (e.key === 'Escape') setRenaming(null)
+                          }}
+                        />
+                      ) : (
+                        <div className="session-title" title={s.firstPrompt ? `${s.title}\n\n${s.firstPrompt}` : s.title} onDoubleClick={() => setRenaming({ id: s.id, draft: s.title })}>
+                          {s.title}
+                        </div>
+                      )}
                       <div className="session-meta">
                         <span>{timeAgo(s.updatedAt)}</span>
                         <span className="meta-sep">·</span>
                         {usage[s.id] ? <span title="Estimated at API prices">{formatCost(usage[s.id].cost)}</span> : <span>{formatBytes(s.sizeBytes)}</span>}
-                        {s.gitBranch && (
+                        {s.worktree ? (
                           <>
                             <span className="meta-sep">·</span>
-                            <GitBranch size={10} /> <span className="ellipsis">{s.gitBranch}</span>
+                            <span className="session-worktree ellipsis" title="Ran in a worktree of this project">
+                              <GitFork size={10} /> {s.worktree}
+                            </span>
                           </>
+                        ) : (
+                          s.gitBranch && (
+                            <>
+                              <span className="meta-sep">·</span>
+                              <GitBranch size={10} /> <span className="ellipsis">{s.gitBranch}</span>
+                            </>
+                          )
                         )}
                       </div>
+                      <button
+                        className="session-rename"
+                        title="Rename chat (or double-click its title)"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRenaming({ id: s.id, draft: s.title })
+                        }}
+                      >
+                        <Pencil size={12} />
+                      </button>
                       <button
                         className="session-resume"
                         title="Resume in a new agent"
@@ -279,6 +337,7 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
         {tab === 'overview' && (
           <OverviewPanel project={project} groups={groups} usage={usage} budget={budget} isRepo={!!git?.isRepo} onTurnOnGit={() => setGitInitOpen(true)} onChanged={onChanged} />
         )}
+        {identityOpen && <IdentityDialog project={project} onClose={() => setIdentityOpen(false)} onSaved={onChanged} />}
         {gitInitOpen && (
           <GitInitDialog
             project={project}

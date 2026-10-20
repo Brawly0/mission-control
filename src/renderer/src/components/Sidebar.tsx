@@ -98,9 +98,9 @@ export default function Sidebar(props: Props) {
         <button
           className={`project-item ${selected ? 'selected' : ''} ${p.meta.status === 'done' ? 'is-done' : ''}`}
           onClick={() => props.onSelect(p.path)}
-          title={p.path}
+          title={[p.name, p.description, p.path].filter(Boolean).join('\n')}
         >
-          <Avatar name={p.name} size={30} />
+          <Avatar name={p.name} path={p.path} size={30} />
           <div className="project-item-text">
             <div className="project-name">
               <span className="ellipsis">{p.name}</span>

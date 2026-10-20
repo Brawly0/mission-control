@@ -3,6 +3,7 @@ import { BarChart3, Coins, Info, MessagesSquare, Sigma, Table2, Zap } from 'luci
 import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
 import { Avatar, EmptyState, IconButton, Segmented } from './ui'
+import { useLook } from '../projectLook'
 
 interface Props {
   visible: boolean
@@ -134,7 +135,7 @@ function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; av
   return (
     <button className="bar-row" onClick={onClick} disabled={!onClick}>
       <span className="bar-row-label">
-        {avatar !== undefined && <Avatar name={avatar} size={22} />}
+        {avatar !== undefined && <Avatar name={label} path={avatar} size={22} />}
         <span className="ellipsis">{label}</span>
         {sub && <span className="muted small bar-row-sub">{sub}</span>}
       </span>
@@ -175,6 +176,7 @@ function PlanLimits({ info }: { info: RateLimitInfo }) {
 }
 
 export default function UsageView({ visible, status, rateLimit, onOpenProject, onOpenSession }: Props) {
+  const look = useLook()
   const [range, setRange] = useState<Range>('30')
   const [report, setReport] = useState<UsageReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -311,8 +313,8 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
               {report.byProject.map((p) => (
                 <BarRow
                   key={p.projectKey}
-                  label={basename(p.projectPath) || p.projectKey}
-                  avatar={basename(p.projectPath) || p.projectKey}
+                  label={look(p.projectPath)?.name ?? (basename(p.projectPath) || p.projectKey)}
+                  avatar={p.projectPath || p.projectKey}
                   total={p}
                   max={maxProject}
                   sub={`${p.sessions ?? 0} chats`}
@@ -340,8 +342,8 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
               <BarRow
                 key={s.sessionId}
                 label={s.title}
-                avatar={basename(s.projectPath)}
-                sub={`${basename(s.projectPath)} · ${timeAgo(s.updated)}`}
+                avatar={s.projectPath}
+                sub={`${look(s.projectPath)?.name ?? basename(s.projectPath)} · ${timeAgo(s.updated)}`}
                 total={s}
                 max={maxSession}
                 onClick={() => onOpenSession(s.projectPath, s.sessionId)}

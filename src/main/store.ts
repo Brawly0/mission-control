@@ -29,6 +29,8 @@ export interface StoreData {
   settings: AppSettings
   /** Month ("2026-10") in which each project's 80% budget warning was last shown. */
   budgetWarned: Record<string, string>
+  /** Chat titles you set in Mission Control, by session id. */
+  chatTitles: Record<string, string>
 }
 
 const defaults: StoreData = {
@@ -40,6 +42,7 @@ const defaults: StoreData = {
   tasks: [],
   templates: [],
   budgetWarned: {},
+  chatTitles: {},
   settings: {
     defaultTaskBudgetUsd: 0,
     hotkey: 'Ctrl+Alt+M',

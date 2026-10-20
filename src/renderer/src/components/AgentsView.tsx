@@ -143,7 +143,7 @@ export default function AgentsView(props: Props) {
                 onMouseDown={() => onSelect(a.id)}
               >
                 <div className="agent-cell-head">
-                  <Avatar name={a.projectName} size={20} />
+                  <Avatar name={a.projectName} path={a.projectPath} size={20} />
                   <span className="strong ellipsis">{layout === 'grid' ? a.title : a.projectName}</span>
                   {a.worktree ? (
                     <span className="chip chip-accent" title={a.worktree.path}>

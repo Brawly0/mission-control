@@ -1,9 +1,21 @@
+import type { ProjectIcon } from './projectLook'
 export interface Project {
   /** Folder name under ~/.claude/projects (encoded path). Empty for manually added projects with no sessions yet. */
   key: string
   /** Real working directory, read from session files (falls back to a decoded guess). */
   path: string
+  /** Every ~/.claude/projects folder whose chats belong here: the project's own plus its worktrees'. */
+  keys: string[]
+  /** What the app shows: your own name, else the README's title, else the folder name. */
   name: string
+  /** The folder's own name, e.g. "WBP". */
+  folderName: string
+  /** First line of the README, or your own note. */
+  description?: string
+  /** Lucide icon name (see PROJECT_ICONS); picked automatically unless you chose one. */
+  icon: ProjectIcon
+  /** Avatar hue in degrees. */
+  hue: number
   sessionCount: number
   lastActivity: number
   pinned: boolean
@@ -18,6 +30,11 @@ export type ProjectStatus = 'active' | 'paused' | 'done'
 
 /** The user's own organization of a project, kept in the app's store. */
 export interface ProjectMeta {
+  /** Your own name for the project; replaces the automatic one. */
+  displayName?: string
+  /** Your own icon and color; replace the automatic ones. */
+  icon?: ProjectIcon
+  hue?: number
   /** Sidebar section, e.g. "Work" or "Trading". */
   group?: string
   tags: string[]
@@ -101,6 +118,10 @@ export interface SessionSummary {
   firstPrompt: string
   cwd: string
   gitBranch: string
+  /** Readable worktree name when the chat ran in a Claude Code worktree of the project, e.g. "semester schedule planning". */
+  worktree?: string
+  /** True when you renamed this chat in Mission Control. */
+  renamed?: boolean
   startedAt: number
   updatedAt: number
   sizeBytes: number
@@ -384,7 +405,10 @@ export interface QueueStatus {
 
 export interface MissionControlApi {
   listProjects(): Promise<Project[]>
-  listSessions(projectKey: string): Promise<SessionSummary[]>
+  /** Pass a project's `keys` to include chats from its worktrees. */
+  listSessions(projectKey: string | string[]): Promise<SessionSummary[]>
+  /** Your own title for a chat (stored by Mission Control); empty clears it. */
+  renameSession(sessionId: string, title: string): Promise<void>
   getSession(projectKey: string, sessionId: string): Promise<SessionDetail>
   addProject(): Promise<string | null>
   removeProject(path: string): Promise<void>
@@ -418,10 +442,10 @@ export interface MissionControlApi {
   /** Asks the user in a native dialog first; resolves false if they cancel. */
   removeWorktree(wt: WorktreeInfo): Promise<boolean>
   setProjectMeta(path: string, patch: Partial<ProjectMeta>): Promise<void>
-  search(query: string, opts?: { projectKey?: string; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
+  search(query: string, opts?: { projectKey?: string | string[]; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
   usageReport(sinceMs: number): Promise<UsageReport>
   /** Per-session estimated cost and tokens for one project (from the index). */
-  sessionUsage(projectKey: string): Promise<Record<string, UsageTotals>>
+  sessionUsage(projectKey: string | string[]): Promise<Record<string, UsageTotals>>
   indexStatus(): Promise<IndexStatus>
   reindex(): void
   onIndexStatus(cb: (s: IndexStatus) => void): () => void

@@ -2,7 +2,11 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.7)
+## Features (v0.8)
+
+- **Readable names and icons**: projects are named from their README's title (e.g. "WBP · Journal & Intel", "Case Closed") with a one-line description, and get an icon that fits (game, journal, trading, bot, course…). Click a project's icon to set your own name, icon and color.
+- **Worktree chats in their project**: chats Claude Code ran in a project's worktrees (`.claudeworktrees…`) show up under that project, each labeled with its worktree, instead of as hidden projects of their own.
+- **Rename chats**: double-click a chat's title (or the pencil) to give it your own name. Leave it empty to get the automatic title back.
 
 - **Chains**: give a task one or more tasks to **run after**. It waits (🔒) until they succeed, then starts by itself. If one fails, it stays blocked until you retry that task, or you press **Run anyway**. In worktrees, each step starts from the previous step's branch, so merging the last step brings in the whole chain. Templates can hold several **steps** (a pipeline), and pipelines can be recurring.
 - **Checks**: set a check command per project (Overview → Automation, e.g. `npm test`). It runs after every headless task, the card shows ✓ or ✗ with the output, and a chain only moves on when the checks pass. Headless tasks in worktrees **commit their changes** automatically, so they're ready to merge.

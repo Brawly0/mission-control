@@ -12,10 +12,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { costOf } from './pricing'
+import { titleFromPrompt } from '../shared/projectLook'
 import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
 
 const { dbPath, projectsDir } = workerData as { dbPath: string; projectsDir: string }
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 const MAX_BODY = 20_000
 
 const db = new DatabaseSync(dbPath)
@@ -165,6 +166,8 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
         if (!row.project_path && typeof e.cwd === 'string') row.project_path = e.cwd
         if (ts && (!row.started || ts < row.started)) row.started = ts
         if (e.type === 'custom-title' && typeof e.customTitle === 'string') row.custom_title = e.customTitle
+        // Claude Code's automatic chat name; a title set with /rename replaces it.
+        if (e.type === 'agent-name' && typeof e.agentName === 'string' && !row.custom_title) row.custom_title = e.agentName
       }
 
       if (e.type === 'assistant' && e.message?.usage && e.message?.id && e.message.model !== '<synthetic>') {
@@ -204,7 +207,7 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
           /* unreadable title file */
         }
       }
-      row.title = row.custom_title || row.first_prompt.split('\n')[0].slice(0, 120) || '(empty session)'
+      row.title = row.custom_title || titleFromPrompt(row.first_prompt) || '(empty session)'
       row.updated = Math.max(row.updated, st.mtimeMs)
       q.putSession.run(row.session_id, row.project_key, row.project_path, row.title, row.custom_title, row.first_prompt, row.started, row.updated)
     }
@@ -306,7 +309,14 @@ function ftsQuery(input: string): string {
   return words.map((w, i) => `"${w}"${i === words.length - 1 ? '*' : ''}`).join(' ')
 }
 
-function search(query: string, opts: { projectKey?: string; role?: string; limit?: number }): SearchHit[] {
+/** SQL for "in one of these project folders", e.g. a project and its worktrees. */
+function keyFilter(keys: string | string[], params: (string | number)[]): string {
+  const list = Array.isArray(keys) ? keys : [keys]
+  params.push(...list)
+  return `s.project_key IN (${list.map(() => '?').join(', ')})`
+}
+
+function search(query: string, opts: { projectKey?: string | string[]; role?: string; limit?: number }): SearchHit[] {
   const match = ftsQuery(query)
   if (!match) return []
   const where = ['fts MATCH ?']
@@ -315,10 +325,7 @@ function search(query: string, opts: { projectKey?: string; role?: string; limit
     where.push('fts.role = ?')
     params.push(opts.role)
   }
-  if (opts.projectKey) {
-    where.push('s.project_key = ?')
-    params.push(opts.projectKey)
-  }
+  if (opts.projectKey?.length) where.push(keyFilter(opts.projectKey, params))
   params.push(Math.min(opts.limit ?? 120, 400))
   const rows = db
     .prepare(
@@ -391,14 +398,16 @@ function usageReport(since: number): UsageReport {
   }
 }
 
-function sessionUsage(projectKey: string): Record<string, UsageTotals> {
+function sessionUsage(projectKey: string | string[]): Record<string, UsageTotals> {
+  const params: string[] = []
+  const filter = keyFilter(projectKey, params)
   const rows = db
     .prepare(
       `SELECT m.session_id, ${sums('m.')}
        FROM msgs m JOIN sessions s ON s.session_id = m.session_id
-       WHERE s.project_key = ? GROUP BY m.session_id`
+       WHERE ${filter} GROUP BY m.session_id`
     )
-    .all(projectKey) as any[]
+    .all(...params) as any[]
   return Object.fromEntries(rows.map((r) => [r.session_id, totals(r)]))
 }
 

@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { ChatMessage, Project, ProjectMeta, RecentSession, SessionDetail, SessionSummary } from '../shared/types'
+import { PROJECT_HUES, encodeProjectKey, folderLabel, guessIcon, prettyWorktreeName, readmeInfo, titleFromPrompt, worktreeParent } from '../shared/projectLook'
 import { loadStore, updateStore, type StoreData } from './store'
 
 /**
@@ -94,17 +95,21 @@ export async function summarizeSession(projectKey: string, file: string): Promis
 
   const firstPromptEntry = head.find(isHumanPrompt)
   const withCwd = head.find((e) => typeof e?.cwd === 'string')
-  const customTitle = [...tail, ...head].reverse().find((e) => e?.type === 'custom-title')?.customTitle
+  const newestFirst = [...tail, ...head].reverse()
+  // A title set with /rename wins over the automatic name Claude Code gives a chat.
+  const customTitle = newestFirst.find((e) => e?.type === 'custom-title' && e.customTitle)?.customTitle
+  const agentName = newestFirst.find((e) => e?.type === 'agent-name' && e.agentName)?.agentName
   const firstPrompt = firstPromptEntry ? messageText(firstPromptEntry).trim() : ''
   const startedAt = ts(head.find((e) => e?.timestamp)?.timestamp) || stat.birthtimeMs
 
   const summary: SessionSummary = {
     id: basename(file, '.jsonl'),
     projectKey,
-    title: customTitle || firstPrompt.split('\n')[0].slice(0, 120) || '(empty session)',
+    title: customTitle || agentName || titleFromPrompt(firstPrompt) || '(empty session)',
     firstPrompt: firstPrompt.slice(0, 500),
     cwd: withCwd?.cwd ?? '',
     gitBranch: withCwd?.gitBranch && withCwd.gitBranch !== 'HEAD' ? withCwd.gitBranch : '',
+    worktree: worktreeName(withCwd?.cwd ?? ''),
     startedAt,
     updatedAt: stat.mtimeMs,
     sizeBytes: stat.size
@@ -123,12 +128,79 @@ async function sessionFiles(projectKey: string): Promise<string[]> {
   }
 }
 
-export async function listSessions(projectKey: string): Promise<SessionSummary[]> {
-  const files = await sessionFiles(projectKey)
-  const results = await Promise.allSettled(files.map((f) => summarizeSession(projectKey, f)))
-  return results
-    .flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+function worktreeName(cwd: string): string | undefined {
+  const wt = worktreeParent(cwd)
+  return wt ? prettyWorktreeName(wt.name) : undefined
+}
+
+/** Applies the titles you set in Mission Control (kept apart from the cached summaries). */
+function withOwnTitle(s: SessionSummary, titles: Record<string, string>): SessionSummary {
+  const own = titles[s.id]
+  return own ? { ...s, title: own, renamed: true } : s
+}
+
+/** Chats from one or more ~/.claude/projects folders (a project and its worktrees), newest first. */
+export async function listSessions(projectKey: string | string[]): Promise<SessionSummary[]> {
+  const keys = [...new Set(Array.isArray(projectKey) ? projectKey : [projectKey])].filter(Boolean)
+  const titles = loadStore().chatTitles
+  const lists = await Promise.all(
+    keys.map(async (key) => {
+      const files = await sessionFiles(key)
+      const results = await Promise.allSettled(files.map((f) => summarizeSession(key, f)))
+      return results.flatMap((r) => (r.status === 'fulfilled' ? [withOwnTitle(r.value, titles)] : []))
+    })
+  )
+  return lists.flat().sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export function renameSession(sessionId: string, title: string): void {
+  updateStore((s) => {
+    const t = title.trim().slice(0, 120)
+    if (t) s.chatTitles[sessionId] = t
+    else delete s.chatTitles[sessionId]
+  })
+}
+
+const readmeCache = new Map<string, { mtime: number; text: string }>()
+
+/** The start of a project's README (cached by modification time), or '' when there is none. */
+async function readmeText(path: string): Promise<string> {
+  for (const name of ['README.md', 'README.txt', 'README', 'BRIEFING.md', 'CLAUDE.md']) {
+    const file = join(path, name)
+    try {
+      const st = await fs.stat(file)
+      if (!st.isFile()) continue
+      const hit = readmeCache.get(file)
+      if (hit && hit.mtime === st.mtimeMs) return hit.text
+      const text = await readRange(file, 0, Math.min(st.size, 8192))
+      readmeCache.set(file, { mtime: st.mtimeMs, text })
+      return text
+    } catch {
+      /* try the next name */
+    }
+  }
+  return ''
+}
+
+/** Same hue for the same folder every time, so a project keeps its color until you pick one. */
+function nameHue(name: string): number {
+  let h = 0
+  for (const ch of name.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return PROJECT_HUES[h % PROJECT_HUES.length]
+}
+
+/** The readable name, description, icon and color for a project. */
+async function describe(path: string, meta: ProjectMeta): Promise<Pick<Project, 'name' | 'folderName' | 'description' | 'icon' | 'hue'>> {
+  const folderName = folderLabel(path)
+  const readme = existsSync(path) ? await readmeText(path) : ''
+  const info = readme ? readmeInfo(readme, folderName) : { title: '', description: '' }
+  return {
+    name: meta.displayName?.trim() || info.title || folderName,
+    folderName,
+    description: info.description || undefined,
+    icon: meta.icon ?? guessIcon(folderName, readme, path),
+    hue: meta.hue ?? nameHue(folderName)
+  }
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -144,55 +216,65 @@ export async function listProjects(): Promise<Project[]> {
     /* Claude Code has never run on this machine */
   }
 
-  await Promise.all(
-    keys.map(async (key) => {
-      const files = await sessionFiles(key)
-      if (files.length === 0) return
-      const stats = await Promise.all(files.map((f) => fs.stat(f).then((s) => ({ f, s }))))
-      stats.sort((a, b) => b.s.mtimeMs - a.s.mtimeMs)
-      let path = ''
-      try {
-        path = (await summarizeSession(key, stats[0].f)).cwd
-      } catch {
-        /* fall through to decoded key */
-      }
-      if (!path) path = decodeKey(key)
-      const project: Project = {
-        key,
-        path,
-        name: basename(path) || path,
-        sessionCount: files.length,
-        lastActivity: stats[0].s.mtimeMs,
-        pinned: pinned.has(normalizePath(path)),
-        manual: false,
-        worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]|[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(path),
-        meta: metaFor(store, path)
-      }
-      // Two keys can resolve to the same folder; keep the more recently used one.
-      const existing = byPath.get(normalizePath(path))
-      if (!existing || existing.lastActivity < project.lastActivity) byPath.set(normalizePath(path), project)
-    })
-  )
+  const found = (
+    await Promise.all(
+      keys.map(async (key) => {
+        const files = await sessionFiles(key)
+        if (files.length === 0) return null
+        const stats = await Promise.all(files.map((f) => fs.stat(f).then((s) => ({ f, s }))))
+        stats.sort((a, b) => b.s.mtimeMs - a.s.mtimeMs)
+        let path = ''
+        try {
+          path = (await summarizeSession(key, stats[0].f)).cwd
+        } catch {
+          /* fall through to decoded key */
+        }
+        return { key, path: path || decodeKey(key), sessionCount: files.length, lastActivity: stats[0].s.mtimeMs }
+      })
+    )
+  ).filter((x) => x !== null)
+
+  const blank = (path: string, manual: boolean): Project => ({
+    key: '',
+    keys: [],
+    path,
+    name: '',
+    folderName: '',
+    icon: 'Folder',
+    hue: 0,
+    sessionCount: 0,
+    lastActivity: 0,
+    pinned: pinned.has(normalizePath(path)),
+    manual,
+    worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]|[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(path),
+    meta: metaFor(store, path)
+  })
+
+  for (const f of found) {
+    // Chats from a project's Claude Code worktrees belong to the project itself, so
+    // "WBP\.claude\worktrees\semester-planning-2b8af2" shows up under WBP, not as a project of its own.
+    const wt = worktreeParent(f.path)
+    const path = wt && existsSync(wt.parent) ? wt.parent : f.path
+    const norm = normalizePath(path)
+    const p = byPath.get(norm) ?? blank(path, false)
+    p.keys.push(f.key)
+    // Two keys can resolve to the same folder; the more recently used one is the main key.
+    if (!wt && (!p.key || f.lastActivity > p.lastActivity)) p.key = f.key
+    p.sessionCount += f.sessionCount
+    p.lastActivity = Math.max(p.lastActivity, f.lastActivity)
+    byPath.set(norm, p)
+  }
+  // A project whose chats all ran in worktrees has no folder of its own yet; use the name Claude Code would give it.
+  for (const p of byPath.values()) if (!p.key) p.key = encodeProjectKey(p.path)
 
   for (const path of store.manualProjects) {
     const norm = normalizePath(path)
-    if (byPath.has(norm)) continue
-    byPath.set(norm, {
-      key: '',
-      path,
-      name: basename(path) || path,
-      sessionCount: 0,
-      lastActivity: 0,
-      pinned: pinned.has(norm),
-      manual: true,
-      worktree: false,
-      meta: metaFor(store, path)
-    })
+    if (!byPath.has(norm)) byPath.set(norm, blank(path, true))
   }
 
-  return [...byPath.values()]
-    .filter((p) => p.manual || existsSync(p.path) || p.sessionCount > 0)
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
+  const list = [...byPath.values()].filter((p) => p.manual || existsSync(p.path) || p.sessionCount > 0)
+  await Promise.all(list.map(async (p) => Object.assign(p, await describe(p.path, p.meta))))
+  return list.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
 }
 
 function metaFor(store: StoreData, path: string): ProjectMeta {
@@ -209,18 +291,22 @@ export function setProjectMeta(path: string, patch: Partial<ProjectMeta>): void 
     if (!next.group?.trim()) delete next.group
     else next.group = next.group.trim()
     if (!next.status) delete next.status
+    if (!next.displayName?.trim()) delete next.displayName
+    else next.displayName = next.displayName.trim().slice(0, 60)
+    if (next.icon == null) delete next.icon
+    if (next.hue == null) delete next.hue
     s.projectMeta[key] = next
   })
 }
 
 /** The most recently updated sessions across all projects, for the Home view. */
 export async function recentSessions(limit: number): Promise<RecentSession[]> {
-  const projects = (await listProjects()).filter((p) => p.key && !p.worktree)
+  const projects = (await listProjects()).filter((p) => p.keys.length && !p.worktree)
   // Only the most active projects can contain the newest sessions.
   const candidates = projects.sort((a, b) => b.lastActivity - a.lastActivity).slice(0, limit)
   const lists = await Promise.all(
     candidates.map(async (p) =>
-      (await listSessions(p.key)).slice(0, limit).map((s) => ({ ...s, projectName: p.name, projectPath: p.path }))
+      (await listSessions(p.keys)).slice(0, limit).map((s) => ({ ...s, projectName: p.name, projectPath: p.path }))
     )
   )
   return lists

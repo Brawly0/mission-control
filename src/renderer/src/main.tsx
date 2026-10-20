@@ -5,6 +5,7 @@ import './organize.css'
 import './tasks.css'
 import './automation.css'
 import './chains.css'
+import './identity.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

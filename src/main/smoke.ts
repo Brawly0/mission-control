@@ -8,7 +8,7 @@ import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
 import { checkForUpdates, initUpdater, updateStatus } from './updater'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
-import { listProjects, listSessions, normalizePath, setProjectMeta } from './claudeData'
+import { listProjects, listSessions, normalizePath, renameSession, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { killTerminalsIn } from './pty'
 import { loadStore, updateStore } from './store'
@@ -362,6 +362,48 @@ async function automationTour(win: BrowserWindow, outFile: string, repo: string)
 }
 
 /**
+ * MC_SMOKE_NAMES=<project folder name, e.g. WBP>: logs every project's name, icon and chat count, then
+ * screenshots that project's chats and its Name and icon dialog. Renames one chat and puts it back. Free.
+ */
+async function namesTour(win: BrowserWindow, outFile: string, folder: string): Promise<void> {
+  const shot = async (name: string) => {
+    await sleep(800)
+    const file = outFile.replace(/\.png$/, `-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const projects = await listProjects()
+  for (const p of projects.filter((x) => !x.worktree)) {
+    log(`project: ${p.folderName} -> "${p.name}" [${p.icon}] ${p.sessionCount} chats from ${p.keys.length} folders`)
+  }
+  log('hidden (temp/scratch):', projects.filter((x) => x.worktree).length)
+  const target = projects.find((p) => p.folderName.toLowerCase() === folder.toLowerCase())
+  if (!target) return log('names: no project named', folder)
+  const sessions = await listSessions(target.keys)
+  log(`names: ${target.name} has ${sessions.length} chats:`, sessions.map((s) => `"${s.title}"${s.worktree ? ` (worktree: ${s.worktree})` : ''}`).join(', '))
+
+  if (sessions[0]) {
+    const before = loadStore().chatTitles[sessions[0].id]
+    renameSession(sessions[0].id, 'Smoke renamed chat')
+    const renamed = (await listSessions(target.keys)).find((s) => s.id === sessions[0].id)
+    log('names: rename shows', JSON.stringify(renamed?.title), 'renamed flag', renamed?.renamed)
+    renameSession(sessions[0].id, before ?? '')
+    log('names: rename undone', (await listSessions(target.keys)).find((s) => s.id === sessions[0].id)?.title === sessions[0].title)
+  }
+
+  await js(`window.__mcSmoke.setView('home')`)
+  await shot('names-home')
+  await js(`window.__mcSmoke.selectProject(${JSON.stringify(target.path)}); window.__mcSmoke.setView('project')`)
+  await sleep(600)
+  await js(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent.includes('Chats'))?.click()`)
+  await shot('names-chats')
+  await js(`document.querySelector('.avatar-button')?.click()`)
+  await shot('names-icon-dialog')
+  await js(`document.querySelector('.dialog.identity .icon-btn')?.click()`)
+}
+
+/**
  * MC_SMOKE_CHAIN=<empty scratch folder>: v0.7 end to end. Turns on git for a folder with a secret and
  * node_modules; runs a 3-step chain whose first step fails its checks (the next step must stay blocked),
  * fixes the check and re-runs it (the chain must continue by itself, each step on the previous branch);
@@ -598,6 +640,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_AUTOMATION) await automationTour(win, outFile, process.env.MC_SMOKE_AUTOMATION)
     if (process.env.MC_SMOKE_UPDATE) await updateCheck()
     if (process.env.MC_SMOKE_CHAIN) await chainTour(win, outFile, process.env.MC_SMOKE_CHAIN)
+    if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.
