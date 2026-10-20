@@ -1,0 +1,196 @@
+/* v0.6: queue control, templates and schedules, updates. Tokens come from styles.css. */
+
+/* ---------- toggle switch ---------- */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 32px;
+  height: 18px;
+  cursor: pointer;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.switch span {
+  width: 100%;
+  height: 100%;
+  border-radius: 9px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  transition: background 0.15s;
+}
+.switch span::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+.switch input:checked + span {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch input:checked + span::after {
+  transform: translateX(14px);
+  background: #1c0f09;
+}
+.switch input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- queue ---------- */
+.queue-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 6px 0 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.queue-control.on {
+  border-color: rgba(217, 119, 87, 0.4);
+}
+.queue-label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  font-size: 12.5px;
+  max-width: 260px;
+}
+.queue-label .small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-sm {
+  height: 26px;
+  font-size: 12px;
+  padding: 0 6px;
+}
+.task-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.task-card-top .task-title {
+  flex: 1;
+  min-width: 0;
+}
+.queue-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.template-mark {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+/* ---------- templates ---------- */
+.templates {
+  width: min(760px, calc(100vw - 40px));
+}
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 14px;
+}
+.template-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.template-main {
+  flex: 1;
+  min-width: 0;
+}
+.template-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.template-sub svg {
+  vertical-align: -1px;
+}
+.template-row .switch {
+  margin-right: 4px;
+}
+.template-editor code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg);
+  font-size: 11px;
+}
+.schedule-box {
+  margin: 4px 0 6px;
+  padding: 12px 14px 4px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.schedule-row .field {
+  margin-bottom: 10px;
+}
+.dialog-foot.inline {
+  margin: 8px -20px 0;
+  padding-bottom: 14px;
+}
+
+/* ---------- settings: queue + updates ---------- */
+.inline-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.num-input {
+  width: 64px;
+  height: 28px;
+}
+.update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.updates .check-row {
+  margin-top: 8px;
+}
+.sb-update {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.sb-update:hover {
+  background: var(--accent-soft);
+}

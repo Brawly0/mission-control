@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { GitFork, Play, Plus, ShieldAlert, SquareTerminal, X, Zap } from 'lucide-react'
+import { FileStack, GitFork, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap } from 'lucide-react'
 import type { GitInfo, NewTask, Project, TaskMode, TaskPermission } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 
@@ -7,8 +7,11 @@ interface Props {
   projects: Project[]
   git: Record<string, GitInfo>
   defaultProject?: string
+  /** Prefill, e.g. from a template. */
+  initial?: Partial<NewTask>
   onCancel: () => void
-  onCreate: (task: NewTask, startNow: boolean) => void
+  onCreate: (task: NewTask, then: 'todo' | 'queue' | 'start') => void
+  onSaveTemplate: (task: NewTask) => void
 }
 
 const PERMISSIONS: { value: TaskPermission; label: string; hint: string }[] = [
@@ -18,41 +21,53 @@ const PERMISSIONS: { value: TaskPermission; label: string; hint: string }[] = [
   { value: 'bypassPermissions', label: 'Bypass all checks', hint: 'Everything is allowed without asking. Only use in a worktree you can discard.' }
 ]
 
-export default function TaskComposer({ projects, git, defaultProject, onCancel, onCreate }: Props) {
+export default function TaskComposer({ projects, git, defaultProject, initial, onCancel, onCreate, onSaveTemplate }: Props) {
   const choices = projects.filter((p) => !p.worktree)
-  const [projectPath, setProjectPath] = useState(defaultProject && choices.some((p) => p.path === defaultProject) ? defaultProject : (choices[0]?.path ?? ''))
-  const [title, setTitle] = useState('')
-  const [prompt, setPrompt] = useState('')
-  const [mode, setMode] = useState<TaskMode>('headless')
-  const [permission, setPermission] = useState<TaskPermission>('auto')
+  const startProject = initial?.projectPath ?? defaultProject
+  const [projectPath, setProjectPath] = useState(startProject && choices.some((p) => p.path === startProject) ? startProject : (choices[0]?.path ?? ''))
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [prompt, setPrompt] = useState(initial?.prompt ?? '')
+  const [mode, setMode] = useState<TaskMode>(initial?.mode ?? 'headless')
+  const [permission, setPermission] = useState<TaskPermission>(initial?.permission ?? 'auto')
   const isRepo = !!git[projectPath]?.isRepo
-  const [useWorktree, setUseWorktree] = useState(isRepo)
-  const [budget, setBudget] = useState('')
-  const [model, setModel] = useState('')
+  const [useWorktree, setUseWorktree] = useState(initial?.useWorktree ?? isRepo)
+  const [budget, setBudget] = useState(initial?.budgetUsd ? String(initial.budgetUsd) : '')
+  const [model, setModel] = useState(initial?.model ?? '')
   const promptRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => promptRef.current?.focus(), [])
-  useEffect(() => setUseWorktree(isRepo), [isRepo])
+  const firstRepoCheck = useRef(true)
+  useEffect(() => {
+    // Default to a worktree in git projects, but keep a template's own choice on first open.
+    if (firstRepoCheck.current && initial?.useWorktree !== undefined) {
+      firstRepoCheck.current = false
+      return
+    }
+    firstRepoCheck.current = false
+    setUseWorktree(isRepo)
+  }, [isRepo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const project = choices.find((p) => p.path === projectPath)
   const valid = !!project && prompt.trim().length > 0
-  const submit = (startNow: boolean) => {
-    if (!valid || !project) return
+  const current = (): NewTask | null => {
+    if (!valid || !project) return null
     const budgetUsd = Number(budget)
-    onCreate(
-      {
-        title: title.trim(),
-        prompt: prompt.trim(),
-        projectPath: project.path,
-        projectName: project.name,
-        mode,
-        permission,
-        useWorktree: isRepo && useWorktree,
-        budgetUsd: mode === 'headless' && budgetUsd > 0 ? budgetUsd : undefined,
-        model: model || undefined
-      },
-      startNow
-    )
+    return {
+      title: title.trim(),
+      prompt: prompt.trim(),
+      projectPath: project.path,
+      projectName: project.name,
+      mode,
+      permission,
+      useWorktree: isRepo && useWorktree,
+      budgetUsd: mode === 'headless' && budgetUsd > 0 ? budgetUsd : undefined,
+      model: model || undefined,
+      templateId: initial?.templateId
+    }
+  }
+  const submit = (then: 'todo' | 'queue' | 'start') => {
+    const t = current()
+    if (t) onCreate(t, then)
   }
 
   return (
@@ -62,15 +77,15 @@ export default function TaskComposer({ projects, git, defaultProject, onCancel, 
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault()
-          submit(false)
+          submit('todo')
         }}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onCancel()
-          if (e.key === 'Enter' && e.ctrlKey) submit(true)
+          if (e.key === 'Enter' && e.ctrlKey) submit('start')
         }}
       >
         <div className="dialog-head">
-          <h2>New task</h2>
+          <h2>{initial?.templateId ? 'New task from template' : 'New task'}</h2>
           <IconButton icon={X} label="Close" onClick={onCancel} type="button" />
         </div>
 
@@ -164,14 +179,33 @@ export default function TaskComposer({ projects, git, defaultProject, onCancel, 
         </div>
 
         <div className="dialog-foot">
-          <span className="muted small">Ctrl+Enter adds and starts</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            icon={FileStack}
+            disabled={!valid}
+            title="Keep these settings as a reusable template"
+            onClick={() => {
+              const t = current()
+              if (t) onSaveTemplate(t)
+            }}
+          >
+            Save as template
+          </Button>
+          <span className="spacer" />
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
           <Button type="submit" variant="secondary" icon={Plus} disabled={!valid}>
             Add to To do
           </Button>
-          <Button type="button" variant="primary" icon={Play} disabled={!valid} onClick={() => submit(true)}>
+          {mode === 'headless' && (
+            <Button type="button" variant="secondary" icon={ListPlus} disabled={!valid} onClick={() => submit('queue')} title="Runs by itself when the queue has a free slot">
+              Add to queue
+            </Button>
+          )}
+          <Button type="button" variant="primary" icon={Play} disabled={!valid} onClick={() => submit('start')} title="Ctrl+Enter">
             Add and start
           </Button>
         </div>

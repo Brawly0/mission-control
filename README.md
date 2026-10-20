@@ -2,7 +2,12 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.5)
+## Features (v0.6)
+
+- **Templates**: save tasks you run often (Save as template in New task, or Tasks → Templates). Titles and prompts can use `{{project}}`, `{{date}}`, `{{time}}` and `{{weekday}}`.
+- **Recurring tasks**: give a template a schedule (every N hours, daily, weekdays or weekly at a time). When it fires, the new task starts, joins the queue, or waits in To do. Schedules run while Mission Control is open (it keeps running in the tray). If one came due while the app was closed, it runs once at the next start.
+- **Auto-queue**: press **Queue** on headless tasks, then turn on **Auto-run queue** on the board. Queued tasks start by themselves, 1–4 at a time, and the queue holds while your plan usage is above a limit you choose (95% by default).
+- **Auto-update**: the installed app checks [Brawly0/mission-control-releases](https://github.com/Brawly0/mission-control-releases) for new versions, downloads them in the background, and shows **Update ready · Restart** in the status bar.
 
 - **Task board**: write tasks in To do, press **Start**, and they move through Running → Review → Done (drag cards between columns).
   - **Headless** tasks run Claude in the background, with no terminal. The card shows what it's doing right now ("Editing app.ts", "Running: npm test"), tool calls, time, cost and the final answer.
@@ -60,6 +65,7 @@ npm run dev
 | `npm run build` | Build to `out/` |
 | `npm run typecheck` | Type-check main and renderer |
 | `npm run dist` | Build the Windows installer into `release/` |
+| `npm run release` | Build and publish a release for auto-update (see docs/DEVELOPMENT.md) |
 | `npm run icon` | Re-render `build/icon.png` from `build/icon.svg` |
 
 ## Documentation

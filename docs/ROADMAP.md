@@ -38,10 +38,15 @@
 - [x] Tray icon with status and menu; global show/hide hotkey (default Ctrl+Alt+M); close to tray while work runs
 - [x] Plan rate-limit meters (5-hour and 7-day windows) in the status bar and Usage view
 
-## v0.6: Ideas
-- [ ] Task templates and recurring tasks
-- [ ] Queue: start the next To do task automatically when one finishes
-- [ ] Auto-update
+## ✅ v0.6: Automation
+- [x] Task templates with `{{project}}`, `{{date}}`, `{{time}}`, `{{weekday}}` variables; Save as template from New task
+- [x] Recurring templates: hourly, daily, weekdays, weekly; then start, queue, or add to To do
+- [x] Auto-queue: queued headless tasks start by themselves, N at a time, held while plan usage is above a limit
+- [x] Auto-update from the public releases repo (Brawly0/mission-control-releases); status bar shows "Update ready · Restart"
+
+## Next ideas
+- [ ] Task dependencies (run B after A succeeds)
+- [ ] Code signing so Windows SmartScreen stops warning
 
 ## Later
 - [x] Installer (`npm run dist`)

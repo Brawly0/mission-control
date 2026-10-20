@@ -138,3 +138,23 @@
 ### Task test
 
 `MC_SMOKE_TASKS=<git repo with a commit>` runs one real headless task (Haiku, in a worktree, $0.20 budget) through the board. It checks the activity, cost and result, confirms the file it wrote in the worktree, screenshots the board, the task panel and the New task dialog, then deletes the task and its worktree. A run costs about $0.03.
+
+## Releasing an update
+
+Installed copies update from the public repo [Brawly0/mission-control-releases](https://github.com/Brawly0/mission-control-releases). It holds only installers; the source stays in this private repo.
+
+1. Bump `version` in `package.json` (for example 0.6.0 → 0.6.1). Auto-update only offers a higher version.
+2. Publish, using the GitHub CLI's token for this one command:
+
+   ```powershell
+   $env:GH_TOKEN = gh auth token; npm run release; Remove-Item env:GH_TOKEN
+   ```
+
+   electron-builder uploads `Mission Control Setup <version>.exe`, its `.blockmap` and `latest.yml` to a release named after the version.
+3. Running copies notice within 6 hours (or at their next start, or with **Settings → Check now**). They download in the background and show **Update ready · Restart** in the status bar.
+
+`MC_SMOKE_UPDATE=1` on a packaged build checks the releases repo and downloads (but doesn't install) any newer version, logging each step.
+
+### Automation test
+
+`MC_SMOKE_AUTOMATION=<git repo with a commit>` checks the schedule math and template variables, fires an overdue recurring template, and runs two real queued Haiku tasks with one slot (about $0.05), which must run one after the other. It restores your queue settings and deletes everything it created.

@@ -1,6 +1,25 @@
 import { useMemo, useState, type DragEvent } from 'react'
-import { AlertCircle, CheckCircle2, Circle, CircleDot, GitBranch, Loader2, Play, Plus, Square, SquareTerminal, Zap, ClipboardList, Eye } from 'lucide-react'
-import type { Project, Task, TaskColumn } from '@shared/types'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Circle,
+  CircleDot,
+  ClipboardList,
+  Eye,
+  FileStack,
+  GitBranch,
+  ListOrdered,
+  ListPlus,
+  ListX,
+  Loader2,
+  Play,
+  Plus,
+  Repeat,
+  Square,
+  SquareTerminal,
+  Zap
+} from 'lucide-react'
+import type { Project, QueueStatus, Task, TaskColumn } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed, formatCost, timeAgo } from '../util'
@@ -10,6 +29,10 @@ interface Props {
   tasks: Task[]
   agents: Agent[]
   projects: Project[]
+  queue: QueueStatus | null
+  onQueueSettings: (patch: { queueEnabled?: boolean; queueParallel?: number }) => void
+  onToggleQueued: (task: Task) => void
+  onOpenTemplates: () => void
   projectFilter: string
   onProjectFilter: (path: string) => void
   onNew: () => void
@@ -27,7 +50,16 @@ const COLUMNS: { id: TaskColumn; title: string; icon: typeof Circle; hint: strin
   { id: 'done', title: 'Done', icon: CheckCircle2, hint: 'Drag reviewed tasks here.' }
 ]
 
-function TaskCard({ task, agent, onOpen, onStart, onStop, onOpenAgent }: { task: Task; agent?: Agent } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent'>) {
+function TaskCard({
+  task,
+  agent,
+  queuePos,
+  onOpen,
+  onStart,
+  onStop,
+  onOpenAgent,
+  onToggleQueued
+}: { task: Task; agent?: Agent; queuePos?: number } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent' | 'onToggleQueued'>) {
   const run = task.run
   const running = task.column === 'running'
   const agentStatus = agent ? displayStatus(agent, undefined) : null
@@ -46,6 +78,12 @@ function TaskCard({ task, agent, onOpen, onStart, onStop, onOpenAgent }: { task:
     >
       <div className="task-card-top">
         <span className="task-title">{task.title}</span>
+        {task.queued && queuePos !== undefined && (
+          <span className="queue-badge" title="Waiting in the auto-queue">
+            <ListOrdered size={11} /> #{queuePos}
+          </span>
+        )}
+        {task.templateId && <Repeat size={12} className="muted template-mark" aria-label="From a template" />}
       </div>
       <div className="task-meta">
         <Avatar name={task.projectName} size={18} />
@@ -91,6 +129,17 @@ function TaskCard({ task, agent, onOpen, onStart, onStop, onOpenAgent }: { task:
           {run?.costUsd ? `${formatCost(run.costUsd)} · ` : ''}
           {run?.finishedAt ? `finished ${timeAgo(run.finishedAt)}` : `added ${timeAgo(task.createdAt)}`}
         </span>
+        {task.column === 'todo' && task.mode === 'headless' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={task.queued ? ListX : ListPlus}
+            onClick={() => onToggleQueued(task)}
+            title={task.queued ? 'Take it out of the queue' : 'Run it automatically when the queue has a free slot'}
+          >
+            {task.queued ? 'Unqueue' : 'Queue'}
+          </Button>
+        )}
         {task.column === 'todo' && (
           <Button size="sm" variant="primary" icon={Play} onClick={() => onStart(task)}>
             Start
@@ -120,6 +169,17 @@ export default function TasksView(props: Props) {
     [tasks, projectFilter]
   )
   const projectOptions = projects.filter((p) => !p.worktree)
+  // Queue positions across all projects, in the order the queue will run them.
+  const queueOrder = useMemo(
+    () =>
+      new Map(
+        tasks
+          .filter((t) => t.column === 'todo' && t.queued)
+          .sort((a, b) => a.order - b.order)
+          .map((t, i) => [t.id, i + 1])
+      ),
+    [tasks]
+  )
 
   const onDrop = (e: DragEvent, column: TaskColumn) => {
     e.preventDefault()
@@ -140,6 +200,37 @@ export default function TasksView(props: Props) {
           <p className="muted">Queue work for Claude. Headless tasks run in the background; you review the result.</p>
         </div>
         <div className="toolbar">
+          {props.queue && (
+            <div className={`queue-control ${props.queue.enabled ? 'on' : ''}`} title={props.queue.heldBecause ?? 'Queued tasks start by themselves'}>
+              <label className="switch" title={props.queue.enabled ? 'Pause the queue' : 'Run queued tasks automatically'}>
+                <input type="checkbox" checked={props.queue.enabled} onChange={(e) => props.onQueueSettings({ queueEnabled: e.target.checked })} />
+                <span />
+              </label>
+              <span className="queue-label">
+                Auto-run queue
+                <span className="muted small">
+                  {props.queue.queued} queued
+                  {props.queue.enabled && props.queue.heldBecause ? ` · held: ${props.queue.heldBecause}` : ''}
+                </span>
+              </span>
+              <select
+                className="select select-sm"
+                value={props.queue.parallel}
+                onChange={(e) => props.onQueueSettings({ queueParallel: Number(e.target.value) })}
+                aria-label="How many at once"
+                title="How many queued tasks may run at the same time"
+              >
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n} at a time
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <Button variant="secondary" icon={FileStack} onClick={props.onOpenTemplates}>
+            Templates
+          </Button>
           <select className="select" value={projectFilter} onChange={(e) => props.onProjectFilter(e.target.value)} aria-label="Project">
             <option value="">All projects</option>
             {projectOptions.map((p) => (
@@ -193,10 +284,12 @@ export default function TasksView(props: Props) {
                       key={t.id}
                       task={t}
                       agent={t.run?.agentId ? agents.find((a) => a.id === t.run!.agentId) : undefined}
+                      queuePos={queueOrder.get(t.id)}
                       onOpen={props.onOpen}
                       onStart={props.onStart}
                       onStop={props.onStop}
                       onOpenAgent={props.onOpenAgent}
+                      onToggleQueued={props.onToggleQueued}
                     />
                   ))}
                   {items.length === 0 && <div className="col-empty muted small">{col.hint}</div>}

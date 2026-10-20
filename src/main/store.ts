@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { AppSettings, ProjectMeta, SavedAgent, Task, UiState } from '../shared/types'
+import type { AppSettings, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
 
 export interface WindowBounds {
   x: number
@@ -25,6 +25,7 @@ export interface StoreData {
   /** Group, tags, status and notes per project, keyed by lower-cased path. */
   projectMeta: Record<string, ProjectMeta>
   tasks: Task[]
+  templates: TaskTemplate[]
   settings: AppSettings
 }
 
@@ -35,7 +36,15 @@ const defaults: StoreData = {
   ui: {},
   projectMeta: {},
   tasks: [],
-  settings: { hotkey: 'Ctrl+Alt+M', closeToTray: true }
+  templates: [],
+  settings: {
+    hotkey: 'Ctrl+Alt+M',
+    closeToTray: true,
+    queueEnabled: false,
+    queueParallel: 1,
+    queuePauseAtPercent: 95,
+    autoUpdate: true
+  }
 }
 
 function storePath(): string {

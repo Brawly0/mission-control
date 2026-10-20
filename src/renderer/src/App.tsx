@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  FileStack,
   KanbanSquare,
   ListPlus,
   Settings,
@@ -20,7 +21,21 @@ import {
   Terminal,
   X
 } from 'lucide-react'
-import type { GitInfo, IndexStatus, Project, RateLimitInfo, RecentSession, SavedAgent, SearchHit, Task } from '@shared/types'
+import type {
+  GitInfo,
+  IndexStatus,
+  NewTask,
+  Project,
+  QueueStatus,
+  RateLimitInfo,
+  RecentSession,
+  SavedAgent,
+  SearchHit,
+  Task,
+  TaskTemplate,
+  UpdateState
+} from '@shared/types'
+import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
 import TaskComposer from './components/TaskComposer'
 import TaskDrawer from './components/TaskDrawer'
@@ -73,6 +88,19 @@ export default function App() {
   const [taskFilter, setTaskFilter] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
+  const [templates, setTemplates] = useState<TaskTemplate[]>([])
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [composerInitial, setComposerInitial] = useState<Partial<NewTask> | undefined>()
+  const [queue, setQueue] = useState<QueueStatus | null>(null)
+  const [update, setUpdate] = useState<UpdateState>({ state: 'idle' })
+
+  useEffect(() => {
+    window.mc.listTemplates().then(setTemplates)
+    window.mc.queueStatus().then(setQueue)
+    window.mc.updateStatus().then(setUpdate)
+    const offs = [window.mc.onTemplatesChanged(setTemplates), window.mc.onQueueStatus(setQueue), window.mc.onUpdateStatus(setUpdate)]
+    return () => offs.forEach((off) => off())
+  }, [])
 
   useEffect(() => {
     window.mc.listTasks().then(setTasks)
@@ -281,6 +309,38 @@ export default function App() {
     [launch, toast]
   )
 
+  // A recurring interactive task fired: open its agent.
+  useEffect(() => {
+    return window.mc.onLaunchTask(async (taskId) => {
+      const task = (await window.mc.listTasks()).find((t) => t.id === taskId)
+      if (task) startTask(task)
+    })
+  }, [startTask])
+
+  const saveAsTemplate = useCallback(
+    async (input: NewTask) => {
+      try {
+        const name = input.title || input.prompt.split('\n')[0].slice(0, 60)
+        await window.mc.saveTemplate({
+          name,
+          title: input.title,
+          prompt: input.prompt,
+          projectPath: input.projectPath,
+          projectName: input.projectName,
+          mode: input.mode,
+          permission: input.permission,
+          useWorktree: input.useWorktree,
+          budgetUsd: input.budgetUsd,
+          model: input.model
+        })
+        toast('success', 'Saved as a template', `${name}. Add a schedule in Templates.`)
+      } catch (e) {
+        toast('error', 'Could not save the template', errorMessage(e))
+      }
+    },
+    [toast]
+  )
+
   const continueTask = useCallback(
     (task: Task) => {
       if (!task.run?.sessionId) return
@@ -336,7 +396,7 @@ export default function App() {
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
     if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, startTask, tasks: () => tasksRef.current }
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), startTask, tasks: () => tasksRef.current }
   }, [launch, refreshProjects, startTask])
 
   const restoreAll = useCallback(async () => {
@@ -456,6 +516,7 @@ export default function App() {
       { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') },
       { id: 'go-tasks', group: 'Go to', title: 'Task board', icon: KanbanSquare, keywords: 'kanban todo', run: () => setView('tasks') },
       { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: () => setComposerOpen(true) },
+      { id: 'templates', group: 'Actions', title: 'Task templates and schedules', icon: FileStack, keywords: 'recurring cron repeat', run: () => setTemplatesOpen(true) },
       { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) }
     ]
     if (selected) {
@@ -606,6 +667,13 @@ export default function App() {
               tasks={tasks}
               agents={agents}
               projects={projects}
+              queue={queue}
+              onQueueSettings={async (patch) => {
+                await window.mc.setSettings(patch)
+                setQueue(await window.mc.queueStatus())
+              }}
+              onToggleQueued={(t) => window.mc.updateTask(t.id, { queued: !t.queued })}
+              onOpenTemplates={() => setTemplatesOpen(true)}
               projectFilter={taskFilter}
               onProjectFilter={setTaskFilter}
               onNew={() => setComposerOpen(true)}
@@ -639,6 +707,7 @@ export default function App() {
         <StatusBar
           indexStatus={indexStatus}
           rateLimit={rateLimit}
+          update={update}
           onOpenSettings={() => setSettingsOpen(true)}
           view={view}
           project={selected}
@@ -658,12 +727,41 @@ export default function App() {
           projects={projects}
           git={git}
           defaultProject={taskFilter || selectedPath || undefined}
-          onCancel={() => setComposerOpen(false)}
-          onCreate={async (input, startNow) => {
+          initial={composerInitial}
+          onCancel={() => {
             setComposerOpen(false)
+            setComposerInitial(undefined)
+          }}
+          onCreate={async (input, then) => {
+            setComposerOpen(false)
+            setComposerInitial(undefined)
             setView('tasks')
-            const task = await window.mc.createTask(input)
-            if (startNow) startTask(task)
+            const task = await window.mc.createTask({ ...input, queued: then === 'queue' })
+            if (then === 'start') startTask(task)
+            if (then === 'queue') toast('info', 'Added to the queue', queue?.enabled ? task.title : 'Turn on “Auto-run queue” to start it automatically.')
+          }}
+          onSaveTemplate={saveAsTemplate}
+        />
+      )}
+      {templatesOpen && (
+        <TemplatesDialog
+          templates={templates}
+          projects={projects}
+          onClose={() => setTemplatesOpen(false)}
+          onUse={(tpl) => {
+            setTemplatesOpen(false)
+            setComposerInitial({
+              title: tpl.title,
+              prompt: tpl.prompt,
+              projectPath: tpl.projectPath,
+              mode: tpl.mode,
+              permission: tpl.permission,
+              useWorktree: tpl.useWorktree,
+              budgetUsd: tpl.budgetUsd,
+              model: tpl.model,
+              templateId: tpl.id
+            })
+            setComposerOpen(true)
           }}
         />
       )}

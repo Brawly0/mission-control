@@ -16,6 +16,8 @@ src/
     pricing.ts     API list prices per model, for cost estimates
     tasks.ts       task board data + headless runner (claude -p, stream-json)
     tray.ts        tray icon, tray menu, global show/hide hotkey
+    templates.ts   task templates, {{variables}}, scheduler for recurring templates
+    updater.ts     auto-update via electron-updater (public releases repo)
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
@@ -56,6 +58,16 @@ The prompt goes in on **stdin**, so no shell quoting is involved, and the proces
 When the process exits, the task moves to **Review**, whether it succeeded, failed or was stopped (the card says which), and a Windows notification fires if the window isn't focused. **Stop** kills the whole process tree (`taskkill /T`). Runs don't survive an app restart; on startup, unfinished runs are marked "Stopped when Mission Control closed" and moved to Review, where **Continue in terminal** resumes the session (`--resume <id>`).
 
 **Interactive run.** The main process prepares the folder and returns the launch arguments (the prompt is claude's first message). The UI opens a normal agent and links it to the task (`run.agentId`). The card mirrors that agent's hook status, and closing the agent moves the task to Review.
+
+## Templates, schedules and the queue
+
+- **Templates** (`store.templates`) hold everything a task needs except, optionally, the project. `runTemplate` fills `{{project}}`, `{{date}}`, `{{time}}` and `{{weekday}}`, creates the task, then starts it, queues it, or leaves it in To do.
+- **Scheduler:** `templates.ts` ticks every 30 seconds. A template whose `nextRunAt` has passed runs **once**, even if several occurrences were missed while the app was closed, and then gets its next time computed from now (`nextRunAfter`: hourly / daily / weekdays / weekly). A fired interactive task asks the UI to open its agent (`task:launch`). Self-tests connect the UI but never run the timer.
+- **Auto-queue:** headless To do tasks with `queued: true` run in board order. `pumpQueue()` runs after every finish, on queue or setting changes, and every 30 seconds. It starts tasks while fewer than `queueParallel` headless runs are active, and holds while the queue is off or a plan window is at or above `queuePauseAtPercent`. A queued task that can't start (for example its worktree can't be created) goes to Review with the error.
+
+## Updates
+
+`updater.ts` wraps electron-updater. Packaged builds check `Brawly0/mission-control-releases` 15 seconds after start and every 6 hours (setting `autoUpdate`), download in the background, and install on the next restart or right away from **Update ready · Restart**. See ADR 0006 for why releases live in a separate public repo.
 
 ## Tray, hotkey, close to tray
 

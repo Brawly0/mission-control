@@ -1,5 +1,5 @@
-import { Bell, BellOff, CircleAlert, Database, Gauge, GitBranch, Radio, Settings } from 'lucide-react'
-import type { GitInfo, IndexStatus, Project, RateLimitInfo } from '@shared/types'
+import { Bell, BellOff, CircleAlert, Database, Download, Gauge, GitBranch, Radio, Settings } from 'lucide-react'
+import type { GitInfo, IndexStatus, Project, RateLimitInfo, UpdateState } from '@shared/types'
 import type { Agent, View } from '../types'
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   notify: boolean
   indexStatus: IndexStatus | null
   rateLimit: RateLimitInfo | null
+  update: UpdateState
   onToggleNotify: () => void
   onShowAttention: () => void
   onOpenSettings: () => void
@@ -17,7 +18,7 @@ interface Props {
 
 const WINDOW_LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d' }
 
-export default function StatusBar({ view, project, git, agents, notify, indexStatus, rateLimit, onToggleNotify, onShowAttention, onOpenSettings }: Props) {
+export default function StatusBar({ view, project, git, agents, notify, indexStatus, rateLimit, update, onToggleNotify, onShowAttention, onOpenSettings }: Props) {
   const live = agents.filter((a) => !a.exited)
   const attention = live.filter((a) => a.hookStatus === 'needs-input').length
   const busiest = rateLimit?.windows.reduce((a, b) => (b.utilization > a.utilization ? b : a), rateLimit.windows[0])
@@ -32,6 +33,16 @@ export default function StatusBar({ view, project, git, agents, notify, indexSta
         </button>
       )}
       <span className="sb-spacer" />
+      {update.state === 'ready' && (
+        <button className="sb-item sb-update" onClick={() => window.mc.installUpdate()} title="Restarts Mission Control into the new version">
+          <Download size={12} /> Update {update.version} ready · Restart
+        </button>
+      )}
+      {update.state === 'downloading' && (
+        <span className="sb-item" title="Downloading the new version in the background">
+          <Download size={12} /> Downloading {update.version} {update.percent !== undefined ? `${update.percent}%` : ''}
+        </span>
+      )}
       {busiest && (
         <span
           className={`sb-item ${busiest.utilization >= 0.8 ? 'sb-warn' : ''}`}

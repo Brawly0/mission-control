@@ -3,6 +3,7 @@ import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 import './organize.css'
 import './tasks.css'
+import './automation.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

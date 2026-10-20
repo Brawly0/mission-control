@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HookEvent, IndexStatus, MissionControlApi, RateLimitInfo, Task } from '../shared/types'
+import type { HookEvent, IndexStatus, MissionControlApi, QueueStatus, RateLimitInfo, Task, TaskTemplate, UpdateState } from '../shared/types'
+
+/** Subscribes to a main-process event; returns the unsubscribe function. */
+function on<T>(channel: string, cb: (value: T) => void): () => void {
+  const handler = (_e: unknown, value: T) => cb(value)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.removeListener(channel, handler)
+}
 
 const api: MissionControlApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -76,6 +83,19 @@ const api: MissionControlApi = {
     return () => ipcRenderer.removeListener('ratelimit', handler)
   },
   getRateLimit: () => ipcRenderer.invoke('ratelimit:get'),
+  queueStatus: () => ipcRenderer.invoke('queue:status'),
+  onQueueStatus: (cb) => on<QueueStatus>('queue:status', cb),
+  listTemplates: () => ipcRenderer.invoke('templates:list'),
+  saveTemplate: (t, id) => ipcRenderer.invoke('templates:save', t, id),
+  deleteTemplate: (id) => ipcRenderer.invoke('templates:delete', id),
+  runTemplate: (id, then, projectPath) => ipcRenderer.invoke('templates:run', id, then, projectPath),
+  onTemplatesChanged: (cb) => on<TaskTemplate[]>('templates:changed', cb),
+  onLaunchTask: (cb) => on<string>('task:launch', cb),
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.send('update:install'),
+  onUpdateStatus: (cb) => on<UpdateState>('update:status', cb),
   reportStatus: (summary) => ipcRenderer.send('status:summary', summary),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),

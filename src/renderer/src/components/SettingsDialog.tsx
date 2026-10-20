@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Keyboard, X } from 'lucide-react'
-import type { AppSettings } from '@shared/types'
+import { Download, Keyboard, RefreshCw, X } from 'lucide-react'
+import type { AppSettings, UpdateState } from '@shared/types'
 import { Button, IconButton } from './ui'
 
 /** Turns a keydown into an Electron accelerator like "Ctrl+Alt+M". */
@@ -11,6 +11,65 @@ function accelerator(e: React.KeyboardEvent): string | null {
   if (mods.length === 0) return null
   const name = key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key
   return [...mods, name].join('+')
+}
+
+function updateText(u: UpdateState | null): string {
+  if (!u) return ''
+  switch (u.state) {
+    case 'checking':
+      return 'Checking for updates…'
+    case 'none':
+      return 'You have the latest version.'
+    case 'available':
+      return `Version ${u.version} found, downloading…`
+    case 'downloading':
+      return `Downloading ${u.version}… ${u.percent ?? 0}%`
+    case 'ready':
+      return `Version ${u.version} is ready. Restart to install it.`
+    case 'error':
+      return `Couldn't check for updates: ${u.message}`
+    case 'disabled':
+      return u.message ?? 'Updates are off.'
+    default:
+      return ''
+  }
+}
+
+function UpdatesSection({ autoUpdate, onAutoUpdate }: { autoUpdate: boolean; onAutoUpdate: (v: boolean) => void }) {
+  const [version, setVersion] = useState('')
+  const [status, setStatus] = useState<UpdateState | null>(null)
+  useEffect(() => {
+    window.mc.appVersion().then(setVersion)
+    window.mc.updateStatus().then(setStatus)
+    return window.mc.onUpdateStatus(setStatus)
+  }, [])
+  return (
+    <div className="field updates">
+      <span className="field-label">Updates</span>
+      <div className="update-row">
+        <span>
+          Mission Control <strong>{version}</strong>
+        </span>
+        {status?.state === 'ready' ? (
+          <Button size="sm" variant="primary" icon={Download} onClick={() => window.mc.installUpdate()}>
+            Restart and update
+          </Button>
+        ) : (
+          <Button size="sm" variant="secondary" icon={RefreshCw} onClick={() => window.mc.checkForUpdates()} disabled={status?.state === 'disabled' || status?.state === 'checking'}>
+            Check now
+          </Button>
+        )}
+      </div>
+      <span className={`field-hint ${status?.state === 'error' ? 'warn' : ''}`}>{updateText(status)}</span>
+      <label className="check-row">
+        <input type="checkbox" checked={autoUpdate} onChange={(e) => onAutoUpdate(e.target.checked)} />
+        <span>
+          Check for updates automatically
+          <span className="field-hint block">New versions download in the background and install the next time Mission Control restarts.</span>
+        </span>
+      </label>
+    </div>
+  )
 }
 
 export default function SettingsDialog({ onClose }: { onClose: () => void }) {
@@ -79,6 +138,25 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
                 <span className="field-hint block">Only while agents or tasks are running. Quit from the tray icon's menu.</span>
               </span>
             </label>
+            <div className="field">
+              <span className="field-label">Auto-run queue</span>
+              <label className="inline-field">
+                Hold the queue while my plan usage is at or above
+                <input
+                  className="text-input num-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={settings.queuePauseAtPercent}
+                  onChange={(e) => setSettings({ ...settings, queuePauseAtPercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                  onBlur={() => apply({ queuePauseAtPercent: settings.queuePauseAtPercent })}
+                />
+                %
+              </label>
+              <span className="field-hint">Uses the 5-hour and 7-day limits Claude Code reports. 0 turns the check off.</span>
+            </div>
+
+            <UpdatesSection autoUpdate={settings.autoUpdate} onAutoUpdate={(v) => apply({ autoUpdate: v })} />
             {saved && <div className="muted small">Saved</div>}
           </div>
         )}

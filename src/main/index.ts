@@ -8,6 +8,8 @@ import type {
   DocFile,
   HookEvent,
   NewTask,
+  Schedule,
+  TemplateInput,
   ProjectMeta,
   SavedAgent,
   Task,
@@ -25,6 +27,8 @@ import {
   getRateLimit,
   initTasks,
   listTasks,
+  pumpQueue,
+  queueStatus,
   runningTaskCount,
   setTaskRun,
   startTask,
@@ -33,6 +37,8 @@ import {
   updateTask
 } from './tasks'
 import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
+import { deleteTemplate, listTemplates, runTemplate, saveTemplate, startScheduler, stopScheduler } from './templates'
+import { checkForUpdates, initUpdater, installUpdate, setAutoCheck, updateStatus } from './updater'
 import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists, setProjectMeta } from './claudeData'
 import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
 import { commitAll, createWorktree, getChanges, gitInfoMany, mergeWorktree, removeWorktree } from './git'
@@ -320,7 +326,23 @@ function registerIpc(): void {
     updateStore((s) => {
       s.settings = next
     })
+    if (patch.autoUpdate !== undefined) setAutoCheck(next.autoUpdate)
+    if (patch.queueEnabled !== undefined || patch.queueParallel !== undefined || patch.queuePauseAtPercent !== undefined) void pumpQueue()
     return null
+  })
+
+  ipcMain.handle('queue:status', () => queueStatus())
+  ipcMain.handle('templates:list', () => listTemplates())
+  ipcMain.handle('templates:save', (_e, t: TemplateInput, id?: string) => saveTemplate(t, id))
+  ipcMain.handle('templates:delete', (_e, id: string) => deleteTemplate(id))
+  ipcMain.handle('templates:run', (_e, id: string, then: Schedule['then'], projectPath?: string) => runTemplate(id, then, projectPath))
+
+  ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('update:status', () => updateStatus())
+  ipcMain.handle('update:check', () => checkForUpdates())
+  ipcMain.on('update:install', () => {
+    quitting = true
+    installUpdate()
   })
   ipcMain.on('status:summary', (_e, summary: { agents: number; attention: number }) => {
     uiSummary = summary
@@ -366,6 +388,7 @@ app.whenReady().then(async () => {
       refreshTray()
     },
     onRateLimit: (info) => sendToWindow('ratelimit', info),
+    onQueueStatus: (status) => sendToWindow('queue:status', status),
     onFinished: (task) => {
       const win = mainWindow
       if (win && win.isVisible() && win.isFocused()) return
@@ -397,7 +420,31 @@ app.whenReady().then(async () => {
     })
     const hotkeyError = setHotkey(loadStore().settings.hotkey)
     if (hotkeyError) console.warn(hotkeyError)
+    initUpdater((s) => sendToWindow('update:status', s), loadStore().settings.autoUpdate)
   }
+  // Self-tests connect templates to the UI but never run the timer: they must not fire the user's recurring tasks.
+  startScheduler(
+    {
+      onChange: (list) => sendToWindow('templates:changed', list),
+      onLaunchInteractive: (taskId) => {
+        showWindow()
+        sendToWindow('task:launch', taskId)
+      },
+      onFired: (tpl, task) => {
+        const n = new Notification({
+          title: `Recurring task: ${tpl.name}`,
+          body: task.mode === 'headless' && tpl.schedule?.then === 'start' ? 'Started in the background.' : 'Added to your task board.',
+          icon: join(__dirname, '../../build/icon.png')
+        })
+        n.on('click', () => {
+          showWindow()
+          sendToWindow('navigate', { view: 'tasks' })
+        })
+        n.show()
+      }
+    },
+    !process.env.MC_SMOKE
+  )
   if (process.env.MC_SMOKE && mainWindow) {
     const win = mainWindow
     win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps }))
@@ -414,6 +461,7 @@ app.on('before-quit', () => {
   killAllTerminals()
   stopHookServer()
   stopIndexer()
+  stopScheduler()
   destroyTray()
 })
 app.on('window-all-closed', () => {

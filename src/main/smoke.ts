@@ -1,12 +1,14 @@
 import { app, type BrowserWindow } from 'electron'
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { createTask, deleteTask, flushTasks, listTasks, startTask } from './tasks'
+import { createTask, deleteTask, flushTasks, listTasks, pumpQueue, startTask } from './tasks'
+import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
+import { checkForUpdates, initUpdater, updateStatus } from './updater'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions, normalizePath, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, mergeWorktree, removeWorktree } from './git'
 import { killTerminalsIn } from './pty'
-import { updateStore } from './store'
+import { loadStore, updateStore } from './store'
 
 interface SmokeDeps {
   launchTerminal: (spec: TerminalSpec) => TerminalInfo
@@ -235,6 +237,145 @@ async function taskTour(win: BrowserWindow, outFile: string, repo: string): Prom
 }
 
 /**
+ * MC_SMOKE_AUTOMATION=<git repo with a commit>: checks schedule math and template variables, fires a
+ * due recurring template, and runs two real queued headless tasks (Haiku) with one slot, which must
+ * run one after the other. Restores the queue settings and removes everything it made.
+ */
+async function automationTour(win: BrowserWindow, outFile: string, repo: string): Promise<void> {
+  const shot = async (name: string) => {
+    await sleep(600)
+    const file = outFile.replace(/\.png$/, `-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const at = (iso: string) => new Date(iso).getTime()
+  const fmt = (ms: number) => new Date(ms).toLocaleString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  // Schedule math: Friday 2026-10-23 10:00 local.
+  const fri = at('2026-10-23T10:00:00')
+  const checks: [string, number, string][] = [
+    ['daily 09:00 after Fri 10:00', nextRunAfter({ enabled: true, kind: 'daily', time: '09:00', then: 'todo' }, fri), 'Sat 24 Oct, 09:00'],
+    ['daily 18:30 after Fri 10:00', nextRunAfter({ enabled: true, kind: 'daily', time: '18:30', then: 'todo' }, fri), 'Fri 23 Oct, 18:30'],
+    ['weekdays 09:00 after Fri 10:00', nextRunAfter({ enabled: true, kind: 'weekdays', time: '09:00', then: 'todo' }, fri), 'Mon 26 Oct, 09:00'],
+    ['weekly Wed 08:15 after Fri 10:00', nextRunAfter({ enabled: true, kind: 'weekly', weekday: 3, time: '08:15', then: 'todo' }, fri), 'Wed 28 Oct, 08:15'],
+    ['every 6 hours after Fri 10:00', nextRunAfter({ enabled: true, kind: 'hourly', everyHours: 6, time: '00:00', then: 'todo' }, fri), 'Fri 23 Oct, 16:00']
+  ]
+  for (const [label, got, want] of checks) log(`schedule ${label}: ${fmt(got)} ${fmt(got) === want ? 'OK' : `EXPECTED ${want}`}`)
+  log('variables:', fillVariables('Check {{project}} on {{weekday}} {{date}} ({{unknown}})', 'demo-repo', new Date(fri)))
+
+  const settingsBefore = loadStore().settings
+  const made: string[] = []
+  let templateId = ''
+  try {
+    // A recurring template that is overdue fires once and plans its next run.
+    const tpl = saveTemplate({
+      name: 'Nightly check',
+      title: 'Nightly check of {{project}} ({{date}})',
+      prompt: 'Look for TODO comments.',
+      projectPath: repo,
+      projectName: basename(repo),
+      mode: 'headless',
+      permission: 'plan',
+      useWorktree: false,
+      schedule: { enabled: true, kind: 'daily', time: '23:00', then: 'todo' }
+    })
+    templateId = tpl.id
+    updateStore((s) => {
+      const t = s.templates.find((x) => x.id === tpl.id)!
+      t.schedule!.nextRunAt = Date.now() - 60_000
+    })
+    await runDueTemplates()
+    const fired = listTasks().filter((t) => t.templateId === tpl.id)
+    const after = listTemplates().find((t) => t.id === tpl.id)!.schedule!
+    log('recurring fired:', fired.length, 'task(s):', fired.map((t) => `"${t.title}" in ${t.column}`), '| next run', fmt(after.nextRunAt!))
+    made.push(...fired.map((t) => t.id))
+
+    // Two queued tasks, one slot: they must run one after the other.
+    const mk = (n: number) =>
+      createTask({
+        title: `Queue test ${n}`,
+        prompt: `Create a file named queue-${n}.txt containing the single word "${n}". Then reply with one short sentence.`,
+        projectPath: repo,
+        projectName: basename(repo),
+        mode: 'headless',
+        permission: 'acceptEdits',
+        useWorktree: true,
+        budgetUsd: 0.2,
+        model: 'haiku',
+        queued: true
+      })
+    const a = mk(1)
+    const b = mk(2)
+    made.push(a.id, b.id)
+    await js(`window.__mcSmoke.setView('tasks')`)
+    await shot('queue-waiting')
+    updateStore((s) => {
+      s.settings = { ...s.settings, queueEnabled: true, queueParallel: 1, queuePauseAtPercent: 0 }
+    })
+    await pumpQueue()
+    let maxParallel = 0
+    let shotRunning = false
+    const started = Date.now()
+    for (;;) {
+      const ts = listTasks().filter((t) => t.id === a.id || t.id === b.id)
+      const running = ts.filter((t) => t.column === 'running').length
+      maxParallel = Math.max(maxParallel, running)
+      if (!shotRunning && running > 0) {
+        await shot('queue-running')
+        shotRunning = true
+      }
+      if (ts.every((t) => t.column === 'review') || Date.now() - started > 240_000) break
+      await sleep(300)
+    }
+    for (const id of [a.id, b.id]) {
+      const t = listTasks().find((x) => x.id === id)!
+      const file = t.worktree ? join(t.worktree.path, `${t.title.endsWith('1') ? 'queue-1' : 'queue-2'}.txt`) : ''
+      log(`queued "${t.title}": ${t.column}, started ${t.run ? new Date(t.run.startedAt).toLocaleTimeString() : '-'}, finished ${t.run?.finishedAt ? new Date(t.run.finishedAt).toLocaleTimeString() : '-'}, cost $${t.run?.costUsd?.toFixed(3)}, error ${t.run?.error ?? 'none'}, file ${file && existsSync(file) ? 'written' : 'missing'}`)
+    }
+    const ta = listTasks().find((x) => x.id === a.id)!
+    const tb = listTasks().find((x) => x.id === b.id)!
+    log('queue ran one at a time:', maxParallel <= 1 && !!ta.run?.finishedAt && !!tb.run && tb.run.startedAt >= ta.run!.finishedAt! - 1000 ? 'yes' : `NO (max parallel ${maxParallel})`)
+    await shot('queue-done')
+
+    await js(`window.__mcSmoke.openTemplates()`)
+    await shot('templates')
+  } finally {
+    updateStore((s) => {
+      s.settings = settingsBefore
+    })
+    for (const id of made) {
+      const wt = listTasks().find((t) => t.id === id)?.worktree
+      deleteTask(id)
+      if (wt) {
+        await killTerminalsIn(wt.path)
+        await removeWorktree(wt).catch(() => undefined)
+      }
+    }
+    if (templateId) deleteTemplate(templateId)
+    flushTasks()
+    log('automation cleanup: tasks left', listTasks().length, '| templates left', listTemplates().length, '| queue setting restored', loadStore().settings.queueEnabled === settingsBefore.queueEnabled)
+  }
+}
+
+/** MC_SMOKE_UPDATE=1 in a packaged build: checks the releases repo and downloads (not installs) any update. */
+async function updateCheck(): Promise<void> {
+  const states: string[] = []
+  initUpdater((s) => {
+    const label = `${s.state}${'version' in s && s.version ? ` ${s.version}` : ''}${'percent' in s && s.percent !== undefined ? ` ${s.percent}%` : ''}${'message' in s && s.message ? `: ${s.message}` : ''}`
+    if (states[states.length - 1] !== label && !(s.state === 'downloading' && states[states.length - 1]?.startsWith('downloading'))) states.push(label)
+  }, false)
+  await checkForUpdates()
+  const started = Date.now()
+  while (Date.now() - started < 180_000) {
+    const s = updateStatus().state
+    if (s === 'ready' || s === 'none' || s === 'error' || s === 'disabled') break
+    await sleep(500)
+  }
+  log('update states:', states.join(' -> '), '| final:', JSON.stringify(updateStatus()))
+}
+
+/**
  * Self-test, run with MC_SMOKE=<output.png>. Scans projects, runs claude in a PTY, screenshots, quits.
  * With MC_SMOKE_HOOKS=<folder>, also sends one tiny real prompt there to check hook events end to end.
  */
@@ -330,6 +471,8 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
 
     if (process.env.MC_SMOKE_UI) await uiTour(win, outFile, process.env.MC_SMOKE_UI)
     if (process.env.MC_SMOKE_TASKS) await taskTour(win, outFile, process.env.MC_SMOKE_TASKS)
+    if (process.env.MC_SMOKE_AUTOMATION) await automationTour(win, outFile, process.env.MC_SMOKE_AUTOMATION)
+    if (process.env.MC_SMOKE_UPDATE) await updateCheck()
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

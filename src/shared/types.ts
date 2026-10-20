@@ -241,9 +241,61 @@ export interface Task {
   order: number
   worktree?: WorktreeInfo
   run?: TaskRun
+  /** Waiting in the auto-queue (headless To do tasks only). */
+  queued?: boolean
+  /** The template this task was made from, if any. */
+  templateId?: string
 }
 
-export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model'>
+// ---------------------------------------------------------------- templates & schedules
+
+/**
+ * When a recurring template fires. Times are local, "HH:MM".
+ * hourly: every `everyHours` hours; daily: every day; weekdays: Mon-Fri; weekly: on `weekday` (0 = Sunday).
+ */
+export interface Schedule {
+  enabled: boolean
+  kind: 'hourly' | 'daily' | 'weekdays' | 'weekly'
+  time: string
+  weekday?: number
+  everyHours?: number
+  /** What to do with the new task: start it, put it in the queue, or just add it to To do. */
+  then: 'start' | 'queue' | 'todo'
+  lastRunAt?: number
+  nextRunAt?: number
+}
+
+export interface TaskTemplate {
+  id: string
+  name: string
+  /** Title and prompt may use {{project}}, {{date}}, {{time}} and {{weekday}}. */
+  title: string
+  prompt: string
+  /** Fixed project; recurring templates need one. */
+  projectPath?: string
+  projectName?: string
+  mode: TaskMode
+  permission: TaskPermission
+  useWorktree: boolean
+  budgetUsd?: number
+  model?: string
+  schedule?: Schedule
+  createdAt: number
+  updatedAt: number
+}
+
+export type TemplateInput = Omit<TaskTemplate, 'id' | 'createdAt' | 'updatedAt'>
+
+export type UpdateState =
+  | { state: 'idle' | 'checking' | 'none' | 'disabled'; version?: string; message?: string }
+  | { state: 'available' | 'downloading'; version: string; percent?: number }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; message: string }
+
+export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model'> & {
+  queued?: boolean
+  templateId?: string
+}
 
 /** Plan rate-limit utilization reported by Claude Code (0-1 per window). */
 export interface RateLimitInfo {
@@ -257,6 +309,23 @@ export interface AppSettings {
   hotkey: string
   /** Keep running in the tray when the window closes while agents or tasks are running. */
   closeToTray: boolean
+  /** Auto-queue: start queued headless tasks by themselves. */
+  queueEnabled: boolean
+  /** How many queued tasks may run at the same time. */
+  queueParallel: number
+  /** Hold the queue while any plan window is at or above this percentage (0 disables the check). */
+  queuePauseAtPercent: number
+  /** Check for app updates at startup and every few hours. */
+  autoUpdate: boolean
+}
+
+export interface QueueStatus {
+  enabled: boolean
+  parallel: number
+  queued: number
+  running: number
+  /** Why the queue isn't starting tasks right now, if it isn't. */
+  heldBecause?: string
 }
 
 export interface MissionControlApi {
@@ -304,7 +373,24 @@ export interface MissionControlApi {
   onIndexStatus(cb: (s: IndexStatus) => void): () => void
   listTasks(): Promise<Task[]>
   createTask(t: NewTask): Promise<Task>
-  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode'>>): Promise<void>
+  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode' | 'queued'>>): Promise<void>
+  queueStatus(): Promise<QueueStatus>
+  onQueueStatus(cb: (s: QueueStatus) => void): () => void
+
+  listTemplates(): Promise<TaskTemplate[]>
+  saveTemplate(t: TemplateInput, id?: string): Promise<TaskTemplate>
+  deleteTemplate(id: string): Promise<void>
+  /** Makes a task from a template now (and starts or queues it per the template's schedule setting when asked). */
+  runTemplate(id: string, then: 'start' | 'queue' | 'todo', projectPath?: string): Promise<Task>
+  onTemplatesChanged(cb: (t: TaskTemplate[]) => void): () => void
+  /** The main process asks the UI to open an interactive task's agent (e.g. a recurring one fired). */
+  onLaunchTask(cb: (taskId: string) => void): () => void
+
+  appVersion(): Promise<string>
+  updateStatus(): Promise<UpdateState>
+  checkForUpdates(): Promise<void>
+  installUpdate(): void
+  onUpdateStatus(cb: (s: UpdateState) => void): () => void
   deleteTask(id: string): Promise<void>
   /**
    * Starts a task. Headless tasks run in the main process. For interactive tasks the main process

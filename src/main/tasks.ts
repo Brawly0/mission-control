@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
-import type { NewTask, RateLimitInfo, Task, TaskColumn, TaskEvent, TaskRun, WorktreeInfo } from '../shared/types'
+import type { NewTask, QueueStatus, RateLimitInfo, Task, TaskColumn, TaskEvent, TaskRun, WorktreeInfo } from '../shared/types'
 import { createWorktree } from './git'
 import { agentEnv, whichSync } from './pty'
 import { loadStore, updateStore } from './store'
@@ -21,6 +21,7 @@ interface Hooks {
   onChange: (tasks: Task[]) => void
   onRateLimit: (info: RateLimitInfo) => void
   onFinished: (task: Task) => void
+  onQueueStatus: (status: QueueStatus) => void
 }
 
 let tasks: Task[] = []
@@ -76,6 +77,59 @@ export function initTasks(h: Hooks): void {
     }
   }
   persist()
+  // Re-check the queue now and then: a plan window may have reset since the last check.
+  setInterval(pumpQueue, 30_000)
+  setTimeout(pumpQueue, 3000)
+}
+
+// ---------------------------------------------------------------- auto-queue
+
+function queuedTasks(): Task[] {
+  return tasks.filter((t) => t.column === 'todo' && t.queued && t.mode === 'headless').sort((a, b) => a.order - b.order)
+}
+
+export function queueStatus(): QueueStatus {
+  const s = loadStore().settings
+  const status: QueueStatus = {
+    enabled: s.queueEnabled,
+    parallel: s.queueParallel,
+    queued: queuedTasks().length,
+    running: procs.size
+  }
+  if (!s.queueEnabled) status.heldBecause = 'Auto-run is off'
+  else {
+    const busiest = Math.max(0, ...(lastRateLimit?.windows.map((w) => w.utilization) ?? []))
+    if (s.queuePauseAtPercent > 0 && busiest * 100 >= s.queuePauseAtPercent) {
+      status.heldBecause = `Plan usage is at ${Math.round(busiest * 100)}% (limit ${s.queuePauseAtPercent}%)`
+    }
+  }
+  return status
+}
+
+let pumping = false
+
+/** Starts queued tasks while there are free slots. */
+export async function pumpQueue(): Promise<void> {
+  if (pumping || !hooks) return
+  pumping = true
+  try {
+    for (;;) {
+      const status = queueStatus()
+      hooks.onQueueStatus(status)
+      if (status.heldBecause || procs.size >= status.parallel) return
+      const next = queuedTasks()[0]
+      if (!next) return
+      next.queued = false
+      try {
+        await startTask(next.id)
+      } catch (err) {
+        // Couldn't even start (e.g. worktree creation failed): report it on the card.
+        setTaskRun(next.id, { startedAt: Date.now(), finishedAt: Date.now(), toolCalls: 0, events: [], error: (err as Error).message }, 'review')
+      }
+    }
+  } finally {
+    pumping = false
+  }
 }
 
 export function listTasks(): Task[] {
@@ -105,18 +159,23 @@ export function createTask(input: NewTask): Task {
     column: 'todo',
     createdAt: now,
     updatedAt: now,
-    order: nextOrder('todo')
+    order: nextOrder('todo'),
+    queued: input.mode === 'headless' && !!input.queued
   }
   tasks = [...tasks, task]
   emit()
+  if (task.queued) void pumpQueue()
   return task
 }
 
 export function updateTask(id: string, patch: Partial<Task>): void {
   const t = find(id)
   Object.assign(t, patch, { updatedAt: Date.now() })
+  // A task that leaves To do also leaves the queue.
+  if (t.column !== 'todo') t.queued = false
   tasks = [...tasks]
   emit()
+  if ('queued' in patch || 'column' in patch) void pumpQueue()
 }
 
 export function deleteTask(id: string): void {
@@ -225,6 +284,7 @@ export async function startTask(id: string): Promise<{ interactive?: { cwd: stri
   addEvent(run, 'start', `Started in ${cwd}${worktree ? ` (branch ${worktree.branch})` : ''}`)
   t.run = run
   t.column = 'running'
+  t.queued = false
   t.order = nextOrder('running')
   t.updatedAt = Date.now()
   tasks = [...tasks]
@@ -283,6 +343,8 @@ export async function startTask(id: string): Promise<{ interactive?: { cwd: stri
     tasks = [...tasks]
     emit()
     hooks?.onFinished(t)
+    // A slot just opened up.
+    void pumpQueue()
   }
   child.on('error', (err) => finish(null, err))
   child.on('close', (code) => finish(code))
@@ -324,6 +386,7 @@ function handleEvent(t: Task, run: TaskRun, e: any): boolean {
     }))
     lastRateLimit = { at: Date.now(), status: String(info.status ?? ''), windows }
     hooks?.onRateLimit(lastRateLimit)
+    hooks?.onQueueStatus(queueStatus())
     return false
   }
   if (e.type === 'result' || 'total_cost_usd' in e) {
