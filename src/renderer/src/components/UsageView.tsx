@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Coins, Info, MessagesSquare, Sigma, Table2, Zap } from 'lucide-react'
-import type { IndexStatus, UsageReport, UsageTotals } from '@shared/types'
+import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
 import { Avatar, EmptyState, IconButton, Segmented } from './ui'
 
 interface Props {
   visible: boolean
   status: IndexStatus | null
+  rateLimit: RateLimitInfo | null
   onOpenProject: (path: string) => void
   onOpenSession: (projectPath: string, sessionId: string) => void
 }
@@ -146,7 +147,34 @@ function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; av
   )
 }
 
-export default function UsageView({ visible, status, onOpenProject, onOpenSession }: Props) {
+const WINDOW_NAMES: Record<string, string> = { five_hour: '5-hour window', seven_day: '7-day window' }
+
+/** Plan limits as last reported by Claude Code: one meter per window. */
+function PlanLimits({ info }: { info: RateLimitInfo }) {
+  return (
+    <section className="card usage-card">
+      <div className="usage-card-head">
+        <h2>Plan limits</h2>
+        <span className="muted small">as of {timeAgo(info.at)}</span>
+      </div>
+      {info.windows.map((w) => {
+        const pct = Math.round(w.utilization * 100)
+        return (
+          <div key={w.name} className="meter-row">
+            <span className="meter-label">{WINDOW_NAMES[w.name] ?? w.name}</span>
+            <span className="meter-track" aria-hidden>
+              <span className={`meter-fill ${pct >= 80 ? 'warn' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
+            </span>
+            <span className="meter-value">{pct}% used</span>
+            <span className="muted small">resets {new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
+export default function UsageView({ visible, status, rateLimit, onOpenProject, onOpenSession }: Props) {
   const [range, setRange] = useState<Range>('30')
   const [report, setReport] = useState<UsageReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -209,6 +237,7 @@ export default function UsageView({ visible, status, onOpenProject, onOpenSessio
         />
       </header>
 
+      {rateLimit && rateLimit.windows.length > 0 && <PlanLimits info={rateLimit} />}
       {error && <div className="error pad">{error}</div>}
       {!report && !error && <div className="muted pad">{status?.indexing ? `Reading your chats… ${status.done}/${status.total}` : 'Loading…'}</div>}
       {report && t && allTokens(t) === 0 && (

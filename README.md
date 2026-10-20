@@ -2,7 +2,14 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.4)
+## Features (v0.5)
+
+- **Task board**: write tasks in To do, press **Start**, and they move through Running → Review → Done (drag cards between columns).
+  - **Headless** tasks run Claude in the background, with no terminal. The card shows what it's doing right now ("Editing app.ts", "Running: npm test"), tool calls, time, cost and the final answer.
+  - **Interactive** tasks open a normal agent terminal with the prompt.
+  - Each task can have its own permission mode (Auto by default), model, budget cap (`--max-budget-usd`) and its own **worktree**, so several tasks can work in parallel without clashing. Review the diff, then merge.
+- **Tray and hotkey**: a tray icon shows what's running and has a menu (New task, Task board, Quit). `Ctrl+Alt+M` shows or hides the window from any app (change it in Settings). Closing the window while agents or tasks run keeps them going in the tray.
+- **Plan limits**: your 5-hour and 7-day plan usage, as reported by Claude Code, in the status bar and on the Usage page.
 
 - **Search all chats** (`Ctrl+Shift+F`): full-text search over everything you and Claude wrote in every project, with highlighted snippets, filters for your prompts or Claude's replies, and one-click Open or Resume.
 - **Usage**: estimated cost and tokens per day, project, model and chat, at Anthropic API list prices (an estimate; subscription plans don't pay these). Subagent usage counts toward its parent chat.

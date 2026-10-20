@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HookEvent, IndexStatus, MissionControlApi } from '../shared/types'
+import type { HookEvent, IndexStatus, MissionControlApi, RateLimitInfo, Task } from '../shared/types'
 
 const api: MissionControlApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -57,6 +57,32 @@ const api: MissionControlApi = {
     const handler = (_e: unknown, s: IndexStatus) => cb(s)
     ipcRenderer.on('index:status', handler)
     return () => ipcRenderer.removeListener('index:status', handler)
+  },
+  listTasks: () => ipcRenderer.invoke('tasks:list'),
+  createTask: (t) => ipcRenderer.invoke('tasks:create', t),
+  updateTask: (id, patch) => ipcRenderer.invoke('tasks:update', id, patch),
+  deleteTask: (id) => ipcRenderer.invoke('tasks:delete', id),
+  startTask: (id) => ipcRenderer.invoke('tasks:start', id),
+  stopTask: (id) => ipcRenderer.invoke('tasks:stop', id),
+  setTaskRun: (id, patch, column) => ipcRenderer.invoke('tasks:setRun', id, patch, column),
+  onTasksChanged: (cb) => {
+    const handler = (_e: unknown, tasks: Task[]) => cb(tasks)
+    ipcRenderer.on('tasks:changed', handler)
+    return () => ipcRenderer.removeListener('tasks:changed', handler)
+  },
+  onRateLimit: (cb) => {
+    const handler = (_e: unknown, info: RateLimitInfo) => cb(info)
+    ipcRenderer.on('ratelimit', handler)
+    return () => ipcRenderer.removeListener('ratelimit', handler)
+  },
+  getRateLimit: () => ipcRenderer.invoke('ratelimit:get'),
+  reportStatus: (summary) => ipcRenderer.send('status:summary', summary),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+  onNavigate: (cb) => {
+    const handler = (_e: unknown, target: { view: string; newTask?: boolean }) => cb(target)
+    ipcRenderer.on('navigate', handler)
+    return () => ipcRenderer.removeListener('navigate', handler)
   },
   getUiState: () => ipcRenderer.invoke('ui:get'),
   setUiState: (patch) => ipcRenderer.send('ui:set', patch),

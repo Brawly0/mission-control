@@ -1,0 +1,88 @@
+import { useEffect, useState } from 'react'
+import { Keyboard, X } from 'lucide-react'
+import type { AppSettings } from '@shared/types'
+import { Button, IconButton } from './ui'
+
+/** Turns a keydown into an Electron accelerator like "Ctrl+Alt+M". */
+function accelerator(e: React.KeyboardEvent): string | null {
+  const key = e.key
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return null
+  const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean)
+  if (mods.length === 0) return null
+  const name = key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key
+  return [...mods, name].join('+')
+}
+
+export default function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [recording, setRecording] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    window.mc.getSettings().then(setSettings)
+  }, [])
+
+  const apply = async (patch: Partial<AppSettings>) => {
+    const err = await window.mc.setSettings(patch)
+    setError(err)
+    if (!err) {
+      setSettings((s) => (s ? { ...s, ...patch } : s))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1500)
+    }
+  }
+
+  return (
+    <div className="overlay" onMouseDown={onClose}>
+      <div className="dialog settings" onMouseDown={(e) => e.stopPropagation()} onKeyDown={(e) => !recording && e.key === 'Escape' && onClose()}>
+        <div className="dialog-head">
+          <h2>Settings</h2>
+          <IconButton icon={X} label="Close" onClick={onClose} />
+        </div>
+        {!settings ? (
+          <div className="muted pad">Loading…</div>
+        ) : (
+          <div className="dialog-body">
+            <div className="field">
+              <span className="field-label">Global shortcut to show or hide Mission Control</span>
+              <div className="hotkey-row">
+                <button
+                  className={`hotkey-box ${recording ? 'recording' : ''}`}
+                  onClick={() => setRecording(true)}
+                  onBlur={() => setRecording(false)}
+                  onKeyDown={(e) => {
+                    if (!recording) return
+                    e.preventDefault()
+                    if (e.key === 'Escape') return setRecording(false)
+                    const acc = accelerator(e)
+                    if (acc) {
+                      setRecording(false)
+                      apply({ hotkey: acc })
+                    }
+                  }}
+                >
+                  <Keyboard size={14} />
+                  {recording ? 'Press the keys…' : settings.hotkey || 'Not set'}
+                </button>
+                <Button size="sm" variant="ghost" onClick={() => apply({ hotkey: '' })} disabled={!settings.hotkey}>
+                  Turn off
+                </Button>
+              </div>
+              <span className="field-hint">Works from any app. Use at least one of Ctrl, Alt or Shift.</span>
+              {error && <span className="field-hint warn">{error}</span>}
+            </div>
+            <label className="check-row">
+              <input type="checkbox" checked={settings.closeToTray} onChange={(e) => apply({ closeToTray: e.target.checked })} />
+              <span>
+                Keep running in the tray when I close the window
+                <span className="field-hint block">Only while agents or tasks are running. Quit from the tray icon's menu.</span>
+              </span>
+            </label>
+            {saved && <div className="muted small">Saved</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

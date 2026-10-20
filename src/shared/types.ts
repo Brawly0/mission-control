@@ -179,7 +179,7 @@ export interface GitChanges {
 /** UI state remembered between runs. */
 export interface UiState {
   selectedPath?: string
-  view?: 'home' | 'project' | 'agents' | 'search' | 'usage'
+  view?: 'home' | 'project' | 'agents' | 'search' | 'usage' | 'tasks'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
 }
@@ -187,6 +187,76 @@ export interface UiState {
 export interface RecentSession extends SessionSummary {
   projectName: string
   projectPath: string
+}
+
+// ---------------------------------------------------------------- tasks
+
+export type TaskColumn = 'todo' | 'running' | 'review' | 'done'
+/** Headless runs `claude -p` in the background; interactive opens a normal agent terminal. */
+export type TaskMode = 'headless' | 'interactive'
+export type TaskPermission = 'auto' | 'acceptEdits' | 'plan' | 'bypassPermissions'
+
+export interface TaskEvent {
+  at: number
+  kind: 'start' | 'tool' | 'text' | 'result' | 'error' | 'info'
+  text: string
+}
+
+export interface TaskRun {
+  sessionId?: string
+  startedAt: number
+  finishedAt?: number
+  /** One line describing what the agent is doing right now, e.g. "Editing src/app.ts". */
+  activity?: string
+  toolCalls: number
+  turns?: number
+  costUsd?: number
+  /** Final answer of a headless run. */
+  result?: string
+  error?: string
+  /** Recent events, newest last (capped). */
+  events: TaskEvent[]
+  /** Interactive runs: the agent (PTY) id while it's open. */
+  agentId?: string
+}
+
+export interface Task {
+  id: string
+  title: string
+  /** The prompt given to Claude. */
+  prompt: string
+  projectPath: string
+  projectName: string
+  column: TaskColumn
+  mode: TaskMode
+  permission: TaskPermission
+  /** Run in its own git worktree + branch. */
+  useWorktree: boolean
+  /** Spending cap for headless runs (USD), passed as --max-budget-usd. */
+  budgetUsd?: number
+  model?: string
+  createdAt: number
+  updatedAt: number
+  /** Position within its column (lower first). */
+  order: number
+  worktree?: WorktreeInfo
+  run?: TaskRun
+}
+
+export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model'>
+
+/** Plan rate-limit utilization reported by Claude Code (0-1 per window). */
+export interface RateLimitInfo {
+  at: number
+  status: string
+  windows: { name: string; utilization: number; resetsAt: number }[]
+}
+
+export interface AppSettings {
+  /** Accelerator for the global show/hide hotkey, e.g. "Ctrl+Alt+M"; empty to disable. */
+  hotkey: string
+  /** Keep running in the tray when the window closes while agents or tasks are running. */
+  closeToTray: boolean
 }
 
 export interface MissionControlApi {
@@ -232,6 +302,30 @@ export interface MissionControlApi {
   indexStatus(): Promise<IndexStatus>
   reindex(): void
   onIndexStatus(cb: (s: IndexStatus) => void): () => void
+  listTasks(): Promise<Task[]>
+  createTask(t: NewTask): Promise<Task>
+  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode'>>): Promise<void>
+  deleteTask(id: string): Promise<void>
+  /**
+   * Starts a task. Headless tasks run in the main process. For interactive tasks the main process
+   * prepares the folder (and worktree) and returns how to launch the agent, which the UI then opens.
+   */
+  startTask(id: string): Promise<{ interactive?: { cwd: string; args: string[]; worktree?: WorktreeInfo } }>
+  stopTask(id: string): Promise<void>
+  /** Records the interactive agent a task runs in (or its finish). */
+  setTaskRun(id: string, patch: Partial<TaskRun>, column?: TaskColumn): Promise<void>
+  onTasksChanged(cb: (tasks: Task[]) => void): () => void
+  onRateLimit(cb: (info: RateLimitInfo) => void): () => void
+  getRateLimit(): Promise<RateLimitInfo | null>
+  /** Live agent counts, shown in the tray tooltip and menu. */
+  reportStatus(summary: { agents: number; attention: number }): void
+
+  getSettings(): Promise<AppSettings>
+  /** Applies settings; resolves with an error message if the hotkey can't be registered. */
+  setSettings(patch: Partial<AppSettings>): Promise<string | null>
+  /** Main process asks the UI to go somewhere (tray menu, hotkey). */
+  onNavigate(cb: (target: { view: string; newTask?: boolean }) => void): () => void
+
   getUiState(): Promise<UiState>
   setUiState(patch: Partial<UiState>): void
 

@@ -3,6 +3,9 @@ import {
   BarChart3,
   Bell,
   Bot,
+  KanbanSquare,
+  ListPlus,
+  Settings,
   TextSearch,
   FolderOpen,
   FolderPlus,
@@ -17,7 +20,11 @@ import {
   Terminal,
   X
 } from 'lucide-react'
-import type { GitInfo, IndexStatus, Project, RecentSession, SavedAgent, SearchHit } from '@shared/types'
+import type { GitInfo, IndexStatus, Project, RateLimitInfo, RecentSession, SavedAgent, SearchHit, Task } from '@shared/types'
+import TasksView from './components/TasksView'
+import TaskComposer from './components/TaskComposer'
+import TaskDrawer from './components/TaskDrawer'
+import SettingsDialog from './components/SettingsDialog'
 import SearchView from './components/SearchView'
 import UsageView from './components/UsageView'
 import Sidebar from './components/Sidebar'
@@ -60,6 +67,29 @@ export default function App() {
   const [pendingRestore, setPendingRestore] = useState<SavedAgent[] | null>(null)
   const [uiLoaded, setUiLoaded] = useState(false)
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [composerOpen, setComposerOpen] = useState(false)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  const [taskFilter, setTaskFilter] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
+
+  useEffect(() => {
+    window.mc.listTasks().then(setTasks)
+    window.mc.getRateLimit().then(setRateLimit)
+    const offTasks = window.mc.onTasksChanged(setTasks)
+    const offRate = window.mc.onRateLimit(setRateLimit)
+    // The tray menu and notifications can send the UI somewhere.
+    const offNav = window.mc.onNavigate((target) => {
+      setView(target.view as View)
+      if (target.newTask) setComposerOpen(true)
+    })
+    return () => {
+      offTasks()
+      offRate()
+      offNav()
+    }
+  }, [])
   const [focusSession, setFocusSession] = useState<{ sessionId: string; nonce: number } | undefined>()
 
   useEffect(() => {
@@ -214,12 +244,75 @@ export default function App() {
         setAgents((a) => [...a, agent])
         setActiveAgent(info.id)
         setView('agents')
+        return info
       } catch (e) {
         toast('error', 'Could not start the agent', errorMessage(e))
+        return null
       }
     },
     [toast]
   )
+
+  // ---------- tasks ----------
+  const tasksRef = useRef(tasks)
+  tasksRef.current = tasks
+
+  const startTask = useCallback(
+    async (task: Task) => {
+      try {
+        const res = await window.mc.startTask(task.id)
+        if (res.interactive) {
+          const { cwd, args, worktree } = res.interactive
+          const info = await launch({ cwd, projectName: task.projectName, projectPath: task.projectPath, title: task.title.slice(0, 48), args, worktree })
+          if (info) {
+            await window.mc.setTaskRun(
+              task.id,
+              { agentId: info.id, sessionId: info.sessionId, startedAt: Date.now(), finishedAt: undefined, error: undefined, result: undefined, toolCalls: 0, events: [], activity: 'Running in an agent tab' },
+              'running'
+            )
+          }
+        } else {
+          toast('info', 'Task started', task.title)
+        }
+      } catch (e) {
+        toast('error', 'Could not start the task', errorMessage(e))
+      }
+    },
+    [launch, toast]
+  )
+
+  const continueTask = useCallback(
+    (task: Task) => {
+      if (!task.run?.sessionId) return
+      launch({
+        cwd: task.worktree?.path ?? task.projectPath,
+        projectName: task.projectName,
+        projectPath: task.projectPath,
+        title: task.title.slice(0, 48),
+        args: ['--resume', task.run.sessionId],
+        worktree: task.worktree
+      })
+    },
+    [launch]
+  )
+
+  // An interactive task's agent closing ends its run; move it to Review.
+  useEffect(() => {
+    for (const t of tasksRef.current) {
+      const agentId = t.run?.agentId
+      if (t.column !== 'running' || !agentId) continue
+      const agent = agents.find((a) => a.id === agentId)
+      if (!agent || agent.exited) {
+        window.mc.setTaskRun(t.id, { agentId: undefined, finishedAt: Date.now(), activity: 'Agent closed' }, 'review')
+      }
+    }
+  }, [agents])
+
+  // Live counts for the tray tooltip.
+  useEffect(() => {
+    const live = agents.filter((a) => !a.exited)
+    window.mc.reportStatus({ agents: live.length, attention: live.filter((a) => a.hookStatus === 'needs-input').length })
+  }, [agents])
 
   const launchWorktree = useCallback(
     async (project: Project) => {
@@ -243,8 +336,8 @@ export default function App() {
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
     if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects }
-  }, [launch, refreshProjects])
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, startTask, tasks: () => tasksRef.current }
+  }, [launch, refreshProjects, startTask])
 
   const restoreAll = useCallback(async () => {
     const saved = pendingRestore ?? []
@@ -320,6 +413,7 @@ export default function App() {
   }, [refreshProjects, openProject])
 
   const selected = projects.find((p) => p.path === selectedPath) ?? null
+  const openTask = tasks.find((t) => t.id === openTaskId) ?? null
   const newInSelected = useCallback(() => {
     if (selected) launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · new` })
   }, [selected, launch])
@@ -359,7 +453,10 @@ export default function App() {
       { id: 'go-home', group: 'Go to', title: 'Home', icon: House, run: () => setView('home') },
       { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') },
       { id: 'go-search', group: 'Go to', title: 'Search all chats', hint: 'Ctrl+Shift+F', icon: TextSearch, keywords: 'find full text', run: () => setView('search') },
-      { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') }
+      { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') },
+      { id: 'go-tasks', group: 'Go to', title: 'Task board', icon: KanbanSquare, keywords: 'kanban todo', run: () => setView('tasks') },
+      { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: () => setComposerOpen(true) },
+      { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) }
     ]
     if (selected) {
       list.push(
@@ -415,6 +512,10 @@ export default function App() {
         onOpenPalette={openPalette}
         onRefresh={refreshProjects}
         onAdd={addProject}
+        taskCounts={{
+          running: tasks.filter((t) => t.column === 'running').length,
+          review: tasks.filter((t) => t.column === 'review').length
+        }}
       />
       <main className="main">
         {pendingRestore && pendingRestore.length > 0 && (
@@ -498,11 +599,47 @@ export default function App() {
             />
           </div>
           <div className={view === 'usage' ? 'view-pane' : 'view-pane hidden'}>
-            <UsageView visible={view === 'usage'} status={indexStatus} onOpenProject={openProject} onOpenSession={openSession} />
+            <UsageView visible={view === 'usage'} status={indexStatus} rateLimit={rateLimit} onOpenProject={openProject} onOpenSession={openSession} />
+          </div>
+          <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
+            <TasksView
+              tasks={tasks}
+              agents={agents}
+              projects={projects}
+              projectFilter={taskFilter}
+              onProjectFilter={setTaskFilter}
+              onNew={() => setComposerOpen(true)}
+              onOpen={(t) => setOpenTaskId(t.id)}
+              onStart={startTask}
+              onStop={(t) => window.mc.stopTask(t.id)}
+              onMove={(t, column) => window.mc.updateTask(t.id, { column, order: Date.now() })}
+              onOpenAgent={focusAgent}
+            />
           </div>
         </div>
+        {openTask && view === 'tasks' && (
+          <TaskDrawer
+            task={openTask}
+            agent={openTask.run?.agentId ? agents.find((a) => a.id === openTask.run!.agentId) : undefined}
+            onClose={() => setOpenTaskId(null)}
+            onStart={startTask}
+            onStop={(t) => window.mc.stopTask(t.id)}
+            onContinue={continueTask}
+            onOpenAgent={focusAgent}
+            onDone={(t) => window.mc.updateTask(t.id, { column: 'done', order: Date.now() })}
+            onDelete={(t) => {
+              if (window.confirm(`Delete the task "${t.title}"?`)) {
+                window.mc.deleteTask(t.id)
+                setOpenTaskId(null)
+              }
+            }}
+            onGitChanged={refreshGit}
+          />
+        )}
         <StatusBar
           indexStatus={indexStatus}
+          rateLimit={rateLimit}
+          onOpenSettings={() => setSettingsOpen(true)}
           view={view}
           project={selected}
           git={selected ? git[selected.path] : undefined}
@@ -516,6 +653,21 @@ export default function App() {
         />
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+      {composerOpen && (
+        <TaskComposer
+          projects={projects}
+          git={git}
+          defaultProject={taskFilter || selectedPath || undefined}
+          onCancel={() => setComposerOpen(false)}
+          onCreate={async (input, startNow) => {
+            setComposerOpen(false)
+            setView('tasks')
+            const task = await window.mc.createTask(input)
+            if (startNow) startTask(task)
+          }}
+        />
+      )}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from 'electron'
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { createTask, deleteTask, flushTasks, listTasks, startTask } from './tasks'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions, normalizePath, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, mergeWorktree, removeWorktree } from './git'
@@ -157,6 +158,83 @@ async function uiTour(win: BrowserWindow, outFile: string, repo: string): Promis
 }
 
 /**
+ * MC_SMOKE_TASKS=<git repo with a commit>: runs one real headless task (Haiku, in a worktree, small
+ * budget) through the board, screenshots the board while running and after, the drawer and the
+ * composer, checks the result, then deletes the task and its worktree. Uses a little Claude usage.
+ */
+async function taskTour(win: BrowserWindow, outFile: string, repo: string): Promise<void> {
+  const shot = async (name: string) => {
+    await sleep(600)
+    const file = outFile.replace(/\.png$/, `-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+
+  const task = createTask({
+    title: 'Write a hello note',
+    prompt: 'Create a file named NOTES.md containing exactly one line: "hello from a Mission Control task". Then reply with one short sentence saying it is done.',
+    projectPath: repo,
+    projectName: basename(repo),
+    mode: 'headless',
+    permission: 'acceptEdits',
+    useWorktree: true,
+    budgetUsd: 0.2,
+    model: 'haiku'
+  })
+  const todo = createTask({
+    title: 'Refactor the settings page',
+    prompt: 'Split the settings page into smaller components.',
+    projectPath: repo,
+    projectName: basename(repo),
+    mode: 'interactive',
+    permission: 'auto',
+    useWorktree: false
+  })
+  try {
+    await js(`window.__mcSmoke.setView('tasks')`)
+    await startTask(task.id)
+    const started = Date.now()
+    let shotRunning = false
+    for (;;) {
+      const t = listTasks().find((x) => x.id === task.id)!
+      if (!shotRunning && t.run && t.run.toolCalls > 0) {
+        await shot('tasks-running')
+        shotRunning = true
+      }
+      if (t.column !== 'running' || Date.now() - started > 150_000) break
+      await sleep(250)
+    }
+    const t = listTasks().find((x) => x.id === task.id)!
+    log('task column:', t.column, '| error:', t.run?.error ?? 'none')
+    log('task run:', `tools ${t.run?.toolCalls}, turns ${t.run?.turns}, cost $${t.run?.costUsd?.toFixed(4)}, session ${t.run?.sessionId}`)
+    log('task result:', JSON.stringify((t.run?.result ?? '').slice(0, 160)))
+    log('task events:', t.run?.events.map((e) => `${e.kind}: ${e.text.split('\n')[0].slice(0, 70)}`))
+    if (t.worktree) {
+      const note = join(t.worktree.path, 'NOTES.md')
+      log('NOTES.md in worktree:', existsSync(note) ? JSON.stringify(readFileSync(note, 'utf8').trim()) : 'missing')
+    }
+    await shot('tasks-review')
+    await js(`window.__mcSmoke.openTask(${JSON.stringify(task.id)})`)
+    await sleep(400)
+    await shot('task-drawer')
+    await js(`window.__mcSmoke.openTask(null)`)
+    await js(`window.__mcSmoke.openComposer()`)
+    await shot('task-composer')
+  } finally {
+    const wt = listTasks().find((x) => x.id === task.id)?.worktree
+    deleteTask(task.id)
+    deleteTask(todo.id)
+    flushTasks()
+    if (wt) {
+      await killTerminalsIn(wt.path)
+      await removeWorktree(wt)
+      log('task worktree removed:', !existsSync(wt.path))
+    }
+  }
+}
+
+/**
  * Self-test, run with MC_SMOKE=<output.png>. Scans projects, runs claude in a PTY, screenshots, quits.
  * With MC_SMOKE_HOOKS=<folder>, also sends one tiny real prompt there to check hook events end to end.
  */
@@ -251,6 +329,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     log('index search hits:', hits)
 
     if (process.env.MC_SMOKE_UI) await uiTour(win, outFile, process.env.MC_SMOKE_UI)
+    if (process.env.MC_SMOKE_TASKS) await taskTour(win, outFile, process.env.MC_SMOKE_TASKS)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

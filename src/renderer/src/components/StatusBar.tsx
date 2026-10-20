@@ -1,5 +1,5 @@
-import { Bell, BellOff, CircleAlert, Database, GitBranch, Radio } from 'lucide-react'
-import type { GitInfo, IndexStatus, Project } from '@shared/types'
+import { Bell, BellOff, CircleAlert, Database, Gauge, GitBranch, Radio, Settings } from 'lucide-react'
+import type { GitInfo, IndexStatus, Project, RateLimitInfo } from '@shared/types'
 import type { Agent, View } from '../types'
 
 interface Props {
@@ -9,13 +9,18 @@ interface Props {
   agents: Agent[]
   notify: boolean
   indexStatus: IndexStatus | null
+  rateLimit: RateLimitInfo | null
   onToggleNotify: () => void
   onShowAttention: () => void
+  onOpenSettings: () => void
 }
 
-export default function StatusBar({ view, project, git, agents, notify, indexStatus, onToggleNotify, onShowAttention }: Props) {
+const WINDOW_LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d' }
+
+export default function StatusBar({ view, project, git, agents, notify, indexStatus, rateLimit, onToggleNotify, onShowAttention, onOpenSettings }: Props) {
   const live = agents.filter((a) => !a.exited)
   const attention = live.filter((a) => a.hookStatus === 'needs-input').length
+  const busiest = rateLimit?.windows.reduce((a, b) => (b.utilization > a.utilization ? b : a), rateLimit.windows[0])
   return (
     <footer className="statusbar">
       <span className="sb-item" title="Agents running">
@@ -27,6 +32,16 @@ export default function StatusBar({ view, project, git, agents, notify, indexSta
         </button>
       )}
       <span className="sb-spacer" />
+      {busiest && (
+        <span
+          className={`sb-item ${busiest.utilization >= 0.8 ? 'sb-warn' : ''}`}
+          title={rateLimit!.windows
+            .map((w) => `${WINDOW_LABEL[w.name] ?? w.name} window: ${Math.round(w.utilization * 100)}% used, resets ${new Date(w.resetsAt).toLocaleString()}`)
+            .join('\n')}
+        >
+          <Gauge size={12} /> Plan {WINDOW_LABEL[busiest.name] ?? busiest.name} {Math.round(busiest.utilization * 100)}%
+        </span>
+      )}
       {indexStatus && (
         <span className="sb-item" title={indexStatus.error ? `Last index error: ${indexStatus.error}` : 'Chats indexed for search and usage'}>
           <Database size={12} />
@@ -43,7 +58,9 @@ export default function StatusBar({ view, project, git, agents, notify, indexSta
         {notify ? <Bell size={12} /> : <BellOff size={12} />}
         {notify ? 'Notifications on' : 'Notifications off'}
       </button>
-      <span className="sb-item muted">Ctrl K</span>
+      <button className="sb-item sb-button" onClick={onOpenSettings} title="Settings (hotkey, tray)">
+        <Settings size={12} />
+      </button>
     </footer>
   )
 }

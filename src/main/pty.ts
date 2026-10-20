@@ -130,3 +130,7 @@ export async function killTerminalsIn(folder: string): Promise<string[]> {
   await Promise.all(exited)
   return ids
 }
+
+export function terminalCount(): number {
+  return terminals.size
+}

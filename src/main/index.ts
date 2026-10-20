@@ -1,18 +1,58 @@
-import { app, BrowserWindow, dialog, ipcMain, screen, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, screen, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import type { DocFile, HookEvent, ProjectMeta, SavedAgent, TerminalInfo, TerminalSpec, UiState, WorktreeInfo } from '../shared/types'
+import type {
+  AppSettings,
+  DocFile,
+  HookEvent,
+  NewTask,
+  ProjectMeta,
+  SavedAgent,
+  Task,
+  TaskColumn,
+  TaskRun,
+  TerminalInfo,
+  TerminalSpec,
+  UiState,
+  WorktreeInfo
+} from '../shared/types'
+import {
+  createTask,
+  deleteTask,
+  flushTasks,
+  getRateLimit,
+  initTasks,
+  listTasks,
+  runningTaskCount,
+  setTaskRun,
+  startTask,
+  stopAllTasks,
+  stopTask,
+  updateTask
+} from './tasks'
+import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
 import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists, setProjectMeta } from './claudeData'
 import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
 import { commitAll, createWorktree, getChanges, gitInfoMany, mergeWorktree, removeWorktree } from './git'
 import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
-import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
+import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, terminalCount, writeTerminal, whichSync } from './pty'
 import { loadStore, updateStore, type WindowBounds } from './store'
 import { runSmoke } from './smoke'
 
 let mainWindow: BrowserWindow | null = null
+let toldAboutTray = false
+/** Live counts pushed by the UI, for the tray tooltip and menu. */
+let uiSummary = { agents: 0, attention: 0 }
+
+function showWindow(): void {
+  if (!mainWindow) createWindow()
+  const win = mainWindow!
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
 
 /** Last window position and size, if it still fits on a connected screen. */
 function savedBounds(): WindowBounds | undefined {
@@ -57,13 +97,27 @@ function createWindow(): void {
 
   if (bounds?.maximized) mainWindow.maximize()
 
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (e) => {
     const win = mainWindow
     if (!win || process.env.MC_SMOKE) return
     const b = win.getNormalBounds()
     updateStore((s) => {
       s.window = { ...b, maximized: win.isMaximized() }
     })
+    // With work still running, closing hides to the tray instead of stopping everything.
+    const busy = terminalCount() > 0 || runningTaskCount() > 0
+    if (!quitting && busy && loadStore().settings.closeToTray) {
+      e.preventDefault()
+      win.hide()
+      if (!toldAboutTray) {
+        toldAboutTray = true
+        new Notification({
+          title: 'Mission Control is still running',
+          body: 'Your agents and tasks keep going. Open it from the tray icon, or quit from its menu.',
+          icon: join(__dirname, '../../build/icon.png')
+        }).show()
+      }
+    }
   })
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -245,6 +299,34 @@ function registerIpc(): void {
   ipcMain.handle('index:status', () => indexStatus())
   ipcMain.on('index:run', () => reindex())
 
+  ipcMain.handle('tasks:list', () => listTasks())
+  ipcMain.handle('tasks:create', (_e, t: NewTask) => createTask(t))
+  ipcMain.handle('tasks:update', (_e, id: string, patch: Partial<Task>) => updateTask(id, patch))
+  ipcMain.handle('tasks:delete', (_e, id: string) => deleteTask(id))
+  ipcMain.handle('tasks:start', (_e, id: string) => startTask(id))
+  ipcMain.handle('tasks:stop', (_e, id: string) => stopTask(id))
+  ipcMain.handle('tasks:setRun', (_e, id: string, patch: Partial<TaskRun>, column?: TaskColumn) => setTaskRun(id, patch, column))
+  ipcMain.handle('ratelimit:get', () => getRateLimit())
+
+  ipcMain.handle('settings:get', () => loadStore().settings)
+  ipcMain.handle('settings:set', (_e, patch: Partial<AppSettings>) => {
+    const next = { ...loadStore().settings, ...patch }
+    const error = patch.hotkey !== undefined ? setHotkey(next.hotkey) : null
+    if (error) {
+      // Keep the old, working shortcut.
+      setHotkey(loadStore().settings.hotkey)
+      return error
+    }
+    updateStore((s) => {
+      s.settings = next
+    })
+    return null
+  })
+  ipcMain.on('status:summary', (_e, summary: { agents: number; attention: number }) => {
+    uiSummary = summary
+    refreshTray()
+  })
+
   ipcMain.handle('ui:get', () => loadStore().ui)
   ipcMain.on('ui:set', (_e, patch: Partial<UiState>) => {
     if (process.env.MC_SMOKE) return
@@ -265,14 +347,57 @@ let quitting = false
 
 app.setAppUserModelId('com.brawly0.missioncontrol') // needed for Windows toast notifications
 
+// One instance: opening the shortcut again brings back the running app (it may be in the tray).
+if (!process.env.MC_SMOKE && !app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => showWindow())
+}
+
 app.whenReady().then(async () => {
   await startHookServer((event) => {
     sendToWindow('hook:event', event)
     hookTaps.forEach((tap) => tap(event))
   })
   registerIpc()
+  initTasks({
+    onChange: (list) => {
+      sendToWindow('tasks:changed', list)
+      refreshTray()
+    },
+    onRateLimit: (info) => sendToWindow('ratelimit', info),
+    onFinished: (task) => {
+      const win = mainWindow
+      if (win && win.isVisible() && win.isFocused()) return
+      const n = new Notification({
+        title: task.title,
+        body: task.run?.error ? `Stopped: ${task.run.error.slice(0, 120)}` : 'Task finished. Ready for review.',
+        icon: join(__dirname, '../../build/icon.png')
+      })
+      n.on('click', () => {
+        showWindow()
+        sendToWindow('navigate', { view: 'tasks' })
+      })
+      n.show()
+    }
+  })
   createWindow()
   startIndexer((status) => sendToWindow('index:status', status))
+  if (!process.env.MC_SMOKE) {
+    createTray({
+      getWindow: () => mainWindow,
+      showWindow,
+      navigate: (target) => {
+        showWindow()
+        sendToWindow('navigate', target)
+      },
+      quit: () => app.quit(),
+      status: () => ({ agents: uiSummary.agents, attention: uiSummary.attention, tasks: runningTaskCount() }),
+      hotkey: () => loadStore().settings.hotkey
+    })
+    const hotkeyError = setHotkey(loadStore().settings.hotkey)
+    if (hotkeyError) console.warn(hotkeyError)
+  }
   if (process.env.MC_SMOKE && mainWindow) {
     const win = mainWindow
     win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps }))
@@ -284,9 +409,12 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   quitting = true
+  stopAllTasks()
+  flushTasks()
   killAllTerminals()
   stopHookServer()
   stopIndexer()
+  destroyTray()
 })
 app.on('window-all-closed', () => {
   quitting = true

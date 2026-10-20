@@ -14,6 +14,8 @@ src/
     indexer.ts     starts the index worker and relays queries to it
     indexWorker.ts worker thread: SQLite full-text index + token usage of every chat
     pricing.ts     API list prices per model, for cost estimates
+    tasks.ts       task board data + headless runner (claude -p, stream-json)
+    tray.ts        tray icon, tray menu, global show/hide hotkey
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
@@ -26,9 +28,40 @@ src/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
       Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, DocsPanel
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
-      SearchView, UsageView
+      SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog
     src/organize.css         styles for groups, tags, overview, search and usage
+    src/tasks.css            styles for the task board, dialogs, task drawer, meters
 ```
+
+## Tasks
+
+Tasks live in `store.json` (`tasks`). `tasks.ts` in the main process owns them: it keeps them in memory, pushes every change to the UI (`tasks:changed`, throttled), and saves them to the store (debounced, written atomically).
+
+**Headless run.** `startTask` prepares the folder (a new worktree when the task asks for one) and spawns:
+
+```
+claude -p --output-format stream-json --verbose --session-id <uuid> --permission-mode <mode> [--max-budget-usd N] [--model M]
+```
+
+The prompt goes in on **stdin**, so no shell quoting is involved, and the process runs with `agentEnv()`. Each JSON line updates the run:
+
+| Event | Effect on the card |
+|---|---|
+| `system/init` | session id, model |
+| `assistant` → `tool_use` | tool count +1, activity like "Editing app.ts" or "Running: npm test" |
+| `assistant` → `text` | activity becomes the first line of the text |
+| `rate_limit_event` | plan meters (5-hour and 7-day utilization) |
+| `result` | cost (`total_cost_usd`), turns, final answer, or error |
+
+When the process exits, the task moves to **Review**, whether it succeeded, failed or was stopped (the card says which), and a Windows notification fires if the window isn't focused. **Stop** kills the whole process tree (`taskkill /T`). Runs don't survive an app restart; on startup, unfinished runs are marked "Stopped when Mission Control closed" and moved to Review, where **Continue in terminal** resumes the session (`--resume <id>`).
+
+**Interactive run.** The main process prepares the folder and returns the launch arguments (the prompt is claude's first message). The UI opens a normal agent and links it to the task (`run.agentId`). The card mirrors that agent's hook status, and closing the agent moves the task to Review.
+
+## Tray, hotkey, close to tray
+
+- `tray.ts` creates the tray icon (status tooltip; right-click menu: New task, Task board, Agents, Quit) and registers the global hotkey from `settings.hotkey` (default `Ctrl+Alt+M`, which toggles the window).
+- Closing the window while terminals or headless tasks run hides it instead (with `settings.closeToTray`, on by default) and says so once in a notification. Quit from the tray menu stops everything.
+- `app.requestSingleInstanceLock()` makes a second launch (for example the desktop shortcut) bring the existing window back instead of starting a second copy.
 
 ## Search and usage index
 

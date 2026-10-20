@@ -1,0 +1,559 @@
+/* v0.5: task board, composer, task drawer, settings, plan meters. Tokens come from styles.css. */
+
+/* ---------- board ---------- */
+.tasks-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.tasks-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 22px 24px 14px;
+}
+.tasks-head h1 {
+  font-size: 22px;
+}
+.tasks-head p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+}
+.board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(230px, 1fr));
+  gap: 12px;
+  padding: 0 24px 18px;
+  overflow-x: auto;
+}
+.board-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  transition: border-color 0.12s, background 0.12s;
+}
+.board-col.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.board-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 8px 0 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.col-todo .col-icon {
+  color: var(--muted);
+}
+.col-running .col-icon {
+  color: var(--green);
+}
+.col-review .col-icon {
+  color: var(--orange);
+}
+.col-done .col-icon {
+  color: var(--blue);
+}
+.col-add {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.col-add:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.board-col-body {
+  flex: 1;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px 10px;
+}
+.col-empty {
+  padding: 18px 10px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.count-review {
+  background: rgba(251, 146, 60, 0.18);
+  color: var(--orange);
+}
+
+/* ---------- task card ---------- */
+.task-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.12s;
+}
+.task-card:hover {
+  border-color: var(--border-strong);
+}
+.task-card[draggable='true']:active {
+  cursor: grabbing;
+}
+.task-card.is-running {
+  border-color: rgba(74, 222, 128, 0.35);
+}
+.task-card.needs-you {
+  border-color: rgba(251, 146, 60, 0.6);
+}
+.task-card.has-error {
+  border-color: rgba(248, 113, 113, 0.35);
+}
+.task-title {
+  font-weight: 600;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  font-size: 10.5px;
+}
+.mode-headless {
+  color: var(--yellow);
+}
+.mode-interactive {
+  color: var(--blue);
+}
+.task-branch {
+  height: 18px;
+  font-size: 10.5px;
+  flex-shrink: 1;
+  min-width: 0;
+}
+.task-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.task-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.task-activity.status-needs-input {
+  color: var(--orange);
+}
+.task-activity.status-done {
+  color: var(--blue);
+}
+.task-activity .spin {
+  color: var(--green);
+  flex-shrink: 0;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+.task-stats {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.task-outcome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--green);
+}
+.task-outcome span {
+  color: var(--text-2);
+}
+.task-outcome.error,
+.task-outcome.error span {
+  color: var(--red);
+}
+.task-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-foot > .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- dialogs ---------- */
+.overlay .dialog {
+  align-self: flex-start;
+}
+.dialog {
+  width: min(640px, calc(100vw - 40px));
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+  animation: toast-in 0.12s ease-out;
+}
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 6px 20px;
+}
+.dialog-head h2 {
+  font-size: 16px;
+}
+.dialog-body {
+  padding: 8px 20px 4px;
+  overflow-y: auto;
+}
+.dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px 14px 20px;
+  border-top: 1px solid var(--border);
+}
+.dialog-foot > .muted {
+  margin-right: auto;
+}
+.prompt-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  outline: none;
+  resize: vertical;
+  font: 13px/1.55 var(--font);
+}
+.prompt-input:focus {
+  border-color: var(--accent);
+}
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.field-row .field {
+  min-width: 130px;
+}
+.field.grow {
+  flex: 1;
+}
+.budget-field {
+  width: 120px;
+}
+.field-hint.warn {
+  color: var(--orange);
+}
+.field-hint.block {
+  display: block;
+}
+.field-hint svg {
+  vertical-align: -2px;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 14px;
+  cursor: pointer;
+}
+.check-row input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.check-row svg {
+  margin-top: 2px;
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+.check-row.disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- task drawer ---------- */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 26px;
+  z-index: 60;
+  width: min(620px, 92vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: -12px 0 30px rgba(0, 0, 0, 0.35);
+  animation: drawer-in 0.16s ease-out;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px 6px 20px;
+}
+.drawer-title {
+  flex: 1;
+  font-size: 17px;
+  line-height: 1.3;
+}
+.drawer-title-input {
+  flex: 1;
+  height: 34px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: 600 17px var(--font-display);
+  outline: none;
+}
+.drawer-title-input:hover,
+.drawer-title-input:focus {
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+.drawer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 20px 10px;
+}
+.drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 20px 12px;
+}
+.run-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0 20px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.run-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.run-stats > div + div {
+  border-left: 1px solid var(--border);
+}
+.drawer-tabs {
+  padding: 0 14px;
+}
+.drawer-changes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.drawer-changes .changes-body {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(80px, 30%) minmax(0, 1fr);
+}
+.drawer-changes .file-list {
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+}
+.drawer-body {
+  flex: 1;
+  padding: 14px 20px 30px;
+}
+.drawer-body h3 {
+  margin: 0 0 8px;
+  font: 600 12px var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--faint);
+}
+.drawer-body section + section {
+  margin-top: 20px;
+}
+.prompt-view {
+  white-space: pre-wrap;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.run-error {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: var(--red);
+  white-space: pre-wrap;
+}
+.result-view {
+  padding: 4px 14px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ev {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.ev svg {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.ev-tool svg {
+  color: var(--yellow);
+}
+.ev-text svg {
+  color: var(--accent-text);
+}
+.ev-result svg {
+  color: var(--green);
+}
+.ev-error svg,
+.ev-error .ev-text {
+  color: var(--red);
+}
+.ev-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+}
+.ev-time {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- settings ---------- */
+.settings {
+  width: min(520px, calc(100vw - 40px));
+}
+.settings .dialog-body {
+  padding-bottom: 18px;
+}
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hotkey-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.hotkey-box.recording {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* ---------- plan limit meters + status bar ---------- */
+.meter-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 80px 150px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px;
+}
+.meter-label {
+  color: var(--text-2);
+}
+.meter-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--chart-bar);
+}
+.meter-fill.warn {
+  background: var(--orange);
+}
+.meter-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sb-warn {
+  color: var(--orange);
+}

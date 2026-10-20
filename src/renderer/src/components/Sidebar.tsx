@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
+import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, KanbanSquare, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
 import type { GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 import { timeAgo } from '../util'
@@ -19,6 +19,7 @@ interface Props {
   onOpenPalette: () => void
   onRefresh: () => void
   onAdd: () => void
+  taskCounts: { running: number; review: number }
 }
 
 function loadCollapsed(): Set<string> {
@@ -180,6 +181,22 @@ export default function Sidebar(props: Props) {
           <span className="nav-end">
             {attention > 0 && <span className="count count-attention">{attention}</span>}
             {live.length > 0 && <span className="count">{live.length}</span>}
+          </span>
+        </button>
+        <button className={`nav-item ${view === 'tasks' ? 'active' : ''}`} onClick={() => props.onNavigate('tasks')}>
+          <KanbanSquare size={16} strokeWidth={1.9} />
+          <span>Tasks</span>
+          <span className="nav-end">
+            {props.taskCounts.review > 0 && (
+              <span className="count count-review" title="Waiting for your review">
+                {props.taskCounts.review}
+              </span>
+            )}
+            {props.taskCounts.running > 0 && (
+              <span className="count" title="Running">
+                {props.taskCounts.running}
+              </span>
+            )}
           </span>
         </button>
         <button className={`nav-item ${view === 'search' ? 'active' : ''}`} onClick={() => props.onNavigate('search')}>

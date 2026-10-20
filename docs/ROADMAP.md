@@ -30,14 +30,21 @@
 - [x] Full-text search across all chats (SQLite FTS5 in a worker thread, incremental; Ctrl+Shift+F)
 - [x] Usage view: estimated cost and tokens per day, project, model and chat; cost per chat in chat lists
 
-## v0.5: Tasks
-- [ ] Kanban board: a card is a task; "Start" launches an agent on it
-- [ ] Headless agents with `claude -p --output-format stream-json`, with progress in the card
-- [ ] Global hotkey and tray icon
+## ✅ v0.5: Tasks
+- [x] Kanban board (To do / Running / Review / Done) with drag and drop; Start launches an agent on a card
+- [x] Headless tasks: `claude -p --output-format stream-json` in the background, with live activity, tool calls, cost and result on the card
+- [x] Per task: interactive or headless, permission mode, model, budget cap, own worktree
+- [x] Task detail panel: prompt, result, activity timeline, worktree changes, Continue in terminal, Run again
+- [x] Tray icon with status and menu; global show/hide hotkey (default Ctrl+Alt+M); close to tray while work runs
+- [x] Plan rate-limit meters (5-hour and 7-day windows) in the status bar and Usage view
+
+## v0.6: Ideas
+- [ ] Task templates and recurring tasks
+- [ ] Queue: start the next To do task automatically when one finishes
+- [ ] Auto-update
 
 ## Later
 - [x] Installer (`npm run dist`)
-- [ ] Auto-update
 - [ ] Usage: per-project budgets and alerts
 - [ ] Themes (light mode)
 - [ ] MCP server and plugin overview per project
