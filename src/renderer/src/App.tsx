@@ -33,7 +33,8 @@ import type {
   SearchHit,
   Task,
   TaskTemplate,
-  UpdateState
+  UpdateState,
+  BudgetState
 } from '@shared/types'
 import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
@@ -93,6 +94,13 @@ export default function App() {
   const [composerInitial, setComposerInitial] = useState<Partial<NewTask> | undefined>()
   const [queue, setQueue] = useState<QueueStatus | null>(null)
   const [update, setUpdate] = useState<UpdateState>({ state: 'idle' })
+  const [budgets, setBudgets] = useState<Record<string, BudgetState>>({})
+
+  // Monthly budgets: refresh when the index changes (new spend), when projects change (new budgets), and on warnings.
+  const refreshBudgets = useCallback(() => {
+    window.mc.budgets().then(setBudgets).catch(() => undefined)
+  }, [])
+  useEffect(() => window.mc.onBudgetsChanged(refreshBudgets), [refreshBudgets])
 
   useEffect(() => {
     window.mc.listTemplates().then(setTemplates)
@@ -472,6 +480,8 @@ export default function App() {
     }
   }, [refreshProjects, openProject])
 
+  useEffect(() => refreshBudgets(), [projects, indexStatus?.lastRun, refreshBudgets])
+
   const selected = projects.find((p) => p.path === selectedPath) ?? null
   const openTask = tasks.find((t) => t.id === openTaskId) ?? null
   const newInSelected = useCallback(() => {
@@ -561,6 +571,7 @@ export default function App() {
     <div className="app">
       <Sidebar
         projects={projects}
+        budgets={budgets}
         git={git}
         loading={loading}
         selectedPath={selectedPath}
@@ -615,6 +626,7 @@ export default function App() {
                 visible={view === 'project'}
                 groups={groups}
                 focus={focusSession}
+                budget={budgets[selected.path.toLowerCase().replace(/[\\/]+$/, '')]}
                 onLaunch={launch}
                 onLaunchWorktree={launchWorktree}
                 onChanged={() => {
@@ -688,6 +700,12 @@ export default function App() {
         {openTask && view === 'tasks' && (
           <TaskDrawer
             task={openTask}
+            all={tasks}
+            onOpenTask={(t) => setOpenTaskId(t.id)}
+            onAddAfter={(t) => {
+              setComposerInitial({ projectPath: t.projectPath, dependsOn: [t.id], mode: t.mode, permission: t.permission, useWorktree: t.useWorktree, model: t.model })
+              setComposerOpen(true)
+            }}
             agent={openTask.run?.agentId ? agents.find((a) => a.id === openTask.run!.agentId) : undefined}
             onClose={() => setOpenTaskId(null)}
             onStart={startTask}
@@ -724,6 +742,7 @@ export default function App() {
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
       {composerOpen && (
         <TaskComposer
+          tasks={tasks}
           projects={projects}
           git={git}
           defaultProject={taskFilter || selectedPath || undefined}

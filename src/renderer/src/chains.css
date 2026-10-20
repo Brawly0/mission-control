@@ -1,0 +1,314 @@
+/* v0.7: dependencies, checks, follow-ups, git setup, budgets. Tokens come from styles.css. */
+
+/* ---------- dependency chips on cards ---------- */
+.dep-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  background: var(--bg);
+  color: var(--text-2);
+}
+.dep-chip svg {
+  flex-shrink: 0;
+}
+.dep-waiting {
+  color: var(--muted);
+}
+.dep-blocked {
+  color: var(--red);
+  background: rgba(248, 113, 113, 0.08);
+}
+.dep-ready {
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.08);
+}
+.dep-unlocks {
+  color: var(--faint);
+  background: none;
+  padding-left: 2px;
+}
+
+/* ---------- checks badge on cards ---------- */
+.check-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11.5px;
+}
+.check-badge code {
+  font-size: 11px;
+}
+.check-passed {
+  color: var(--green);
+}
+.check-failed,
+.check-error {
+  color: var(--red);
+}
+.check-running {
+  color: var(--muted);
+}
+
+/* ---------- drawer: chain, checks, follow-up ---------- */
+.drawer-body h3 svg {
+  vertical-align: -1px;
+}
+.chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+}
+.chain-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+button.chain-step:hover {
+  background: var(--hover);
+}
+.chain-step .ellipsis {
+  flex: 1;
+}
+.chain-step.current {
+  background: var(--accent-soft);
+}
+.chain-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  margin: 0 1px;
+}
+.checks-box {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+.checks-box.check-passed {
+  border-color: rgba(74, 222, 128, 0.35);
+}
+.checks-box.check-failed,
+.checks-box.check-error {
+  border-color: rgba(248, 113, 113, 0.4);
+}
+.checks-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px 7px 12px;
+}
+.checks-head code {
+  min-width: 0;
+  color: var(--text-2);
+}
+.checks-output {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--term-bg);
+  color: var(--text-2);
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.follow-up {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.follow-up-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.commit-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.link {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- composer: dependency picker ---------- */
+.dep-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.dep-picker .tag {
+  height: 24px;
+  font-size: 12px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dep-picker .select-sm {
+  max-width: 340px;
+}
+
+/* ---------- template pipeline steps ---------- */
+.steps-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.steps-head svg {
+  color: var(--accent-text);
+}
+.steps {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.step-no {
+  width: 20px;
+  padding-top: 6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.step-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- Turn on git ---------- */
+.git-init {
+  width: min(680px, calc(100vw - 40px));
+}
+.git-init h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.init-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.init-warn,
+.init-ok {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+.init-warn {
+  color: var(--orange);
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
+.init-ok {
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.06);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+}
+.init-warn svg,
+.init-ok svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.init-details {
+  margin-bottom: 10px;
+}
+.init-details summary {
+  cursor: pointer;
+  color: var(--text-2);
+  padding: 4px 0;
+}
+.init-details pre {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--term-bg);
+  border: 1px solid var(--border);
+  font: 11.5px/1.5 var(--mono);
+  color: var(--text-2);
+}
+
+/* ---------- Overview: automation + budget ---------- */
+.automation-card {
+  margin-top: 16px;
+}
+.automation-card .small svg {
+  vertical-align: -2px;
+}
+.num-wide {
+  width: 140px;
+}
+.budget-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.budget-meter .meter-track {
+  flex: 0 0 220px;
+}
+.meter-fill.over {
+  background: var(--red);
+}
+.budget-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(251, 146, 60, 0.18);
+  color: var(--orange);
+}
+.budget-flag.over {
+  background: rgba(248, 113, 113, 0.2);
+  color: var(--red);
+}

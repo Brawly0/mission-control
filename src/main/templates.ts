@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { Schedule, Task, TaskTemplate, TemplateInput } from '../shared/types'
 import { loadStore, updateStore } from './store'
-import { createTask, pumpQueue, startTask, updateTask } from './tasks'
+import { automationHold, createTask, pumpQueue, startTask, updateTask } from './tasks'
+import { fillVariables, nextRunAfter } from '../shared/schedule'
+
+export { fillVariables, nextRunAfter }
 
 /**
  * Task templates and the scheduler for recurring ones.
@@ -16,6 +19,8 @@ interface Hooks {
   /** An interactive task needs the UI to open its agent. */
   onLaunchInteractive: (taskId: string) => void
   onFired: (template: TaskTemplate, task: Task) => void
+  /** A run was skipped by a guardrail (plan usage or project budget). */
+  onSkipped: (template: TaskTemplate, reason: string) => void
 }
 
 let hooks: Hooks | null = null
@@ -32,45 +37,6 @@ function save(templates: TaskTemplate[]): void {
   hooks?.onChange(templates)
 }
 
-// ---------------------------------------------------------------- schedule math
-
-function parseTime(time: string): [number, number] {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(time.trim())
-  const h = m ? Math.min(23, Number(m[1])) : 9
-  const min = m ? Math.min(59, Number(m[2])) : 0
-  return [h, min]
-}
-
-/** The next time a schedule fires after `from` (ms). */
-export function nextRunAfter(s: Schedule, from: number): number {
-  if (s.kind === 'hourly') {
-    const hours = Math.max(1, Math.min(168, s.everyHours ?? 1))
-    return from + hours * 3_600_000
-  }
-  const [h, m] = parseTime(s.time)
-  const d = new Date(from)
-  d.setSeconds(0, 0)
-  d.setHours(h, m)
-  if (d.getTime() <= from) d.setDate(d.getDate() + 1)
-  for (let i = 0; i < 8; i++) {
-    const day = d.getDay()
-    const ok = s.kind === 'daily' || (s.kind === 'weekdays' && day >= 1 && day <= 5) || (s.kind === 'weekly' && day === (s.weekday ?? 1))
-    if (ok) return d.getTime()
-    d.setDate(d.getDate() + 1)
-  }
-  return d.getTime()
-}
-
-/** Fills {{project}}, {{date}}, {{time}}, {{weekday}} in a template's text. */
-export function fillVariables(text: string, projectName: string, now = new Date()): string {
-  const vars: Record<string, string> = {
-    project: projectName,
-    date: now.toLocaleDateString('en-CA'),
-    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    weekday: now.toLocaleDateString(undefined, { weekday: 'long' })
-  }
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, name: string) => vars[name.toLowerCase()] ?? all)
-}
 
 // ---------------------------------------------------------------- CRUD
 
@@ -110,9 +76,7 @@ export async function runTemplate(id: string, then: Schedule['then'], projectPat
   const path = projectPath ?? tpl.projectPath
   if (!path) throw new Error('Pick a project for this template.')
   const projectName = projectPath ? basename(projectPath) : (tpl.projectName ?? basename(path))
-  const task = createTask({
-    title: fillVariables(tpl.title || tpl.name, projectName),
-    prompt: fillVariables(tpl.prompt, projectName),
+  const common = {
     projectPath: path,
     projectName,
     mode: tpl.mode,
@@ -120,9 +84,26 @@ export async function runTemplate(id: string, then: Schedule['then'], projectPat
     useWorktree: tpl.useWorktree,
     budgetUsd: tpl.budgetUsd,
     model: tpl.model,
-    templateId: tpl.id,
+    templateId: tpl.id
+  }
+  const task = createTask({
+    ...common,
+    title: fillVariables(tpl.title || tpl.name, projectName),
+    prompt: fillVariables(tpl.prompt, projectName),
     queued: then === 'queue'
   })
+  // A pipeline: each further step waits on the one before it and starts when that succeeds.
+  let previous = task
+  for (const step of tpl.steps ?? []) {
+    if (!step.prompt.trim()) continue
+    previous = createTask({
+      ...common,
+      title: fillVariables(step.title || `${tpl.name}: next step`, projectName),
+      prompt: fillVariables(step.prompt, projectName),
+      dependsOn: [previous.id],
+      whenReady: 'start'
+    })
+  }
   if (then === 'start') {
     if (task.mode === 'interactive') hooks?.onLaunchInteractive(task.id)
     else await startTask(task.id)
@@ -159,6 +140,12 @@ async function tick(): Promise<void> {
     s.lastRunAt = now
     s.nextRunAt = nextRunAfter(s, now)
     changed = true
+    // Guardrails: skip this run (not the schedule) while plan usage or the project budget says stop.
+    const hold = tpl.projectPath && s.then !== 'todo' ? await automationHold(tpl.projectPath) : null
+    if (hold) {
+      hooks?.onSkipped(tpl, hold)
+      continue
+    }
     try {
       const task = await runTemplate(tpl.id, s.then)
       hooks?.onFired(tpl, task)

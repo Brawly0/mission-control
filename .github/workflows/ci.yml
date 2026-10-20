@@ -1,0 +1,29 @@
+name: CI
+
+# Type-check, unit tests and a build on Windows for every push and pull request.
+# No secrets and no Claude usage: the end-to-end smoke tests stay local.
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install
+        run: npm ci
+        env:
+          # The build doesn't need the Electron binary.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build

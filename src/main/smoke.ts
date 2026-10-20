@@ -1,12 +1,15 @@
 import { app, type BrowserWindow } from 'electron'
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { basename, join } from 'node:path'
-import { createTask, deleteTask, flushTasks, listTasks, pumpQueue, startTask } from './tasks'
+import { automationHold, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
+import { invalidateBudgets, projectBudget } from './budget'
+import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
 import { checkForUpdates, initUpdater, updateStatus } from './updater'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions, normalizePath, setProjectMeta } from './claudeData'
-import { commitAll, createWorktree, getChanges, mergeWorktree, removeWorktree } from './git'
+import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { killTerminalsIn } from './pty'
 import { loadStore, updateStore } from './store'
 
@@ -358,6 +361,127 @@ async function automationTour(win: BrowserWindow, outFile: string, repo: string)
   }
 }
 
+/**
+ * MC_SMOKE_CHAIN=<empty scratch folder>: v0.7 end to end. Turns on git for a folder with a secret and
+ * node_modules; runs a 3-step chain whose first step fails its checks (the next step must stay blocked),
+ * fixes the check and re-runs it (the chain must continue by itself, each step on the previous branch);
+ * merges the last branch; sends a follow-up; and checks the monthly budget guard. Uses Haiku (about $0.10).
+ */
+async function chainTour(win: BrowserWindow, outFile: string, root: string): Promise<void> {
+  const shot = async (name: string) => {
+    await sleep(600)
+    const file = outFile.replace(/\.png$/, `-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const repo = join(root, 'chain-demo')
+  const sh = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
+  const waitFor = async (label: string, test: () => boolean, ms = 180_000) => {
+    const start = Date.now()
+    while (!test()) {
+      if (Date.now() - start > ms) throw new Error(`Timed out waiting for: ${label}`)
+      await sleep(300)
+    }
+  }
+  const get = (id: string) => listTasks().find((t) => t.id === id)!
+  const settingsBefore = loadStore().settings
+  const made: string[] = []
+
+  // 1. Turn on git.
+  mkdirSync(join(repo, 'src'), { recursive: true })
+  mkdirSync(join(repo, 'node_modules', 'left-pad'), { recursive: true })
+  writeFileSync(join(repo, 'README.md'), '# Chain demo\n')
+  writeFileSync(join(repo, 'src', 'app.js'), 'console.log("hi")\n')
+  writeFileSync(join(repo, '.env'), 'API_KEY=not-a-real-secret\n')
+  writeFileSync(join(repo, 'node_modules', 'left-pad', 'index.js'), 'module.exports = 1\n')
+  const preview = await previewGitInit(repo)
+  log('git preview:', `${preview.fileCount} files`, JSON.stringify(preview.files), '| secrets kept out:', JSON.stringify(preview.secretsExcluded), '| new ignore rules:', preview.gitignoreAdditions.length)
+  const init = await initGit(repo)
+  log('git init:', `commit ${init.commit}, ${init.files} files; tracked: ${sh(['ls-files']).split('\n').join(', ')}`)
+  log('git identity (this repo only):', sh(['config', '--local', 'user.name']) || '(global)')
+
+  const checkFile = (name: string) => `if (Test-Path ${name}) { Write-Output 'found ${name}' } else { Write-Output '${name} is missing'; exit 1 }`
+  try {
+    // 2. A 3-step chain. Step 1 writes step-one.txt, but the check wrongly looks for step1.txt.
+    setProjectMeta(repo, { checkCommand: checkFile('step1.txt') })
+    const common = { projectPath: repo, projectName: 'chain-demo', mode: 'headless' as const, permission: 'acceptEdits' as const, useWorktree: true, budgetUsd: 0.3, model: 'haiku' }
+    const a = createTask({ ...common, title: 'Step 1: create step-one.txt', prompt: 'Create a file named step-one.txt containing the word "one". Reply with one short sentence.' })
+    const b = createTask({ ...common, title: 'Step 2: create step2.txt', prompt: 'Create a file named step2.txt containing the word "two". Reply with one short sentence.', dependsOn: [a.id] })
+    const c = createTask({ ...common, title: 'Step 3: list the files', prompt: 'Create a file named step3.txt that lists the names of all .txt files in this folder, one per line. Reply with one short sentence.', dependsOn: [b.id] })
+    made.push(a.id, b.id, c.id)
+    await js(`window.__mcSmoke.setView('tasks')`)
+    await startTask(a.id)
+    await waitFor('step 1 to finish', () => get(a.id).column === 'review' && get(a.id).run?.checks?.status !== 'running')
+    log('step 1:', `checks ${get(a.id).run?.checks?.status} | commit ${get(a.id).run?.commit} | step 2 is ${get(b.id).column}`)
+    await sleep(1500)
+    log('after failed checks, step 2 still waits:', get(b.id).column === 'todo' && !get(b.id).run ? 'yes' : `NO (${get(b.id).column})`)
+    await shot('chain-blocked')
+    await js(`window.__mcSmoke.openTask(${JSON.stringify(b.id)})`)
+    await shot('chain-drawer-blocked')
+    await js(`window.__mcSmoke.openTask(null)`)
+
+    // Fix the check and re-run it: the chain must continue by itself.
+    setProjectMeta(repo, { checkCommand: checkFile('step-one.txt') })
+    await rerunChecks(a.id)
+    log('step 1 after fixing the check:', get(a.id).run?.checks?.status)
+    await waitFor('step 3 to finish', () => get(c.id).column === 'review' && get(c.id).run?.checks?.status !== 'running', 300_000)
+    for (const t of [a, b, c].map((x) => get(x.id))) {
+      log(`  ${t.title}: ${t.column}, branch ${t.worktree?.branch}, commit ${t.run?.commit ?? '-'}, checks ${t.run?.checks?.status ?? '-'}, cost $${t.run?.costUsd?.toFixed(3)}, error ${t.run?.error ?? 'none'}`)
+    }
+    const order = [a, b, c].map((x) => get(x.id).run!)
+    log('ran in order:', order[0].finishedAt! <= order[1].startedAt && order[1].finishedAt! <= order[2].startedAt ? 'yes' : 'NO')
+    const cwt = get(c.id).worktree!
+    const files = ['step-one.txt', 'step2.txt', 'step3.txt'].map((f) => `${f}:${existsSync(join(cwt.path, f)) ? 'yes' : 'no'}`)
+    log('step 3 worktree has the earlier steps’ work:', files.join(' '))
+    log('step 3 branch history:', execFileSync('git', ['log', '--oneline', `${cwt.base}..${cwt.branch}`], { cwd: repo, encoding: 'utf8' }).trim().split('\n').join(' | '))
+    await js(`window.__mcSmoke.openTask(${JSON.stringify(c.id)})`)
+    await shot('chain-drawer-done')
+    await js(`window.__mcSmoke.openTask(null)`)
+    await shot('chain-done')
+
+    // 4. Follow-up on step 3, then merge its branch (which carries all three steps).
+    followUpTask(c.id, 'Also create a file named followup.txt containing the word "more". Reply with one short sentence.')
+    await sleep(500)
+    await waitFor('the follow-up to finish', () => get(c.id).column === 'review' && get(c.id).run?.checks?.status !== 'running')
+    const fc = get(c.id)
+    log('follow-up:', `${fc.run?.followUps} follow-up, followup.txt ${existsSync(join(cwt.path, 'followup.txt')) ? 'written' : 'missing'}, commit ${fc.run?.commit}, total cost $${fc.run?.costUsd?.toFixed(3)}, checks ${fc.run?.checks?.status}`)
+    const merged = await mergeWorktree(cwt)
+    log('merge into main:', merged.split('\n')[0], '| main now has:', ['step-one.txt', 'step2.txt', 'step3.txt', 'followup.txt'].filter((f) => existsSync(join(repo, f))).join(', '))
+
+    // 5. Budget guard: a tiny budget for this project must hold its queued tasks.
+    reindex()
+    await sleep(6000)
+    invalidateBudgets()
+    setProjectMeta(repo, { monthlyBudgetUsd: 0.01 })
+    const state = await projectBudget(repo)
+    log('budget state:', state ? `spent $${state.spent.toFixed(3)} of $${state.budget}, over: ${state.over}` : 'none')
+    updateStore((s) => {
+      s.settings = { ...s.settings, queueEnabled: true, queueParallel: 1, queuePauseAtPercent: 0 }
+    })
+    const q = createTask({ ...common, title: 'Queued while over budget', prompt: 'Say hi.', queued: true })
+    made.push(q.id)
+    await pumpQueue()
+    await sleep(800)
+    log('queued task held by the budget:', get(q.id).column === 'todo' && !get(q.id).run ? 'yes' : `NO (${get(q.id).column})`, '| hold reason:', await automationHold(repo))
+  } finally {
+    updateStore((s) => {
+      s.settings = settingsBefore
+      delete s.projectMeta[normalizePath(repo)]
+    })
+    for (const id of made) {
+      const wt = listTasks().find((t) => t.id === id)?.worktree
+      deleteTask(id)
+      if (wt && existsSync(wt.path)) {
+        await killTerminalsIn(wt.path)
+        await removeWorktree(wt).catch((e) => log('cleanup:', (e as Error).message))
+      }
+    }
+    flushTasks()
+    log('chain cleanup: tasks left', listTasks().length, '| settings restored', JSON.stringify(loadStore().settings) === JSON.stringify(settingsBefore))
+  }
+}
+
 /** MC_SMOKE_UPDATE=1 in a packaged build: checks the releases repo and downloads (not installs) any update. */
 async function updateCheck(): Promise<void> {
   const states: string[] = []
@@ -473,6 +597,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_TASKS) await taskTour(win, outFile, process.env.MC_SMOKE_TASKS)
     if (process.env.MC_SMOKE_AUTOMATION) await automationTour(win, outFile, process.env.MC_SMOKE_AUTOMATION)
     if (process.env.MC_SMOKE_UPDATE) await updateCheck()
+    if (process.env.MC_SMOKE_CHAIN) await chainTour(win, outFile, process.env.MC_SMOKE_CHAIN)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

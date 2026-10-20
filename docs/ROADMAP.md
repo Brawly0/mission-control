@@ -44,9 +44,20 @@
 - [x] Auto-queue: queued headless tasks start by themselves, N at a time, held while plan usage is above a limit
 - [x] Auto-update from the public releases repo (Brawly0/mission-control-releases); status bar shows "Update ready · Restart"
 
+## ✅ v0.7: Chains and guardrails
+- [x] Task dependencies: "Run after…", blocked/waiting/ready chips, Run anyway, chain view; loops prevented
+- [x] Chains build on each other: a worktree task starts from the previous task's branch
+- [x] Pipeline templates (steps), schedulable
+- [x] Checks after a task: per-project command, ✓/✗ with output, Re-run checks; dependencies require passing checks
+- [x] Headless worktree tasks commit their changes automatically (ready to merge)
+- [x] Follow-up box: continue a finished task's chat in the background
+- [x] Turn on git: preview, safe .gitignore, first commit (secrets and dependencies kept out)
+- [x] Guardrails: default task budget, monthly project budgets with 80% warning, automation holds when over budget or plan usage is high
+- [x] Unit tests (Vitest) and Windows CI (GitHub Actions)
+
 ## Next ideas
-- [ ] Task dependencies (run B after A succeeds)
 - [ ] Code signing so Windows SmartScreen stops warning
+- [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches
 
 ## Later
 - [x] Installer (`npm run dist`)

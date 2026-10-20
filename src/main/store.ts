@@ -27,6 +27,8 @@ export interface StoreData {
   tasks: Task[]
   templates: TaskTemplate[]
   settings: AppSettings
+  /** Month ("2026-10") in which each project's 80% budget warning was last shown. */
+  budgetWarned: Record<string, string>
 }
 
 const defaults: StoreData = {
@@ -37,7 +39,9 @@ const defaults: StoreData = {
   projectMeta: {},
   tasks: [],
   templates: [],
+  budgetWarned: {},
   settings: {
+    defaultTaskBudgetUsd: 0,
     hotkey: 'Ctrl+Alt+M',
     closeToTray: true,
     queueEnabled: false,

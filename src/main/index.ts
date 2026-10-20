@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import type {
   AppSettings,
+  BudgetState,
   DocFile,
   HookEvent,
   NewTask,
@@ -23,6 +24,8 @@ import type {
 import {
   createTask,
   deleteTask,
+  followUpTask,
+  rerunChecks,
   flushTasks,
   getRateLimit,
   initTasks,
@@ -41,7 +44,8 @@ import { deleteTemplate, listTemplates, runTemplate, saveTemplate, startSchedule
 import { checkForUpdates, initUpdater, installUpdate, setAutoCheck, updateStatus } from './updater'
 import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists, setProjectMeta } from './claudeData'
 import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
-import { commitAll, createWorktree, getChanges, gitInfoMany, mergeWorktree, removeWorktree } from './git'
+import { commitAll, createWorktree, getChanges, gitInfoMany, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
+import { allBudgets, checkBudgetWarnings } from './budget'
 import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
 import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, terminalCount, writeTerminal, whichSync } from './pty'
 import { loadStore, updateStore, type WindowBounds } from './store'
@@ -332,6 +336,11 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('queue:status', () => queueStatus())
+  ipcMain.handle('tasks:followUp', (_e, id: string, prompt: string) => followUpTask(id, prompt))
+  ipcMain.handle('tasks:rerunChecks', (_e, id: string) => rerunChecks(id))
+  ipcMain.handle('git:previewInit', (_e, folder: string) => previewGitInit(folder))
+  ipcMain.handle('git:init', (_e, folder: string) => initGit(folder))
+  ipcMain.handle('budgets:all', () => allBudgets())
   ipcMain.handle('templates:list', () => listTemplates())
   ipcMain.handle('templates:save', (_e, t: TemplateInput, id?: string) => saveTemplate(t, id))
   ipcMain.handle('templates:delete', (_e, id: string) => deleteTemplate(id))
@@ -367,6 +376,32 @@ function registerIpc(): void {
 
 let quitting = false
 
+/** A Windows notification that opens the task board when clicked. */
+function notifyTasks(title: string, body: string): void {
+  if (process.env.MC_SMOKE) return
+  const n = new Notification({ title, body, icon: join(__dirname, '../../build/icon.png') })
+  n.on('click', () => {
+    showWindow()
+    sendToWindow('navigate', { view: 'tasks' })
+  })
+  n.show()
+}
+
+function budgetWarning(projectPath: string, state: BudgetState): void {
+  const name = projectPath.split(/[\\/]/).filter(Boolean).pop() ?? projectPath
+  const n = new Notification({
+    title: state.over ? `${name} is over its monthly budget` : `${name} has used ${Math.round(state.ratio * 100)}% of its monthly budget`,
+    body: `About $${state.spent.toFixed(2)} of $${state.budget} this month (estimated at API prices).${state.over ? ' Automation for this project is on hold.' : ''}`,
+    icon: join(__dirname, '../../build/icon.png')
+  })
+  n.on('click', () => {
+    showWindow()
+    sendToWindow('navigate', { view: 'usage' })
+  })
+  if (!process.env.MC_SMOKE) n.show()
+  sendToWindow('budgets:changed')
+}
+
 app.setAppUserModelId('com.brawly0.missioncontrol') // needed for Windows toast notifications
 
 // One instance: opening the shortcut again brings back the running app (it may be in the tray).
@@ -391,19 +426,23 @@ app.whenReady().then(async () => {
     onQueueStatus: (status) => sendToWindow('queue:status', status),
     onFinished: (task) => {
       const win = mainWindow
+      void checkBudgetWarnings(budgetWarning)
       if (win && win.isVisible() && win.isFocused()) return
-      const n = new Notification({
-        title: task.title,
-        body: task.run?.error ? `Stopped: ${task.run.error.slice(0, 120)}` : 'Task finished. Ready for review.',
-        icon: join(__dirname, '../../build/icon.png')
-      })
-      n.on('click', () => {
-        showWindow()
-        sendToWindow('navigate', { view: 'tasks' })
-      })
-      n.show()
-    }
+      const checks = task.run?.checks
+      const body = task.run?.error
+        ? `Stopped: ${task.run.error.slice(0, 120)}`
+        : checks?.status === 'failed' || checks?.status === 'error'
+          ? `Finished, but checks failed (${checks.command}).`
+          : checks?.status === 'passed'
+            ? 'Finished and checks passed. Ready for review.'
+            : 'Task finished. Ready for review.'
+      notifyTasks(task.title, body)
+    },
+    onReady: (task) => notifyTasks(`Ready: ${task.title}`, 'The tasks it waited on succeeded. Open it to start (it runs interactively).')
   })
+  // Budget warnings: now and then, and after every task (above).
+  setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
+  setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
   startIndexer((status) => sendToWindow('index:status', status))
   if (!process.env.MC_SMOKE) {
@@ -430,18 +469,9 @@ app.whenReady().then(async () => {
         showWindow()
         sendToWindow('task:launch', taskId)
       },
-      onFired: (tpl, task) => {
-        const n = new Notification({
-          title: `Recurring task: ${tpl.name}`,
-          body: task.mode === 'headless' && tpl.schedule?.then === 'start' ? 'Started in the background.' : 'Added to your task board.',
-          icon: join(__dirname, '../../build/icon.png')
-        })
-        n.on('click', () => {
-          showWindow()
-          sendToWindow('navigate', { view: 'tasks' })
-        })
-        n.show()
-      }
+      onFired: (tpl, task) =>
+        notifyTasks(`Recurring task: ${tpl.name}`, task.mode === 'headless' && tpl.schedule?.then === 'start' ? 'Started in the background.' : 'Added to your task board.'),
+      onSkipped: (tpl, reason) => notifyTasks(`Skipped: ${tpl.name}`, `${reason}. It will try again at its next scheduled time.`)
     },
     !process.env.MC_SMOKE
   )

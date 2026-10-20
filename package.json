@@ -1,7 +1,7 @@
 {
   "name": "mission-control",
   "productName": "Mission Control",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "A Windows desktop hub for Claude Code: projects, sessions, docs and multiple live agents in one place.",
   "private": true,
   "main": "./out/main/index.js",
@@ -12,6 +12,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
     "dist": "electron-vite build && electron-builder --win",
     "release": "electron-vite build && electron-builder --win --publish always",
     "publish-release": "node scripts/release.mjs",
@@ -36,7 +37,8 @@
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
     "typescript": "^5.9.3",
-    "vite": "^8.3.4"
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
   },
   "build": {
     "appId": "com.brawly0.missioncontrol",

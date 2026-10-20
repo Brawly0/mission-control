@@ -19,13 +19,14 @@ import {
   Terminal,
   Trash2
 } from 'lucide-react'
-import type { GitInfo, Project, SessionSummary, UsageTotals } from '@shared/types'
+import type { BudgetState, GitInfo, Project, SessionSummary, UsageTotals } from '@shared/types'
 import type { LaunchOptions } from '../types'
 import { formatBytes, formatCost, shortPath, timeAgo } from '../util'
 import SessionViewer from './SessionViewer'
 import DocsPanel from './DocsPanel'
 import ChangesPanel from './ChangesPanel'
 import OverviewPanel from './OverviewPanel'
+import GitInitDialog from './GitInitDialog'
 import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
 
 interface Props {
@@ -37,12 +38,14 @@ interface Props {
   focus?: { sessionId: string; nonce: number }
   onLaunch: (opts: LaunchOptions) => void
   onLaunchWorktree: (project: Project) => void
+  budget?: BudgetState
   onChanged: () => void
 }
 
 type Tab = 'overview' | 'chats' | 'changes' | 'docs'
 
-export default function ProjectView({ project, git, visible, groups, focus, onLaunch, onLaunchWorktree, onChanged }: Props) {
+export default function ProjectView({ project, git, visible, groups, focus, budget, onLaunch, onLaunchWorktree, onChanged }: Props) {
+  const [gitInitOpen, setGitInitOpen] = useState(false)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [usage, setUsage] = useState<Record<string, UsageTotals>>({})
   const [loading, setLoading] = useState(false)
@@ -103,10 +106,17 @@ export default function ProjectView({ project, git, visible, groups, focus, onLa
               <span className="chip mono" title={project.path}>
                 <FolderOpen size={12} /> {shortPath(project.path)}
               </span>
-              {git?.isRepo && (
+              {git?.isRepo ? (
                 <span className="chip">
                   <GitBranch size={12} /> {git.branch}
                 </span>
+              ) : (
+                git &&
+                !project.worktree && (
+                  <button className="chip chip-accent" onClick={() => setGitInitOpen(true)} title="Make this folder a git repository, so tasks can use worktrees and you can review and merge changes">
+                    <GitBranch size={12} /> Turn on git
+                  </button>
+                )
               )}
               {git?.isRepo && !!git.dirty && (
                 <button className="chip chip-warn" onClick={() => setTab('changes')}>
@@ -266,7 +276,19 @@ export default function ProjectView({ project, git, visible, groups, focus, onLa
             </section>
           </div>
         )}
-        {tab === 'overview' && <OverviewPanel project={project} groups={groups} usage={usage} onChanged={onChanged} />}
+        {tab === 'overview' && (
+          <OverviewPanel project={project} groups={groups} usage={usage} budget={budget} isRepo={!!git?.isRepo} onTurnOnGit={() => setGitInitOpen(true)} onChanged={onChanged} />
+        )}
+        {gitInitOpen && (
+          <GitInitDialog
+            project={project}
+            onClose={() => setGitInitOpen(false)}
+            onDone={() => {
+              setGitInitOpen(false)
+              onChanged()
+            }}
+          />
+        )}
         {tab === 'changes' && git?.isRepo && <ChangesPanel path={project.path} visible={visible && tab === 'changes'} onChanged={onChanged} />}
         {tab === 'docs' && <DocsPanel projectPath={project.path} />}
       </div>

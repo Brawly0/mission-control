@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
-import { Check, Circle, Coins, Eye, Pause, Pencil, Plus, X } from 'lucide-react'
-import type { Project, ProjectMeta, ProjectStatus, UsageTotals } from '@shared/types'
+import { Check, Circle, Coins, Eye, GitBranch, Pause, Pencil, Plus, Workflow, X } from 'lucide-react'
+import type { BudgetState, Project, ProjectMeta, ProjectStatus, UsageTotals } from '@shared/types'
 import { formatCost, formatTokens } from '../util'
-import { Segmented } from './ui'
+import { Button, Segmented } from './ui'
 
 interface Props {
   project: Project
@@ -11,10 +11,95 @@ interface Props {
   groups: string[]
   /** Per-session usage for this project (from the index). */
   usage: Record<string, UsageTotals>
+  budget?: BudgetState
+  isRepo: boolean
+  onTurnOnGit: () => void
   onChanged: () => void
 }
 
-export default function OverviewPanel({ project, groups, usage, onChanged }: Props) {
+/** Check command, monthly budget and git status: the settings automation relies on. */
+function AutomationCard({ project, budget, isRepo, onTurnOnGit, onChanged }: Pick<Props, 'project' | 'budget' | 'isRepo' | 'onTurnOnGit' | 'onChanged'>) {
+  const [check, setCheck] = useState(project.meta.checkCommand ?? '')
+  const [limit, setLimit] = useState(project.meta.monthlyBudgetUsd ? String(project.meta.monthlyBudgetUsd) : '')
+  useEffect(() => {
+    setCheck(project.meta.checkCommand ?? '')
+    setLimit(project.meta.monthlyBudgetUsd ? String(project.meta.monthlyBudgetUsd) : '')
+  }, [project.path]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = async (patch: Partial<ProjectMeta>) => {
+    await window.mc.setProjectMeta(project.path, patch)
+    onChanged()
+  }
+  const pct = budget ? Math.round(budget.ratio * 100) : 0
+
+  return (
+    <section className="card overview-card automation-card">
+      <h3>
+        <Workflow size={15} /> Automation
+      </h3>
+      <div className="field">
+        <span className="field-label">Git</span>
+        {isRepo ? (
+          <span className="small">
+            <GitBranch size={12} /> On. Tasks can use worktrees, and you can review and merge their changes.
+          </span>
+        ) : (
+          <div className="inline-field">
+            <span className="small muted">Off. Worktrees, Review and Merge need git.</span>
+            <Button size="sm" variant="secondary" icon={GitBranch} onClick={onTurnOnGit}>
+              Turn on git
+            </Button>
+          </div>
+        )}
+      </div>
+      <label className="field">
+        <span className="field-label">Check command</span>
+        <input
+          className="text-input mono"
+          placeholder="e.g. npm test   or   pytest -q"
+          value={check}
+          onChange={(e) => setCheck(e.target.value)}
+          onBlur={() => check.trim() !== (project.meta.checkCommand ?? '') && save({ checkCommand: check.trim() || undefined })}
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+        />
+        <span className="field-hint">Runs in PowerShell, in the task’s folder, after every headless task. Exit code 0 means passed. Tasks waiting on it only start if it passes.</span>
+      </label>
+      <label className="field">
+        <span className="field-label">Monthly budget (USD, estimated at API prices)</span>
+        <input
+          className="text-input num-wide"
+          type="number"
+          min={0}
+          step={5}
+          placeholder="No budget"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+          onBlur={() => {
+            const n = Number(limit)
+            const next = n > 0 ? n : undefined
+            if (next !== project.meta.monthlyBudgetUsd) save({ monthlyBudgetUsd: next })
+          }}
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+        />
+        {budget ? (
+          <div className="budget-meter">
+            <span className="meter-track" aria-hidden>
+              <span className={`meter-fill ${budget.over ? 'over' : pct >= 80 ? 'warn' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
+            </span>
+            <span className={`small ${budget.over ? 'tone-red' : ''}`}>
+              {formatCost(budget.spent)} of {formatCost(budget.budget)} this month ({pct}%)
+            </span>
+          </div>
+        ) : null}
+        <span className="field-hint">
+          You get a warning at 80%. Over budget, the queue, recurring tasks and chains hold for this project; you can still start tasks yourself.
+        </span>
+      </label>
+    </section>
+  )
+}
+
+export default function OverviewPanel({ project, groups, usage, budget, isRepo, onTurnOnGit, onChanged }: Props) {
   const [meta, setMeta] = useState<ProjectMeta>(project.meta)
   const [tagDraft, setTagDraft] = useState('')
   const [editingNotes, setEditingNotes] = useState(!project.meta.notes)
@@ -156,6 +241,8 @@ export default function OverviewPanel({ project, groups, usage, onChanged }: Pro
           )}
         </section>
       </div>
+
+      <AutomationCard project={project} budget={budget} isRepo={isRepo} onTurnOnGit={onTurnOnGit} onChanged={onChanged} />
 
       <section className="card overview-card notes-card">
         <h3>

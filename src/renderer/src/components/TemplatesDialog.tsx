@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarClock, Copy, FileStack, ListPlus, Pencil, Play, Plus, Repeat, Trash2, X } from 'lucide-react'
+import { CalendarClock, Copy, FileStack, ListOrdered, ListPlus, Pencil, Play, Plus, Repeat, Trash2, X } from 'lucide-react'
 import type { Project, Schedule, TaskMode, TaskPermission, TaskTemplate, TemplateInput } from '@shared/types'
 import { errorMessage, timeAgo } from '../util'
 import { useToast } from '../toast'
@@ -143,6 +143,41 @@ function TemplateEditor({ initial, id, projects, onDone }: { initial: TemplateIn
       </label>
 
       <div className="schedule-box">
+        <div className="steps-head">
+          <ListOrdered size={14} />
+          <span className="strong">Pipeline steps</span>
+          <span className="muted small">Optional. Each step runs after the one before it succeeds (and its checks pass), building on its branch in a worktree.</span>
+        </div>
+        <ol className="steps">
+          <li className="muted small">1. The prompt above</li>
+          {(t.steps ?? []).map((step, i) => (
+            <li key={i} className="step">
+              <span className="step-no">{i + 2}.</span>
+              <div className="step-fields">
+                <input
+                  className="text-input"
+                  placeholder="Step title, e.g. Write tests"
+                  value={step.title}
+                  onChange={(e) => set({ steps: (t.steps ?? []).map((s, j) => (j === i ? { ...s, title: e.target.value } : s)) })}
+                />
+                <textarea
+                  className="prompt-input"
+                  rows={2}
+                  placeholder="What Claude should do in this step"
+                  value={step.prompt}
+                  onChange={(e) => set({ steps: (t.steps ?? []).map((s, j) => (j === i ? { ...s, prompt: e.target.value } : s)) })}
+                />
+              </div>
+              <IconButton icon={Trash2} label="Remove step" size={14} onClick={() => set({ steps: (t.steps ?? []).filter((_, j) => j !== i) })} />
+            </li>
+          ))}
+        </ol>
+        <Button size="sm" variant="ghost" icon={Plus} onClick={() => set({ steps: [...(t.steps ?? []), { title: '', prompt: '' }] })}>
+          Add a step
+        </Button>
+      </div>
+
+      <div className="schedule-box">
         <label className="check-row">
           <input type="checkbox" checked={recurring} onChange={(e) => setRecurring(e.target.checked)} />
           <Repeat size={14} />
@@ -263,6 +298,7 @@ export default function TemplatesDialog({ templates, projects, onClose, onUse }:
                       <div className="muted small template-sub">
                         <span>{tpl.projectName ?? 'Any project'}</span>
                         <span>· {tpl.mode === 'headless' ? 'Headless' : 'Interactive'}</span>
+                        {!!tpl.steps?.length && <span>· {tpl.steps.length + 1}-step pipeline</span>}
                         {s && (
                           <span className={s.enabled ? 'tone-accent' : ''}>
                             · <CalendarClock size={11} /> {describeSchedule(s)}

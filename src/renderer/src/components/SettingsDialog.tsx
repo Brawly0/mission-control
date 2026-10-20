@@ -153,7 +153,24 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
                 />
                 %
               </label>
-              <span className="field-hint">Uses the 5-hour and 7-day limits Claude Code reports. 0 turns the check off.</span>
+              <span className="field-hint">Uses the 5-hour and 7-day limits Claude Code reports. Also skips recurring tasks and holds chains. 0 turns the check off.</span>
+            </div>
+
+            <div className="field">
+              <span className="field-label">Default budget for headless tasks</span>
+              <label className="inline-field">
+                Stop a task that doesn’t set its own budget after spending $
+                <input
+                  className="text-input num-input"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={settings.defaultTaskBudgetUsd}
+                  onChange={(e) => setSettings({ ...settings, defaultTaskBudgetUsd: Math.max(0, Number(e.target.value) || 0) })}
+                  onBlur={() => apply({ defaultTaskBudgetUsd: settings.defaultTaskBudgetUsd })}
+                />
+              </label>
+              <span className="field-hint">Estimated at API prices, per run (follow-ups get their own allowance). 0 means no default limit. Monthly budgets per project are in each project’s Overview tab.</span>
             </div>
 
             <UpdatesSection autoUpdate={settings.autoUpdate} onAutoUpdate={(v) => apply({ autoUpdate: v })} />

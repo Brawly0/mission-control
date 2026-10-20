@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileStack, GitFork, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap } from 'lucide-react'
-import type { GitInfo, NewTask, Project, TaskMode, TaskPermission } from '@shared/types'
+import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap } from 'lucide-react'
+import type { GitInfo, NewTask, Project, Task, TaskMode, TaskPermission } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   defaultProject?: string
   /** Prefill, e.g. from a template. */
   initial?: Partial<NewTask>
+  /** Existing tasks this one can wait on. */
+  tasks: Task[]
   onCancel: () => void
   onCreate: (task: NewTask, then: 'todo' | 'queue' | 'start') => void
   onSaveTemplate: (task: NewTask) => void
@@ -21,7 +23,9 @@ const PERMISSIONS: { value: TaskPermission; label: string; hint: string }[] = [
   { value: 'bypassPermissions', label: 'Bypass all checks', hint: 'Everything is allowed without asking. Only use in a worktree you can discard.' }
 ]
 
-export default function TaskComposer({ projects, git, defaultProject, initial, onCancel, onCreate, onSaveTemplate }: Props) {
+export default function TaskComposer({ projects, git, defaultProject, initial, tasks, onCancel, onCreate, onSaveTemplate }: Props) {
+  const [dependsOn, setDependsOn] = useState<string[]>(initial?.dependsOn ?? [])
+  const [whenReady, setWhenReady] = useState<NonNullable<Task['whenReady']>>(initial?.whenReady ?? 'start')
   const choices = projects.filter((p) => !p.worktree)
   const startProject = initial?.projectPath ?? defaultProject
   const [projectPath, setProjectPath] = useState(startProject && choices.some((p) => p.path === startProject) ? startProject : (choices[0]?.path ?? ''))
@@ -62,9 +66,15 @@ export default function TaskComposer({ projects, git, defaultProject, initial, o
       useWorktree: isRepo && useWorktree,
       budgetUsd: mode === 'headless' && budgetUsd > 0 ? budgetUsd : undefined,
       model: model || undefined,
-      templateId: initial?.templateId
+      templateId: initial?.templateId,
+      dependsOn: dependsOn.length ? dependsOn : undefined,
+      whenReady: dependsOn.length ? whenReady : undefined
     }
   }
+  // Tasks worth waiting on: not finished yet, or finished and waiting for review. Same project first.
+  const candidates = tasks
+    .filter((t) => t.column !== 'done' && !dependsOn.includes(t.id))
+    .sort((a, b) => Number(b.projectPath === projectPath) - Number(a.projectPath === projectPath) || b.createdAt - a.createdAt)
   const submit = (then: 'todo' | 'queue' | 'start') => {
     const t = current()
     if (t) onCreate(t, then)
@@ -163,6 +173,54 @@ export default function TaskComposer({ projects, git, defaultProject, initial, o
                 <span className="field-label">Budget (USD)</span>
                 <input className="text-input" type="number" min="0" step="0.5" placeholder="No limit" value={budget} onChange={(e) => setBudget(e.target.value)} />
               </label>
+            )}
+          </div>
+
+          <div className="field">
+            <span className="field-label">
+              <Link2 size={12} /> Run after (optional)
+            </span>
+            <div className="dep-picker">
+              {dependsOn.map((id) => {
+                const t = tasks.find((x) => x.id === id)
+                return (
+                  <span key={id} className="tag on">
+                    {t?.title ?? 'Deleted task'}
+                    <button type="button" onClick={() => setDependsOn((d) => d.filter((x) => x !== id))} aria-label="Remove">
+                      <X size={11} />
+                    </button>
+                  </span>
+                )
+              })}
+              {candidates.length > 0 && (
+                <select
+                  className="select select-sm"
+                  value=""
+                  onChange={(e) => e.target.value && setDependsOn((d) => [...d, e.target.value])}
+                  aria-label="Add a task to wait for"
+                >
+                  <option value="">{dependsOn.length ? 'And after…' : 'Pick a task to wait for…'}</option>
+                  {candidates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title} ({t.projectName}, {t.column === 'todo' ? 'to do' : t.column})
+                    </option>
+                  ))}
+                </select>
+              )}
+              {candidates.length === 0 && dependsOn.length === 0 && <span className="muted small">No other open tasks.</span>}
+            </div>
+            {dependsOn.length > 0 && (
+              <div className="inline-field small">
+                When they’ve all succeeded:
+                <select className="select select-sm" value={whenReady} onChange={(e) => setWhenReady(e.target.value as NonNullable<Task['whenReady']>)}>
+                  <option value="start">start this task</option>
+                  <option value="queue">add it to the queue</option>
+                  <option value="none">just mark it ready</option>
+                </select>
+                <span className="field-hint">
+                  If one fails, this one waits; you can retry it or run this anyway. In worktrees it builds on the previous task’s branch.
+                </span>
+              </div>
             )}
           </div>
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, KanbanSquare, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
-import type { GitInfo, Project } from '@shared/types'
+import type { BudgetState, GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 import { timeAgo } from '../util'
 import { Avatar, IconButton, Kbd } from './ui'
@@ -20,6 +20,8 @@ interface Props {
   onRefresh: () => void
   onAdd: () => void
   taskCounts: { running: number; review: number }
+  /** Monthly budget state, keyed by lower-cased project path. */
+  budgets: Record<string, BudgetState>
 }
 
 function loadCollapsed(): Set<string> {
@@ -104,6 +106,15 @@ export default function Sidebar(props: Props) {
               <span className="ellipsis">{p.name}</span>
               {p.meta.status === 'paused' && <Pause size={11} className="status-icon paused" aria-label="Paused" />}
               {p.meta.status === 'done' && <Check size={12} className="status-icon done" aria-label="Done" />}
+              {(() => {
+                const b = props.budgets[p.path.toLowerCase().replace(/[\\/]+$/, '')]
+                if (!b || b.ratio < 0.8) return null
+                return (
+                  <span className={`budget-flag ${b.over ? 'over' : ''}`} title={`About $${b.spent.toFixed(2)} of $${b.budget} this month${b.over ? ': automation is on hold' : ''}`}>
+                    $
+                  </span>
+                )
+              })()}
             </div>
             <div className="project-meta">
               {g?.isRepo ? (

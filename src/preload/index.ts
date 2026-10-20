@@ -83,6 +83,12 @@ const api: MissionControlApi = {
     return () => ipcRenderer.removeListener('ratelimit', handler)
   },
   getRateLimit: () => ipcRenderer.invoke('ratelimit:get'),
+  followUpTask: (id, prompt) => ipcRenderer.invoke('tasks:followUp', id, prompt),
+  rerunChecks: (id) => ipcRenderer.invoke('tasks:rerunChecks', id),
+  previewGitInit: (folder) => ipcRenderer.invoke('git:previewInit', folder),
+  initGit: (folder) => ipcRenderer.invoke('git:init', folder),
+  budgets: () => ipcRenderer.invoke('budgets:all'),
+  onBudgetsChanged: (cb) => on<void>('budgets:changed', cb),
   queueStatus: () => ipcRenderer.invoke('queue:status'),
   onQueueStatus: (cb) => on<QueueStatus>('queue:status', cb),
   listTemplates: () => ipcRenderer.invoke('templates:list'),

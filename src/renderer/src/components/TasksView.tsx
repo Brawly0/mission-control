@@ -8,6 +8,10 @@ import {
   Eye,
   FileStack,
   GitBranch,
+  Link2,
+  Lock,
+  Unlock,
+  XCircle,
   ListOrdered,
   ListPlus,
   ListX,
@@ -22,6 +26,7 @@ import {
 import type { Project, QueueStatus, Task, TaskColumn } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
+import { dependencyState, dependentsOf } from '@shared/deps'
 import { elapsed, formatCost, timeAgo } from '../util'
 import { Avatar, Button, EmptyState } from './ui'
 
@@ -52,6 +57,7 @@ const COLUMNS: { id: TaskColumn; title: string; icon: typeof Circle; hint: strin
 
 function TaskCard({
   task,
+  all,
   agent,
   queuePos,
   onOpen,
@@ -59,10 +65,14 @@ function TaskCard({
   onStop,
   onOpenAgent,
   onToggleQueued
-}: { task: Task; agent?: Agent; queuePos?: number } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent' | 'onToggleQueued'>) {
+}: { task: Task; all: Task[]; agent?: Agent; queuePos?: number } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent' | 'onToggleQueued'>) {
   const run = task.run
   const running = task.column === 'running'
   const agentStatus = agent ? displayStatus(agent, undefined) : null
+  const deps = dependencyState(task, all)
+  const waiting = task.column === 'todo' && (deps.kind === 'waiting' || deps.kind === 'blocked')
+  const unlocks = dependentsOf(task.id, all).filter((t) => t.column === 'todo')
+  const checks = run?.checks
 
   const onDragStart = (e: DragEvent) => {
     e.dataTransfer.setData('text/task-id', task.id)
@@ -99,6 +109,25 @@ function TaskCard({
         )}
       </div>
 
+      {task.column === 'todo' && deps.kind !== 'none' && (
+        <div className={`dep-chip dep-${deps.kind}`} title={(task.dependsOn ?? []).map((id) => all.find((t) => t.id === id)?.title ?? '(deleted)').join('\n')}>
+          {deps.kind === 'ready' ? <Unlock size={11} /> : <Lock size={11} />}
+          <span className="ellipsis">
+            {deps.kind === 'blocked'
+              ? `Blocked: ${deps.failed.map((t) => t.title).join(', ')} failed`
+              : deps.kind === 'waiting'
+                ? `Waiting on: ${deps.waitingOn.map((t) => t.title).join(', ')}`
+                : 'Ready: everything before it succeeded'}
+          </span>
+        </div>
+      )}
+      {unlocks.length > 0 && task.column !== 'done' && (
+        <div className="dep-chip dep-unlocks" title={unlocks.map((t) => t.title).join('\n')}>
+          <Link2 size={11} />
+          <span className="ellipsis">Then: {unlocks.map((t) => t.title).join(', ')}</span>
+        </div>
+      )}
+
       {running && run && (
         <div className="task-progress">
           {task.mode === 'interactive' && agentStatus ? (
@@ -123,6 +152,14 @@ function TaskCard({
           <span className="ellipsis">{run.error ?? (run.result?.split('\n').find((l) => l.trim()) || 'Finished')}</span>
         </div>
       )}
+      {checks && (
+        <div className={`check-badge check-${checks.status}`} title={`${checks.command}\n\n${checks.output.slice(-600)}`}>
+          {checks.status === 'running' ? <Loader2 size={11} className="spin" /> : checks.status === 'passed' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+          <span className="ellipsis">
+            {checks.status === 'running' ? 'Running checks…' : checks.status === 'passed' ? 'Checks passed' : `Checks ${checks.status}`}: <code>{checks.command}</code>
+          </span>
+        </div>
+      )}
 
       <div className="task-foot" onClick={(e) => e.stopPropagation()}>
         <span className="muted small">
@@ -140,9 +177,14 @@ function TaskCard({
             {task.queued ? 'Unqueue' : 'Queue'}
           </Button>
         )}
-        {task.column === 'todo' && (
+        {task.column === 'todo' && !waiting && (
           <Button size="sm" variant="primary" icon={Play} onClick={() => onStart(task)}>
             Start
+          </Button>
+        )}
+        {waiting && (
+          <Button size="sm" variant="ghost" icon={Lock} onClick={() => onOpen(task)} title="Open it to run it anyway">
+            {deps.kind === 'blocked' ? 'Blocked' : 'Waiting'}
           </Button>
         )}
         {running && task.mode === 'headless' && (
@@ -283,6 +325,7 @@ export default function TasksView(props: Props) {
                     <TaskCard
                       key={t.id}
                       task={t}
+                      all={tasks}
                       agent={t.run?.agentId ? agents.find((a) => a.id === t.run!.agentId) : undefined}
                       queuePos={queueOrder.get(t.id)}
                       onOpen={props.onOpen}

@@ -158,3 +158,18 @@ Installed copies update from the public repo [Brawly0/mission-control-releases](
 ### Automation test
 
 `MC_SMOKE_AUTOMATION=<git repo with a commit>` checks the schedule math and template variables, fires an overdue recurring template, and runs two real queued Haiku tasks with one slot (about $0.05), which must run one after the other. It restores your queue settings and deletes everything it created.
+
+### Unit tests and CI
+
+`npm test` runs the Vitest unit tests for pure logic: schedule math, dependency rules, the stream parser, pricing and the diff parser. They're free and take under a second. GitHub Actions (`.github/workflows/ci.yml`) runs type-check, unit tests and build on Windows for every push. Keep new logic testable by putting it in Electron-free modules (`src/shared/`, or main-process files that don't import `electron`).
+
+### Chain test
+
+`MC_SMOKE_CHAIN=<empty scratch folder>` runs the v0.7 flow end to end in that folder (about $0.10 of Haiku):
+1. Turn on git, with a `.env` and `node_modules` that must stay out.
+2. A 3-step chain whose first check fails, so the next step must stay blocked.
+3. Fix the check and re-run it, so the chain continues by itself on chained branches.
+4. A follow-up, then merging the last branch.
+5. The monthly budget guard holding a queued task.
+
+Everything it creates is removed, and your settings are restored.

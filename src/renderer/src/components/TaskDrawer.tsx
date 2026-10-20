@@ -1,14 +1,42 @@
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
-import { AlertCircle, CheckCircle2, GitBranch, MessageSquareText, Play, RotateCcw, Square, SquareTerminal, Terminal, Trash2, Wrench, X, Info } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  GitBranch,
+  GitCommitHorizontal,
+  Link2,
+  Loader2,
+  Lock,
+  MessageSquareText,
+  Play,
+  RotateCcw,
+  Send,
+  ShieldCheck,
+  Square,
+  SquareTerminal,
+  Terminal,
+  Trash2,
+  Wrench,
+  X,
+  XCircle,
+  Info
+} from 'lucide-react'
 import type { Task, TaskEvent } from '@shared/types'
+import { dependencyState, dependentsOf, taskFailed, taskSucceeded } from '@shared/deps'
 import type { Agent } from '../types'
-import { elapsed, formatCost } from '../util'
+import { elapsed, errorMessage, formatCost } from '../util'
+import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, IconButton } from './ui'
 
 interface Props {
   task: Task
+  /** All tasks, for the dependency chain. */
+  all: Task[]
+  onOpenTask: (task: Task) => void
+  /** Opens New task with this task as its "run after". */
+  onAddAfter: (task: Task) => void
   agent?: Agent
   onClose: () => void
   onStart: (task: Task) => void
@@ -34,13 +62,42 @@ function duration(from: number, to?: number): string {
   return elapsed(Date.now() - ((to ?? Date.now()) - from))
 }
 
-export default function TaskDrawer({ task, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
+function statusIcon(t: Task) {
+  if (t.column === 'running') return <Loader2 size={12} className="spin tone-green" />
+  if (taskSucceeded(t)) return <CheckCircle2 size={12} className="tone-green" />
+  if (taskFailed(t)) return <XCircle size={12} className="tone-red" />
+  return <Lock size={12} className="muted" />
+}
+
+export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
+  const toast = useToast()
   const [tab, setTab] = useState<'activity' | 'changes'>('activity')
   const [prompt, setPrompt] = useState(task.prompt)
   const [title, setTitle] = useState(task.title)
+  const [followUp, setFollowUp] = useState('')
   const run = task.run
   const running = task.column === 'running'
   const editable = task.column === 'todo'
+  const deps = dependencyState(task, all)
+  const before = (task.dependsOn ?? []).map((id) => all.find((t) => t.id === id)).filter((t): t is Task => !!t)
+  const after = dependentsOf(task.id, all)
+  const canFollowUp = task.mode === 'headless' && !running && !!run?.sessionId && !!run.finishedAt
+
+  const sendFollowUp = async () => {
+    try {
+      await window.mc.followUpTask(task.id, followUp)
+      setFollowUp('')
+    } catch (e) {
+      toast('error', 'Could not send the follow-up', errorMessage(e))
+    }
+  }
+  const rerunChecks = async () => {
+    try {
+      await window.mc.rerunChecks(task.id)
+    } catch (e) {
+      toast('error', 'Could not run the checks', errorMessage(e))
+    }
+  }
 
   useEffect(() => {
     setPrompt(task.prompt)
@@ -84,9 +141,14 @@ export default function TaskDrawer({ task, agent, onClose, onStart, onStop, onCo
       </div>
 
       <div className="drawer-actions">
-        {task.column === 'todo' && (
+        {task.column === 'todo' && (deps.kind === 'none' || deps.kind === 'ready') && (
           <Button variant="primary" icon={Play} onClick={() => onStart(task)}>
             Start
+          </Button>
+        )}
+        {task.column === 'todo' && (deps.kind === 'waiting' || deps.kind === 'blocked') && (
+          <Button icon={Play} onClick={() => onStart(task)} title="Start now without waiting for the tasks before it">
+            Run anyway
           </Button>
         )}
         {running && task.mode === 'headless' && (
@@ -115,6 +177,7 @@ export default function TaskDrawer({ task, agent, onClose, onStart, onStop, onCo
           </Button>
         )}
         <span className="spacer" />
+        {task.column !== 'done' && <IconButton icon={Link2} label="Add a task that runs after this one" onClick={() => onAddAfter(task)} />}
         <IconButton icon={Trash2} label="Delete task" onClick={() => onDelete(task)} disabled={running && task.mode === 'headless'} />
       </div>
 
@@ -156,6 +219,44 @@ export default function TaskDrawer({ task, agent, onClose, onStart, onStop, onCo
         </div>
       ) : (
         <div className="drawer-body scroll">
+          {(before.length > 0 || after.length > 0) && (
+            <section>
+              <h3>
+                <Link2 size={12} /> Chain
+              </h3>
+              <ol className="chain">
+                {before.map((t) => (
+                  <li key={t.id}>
+                    <button className="chain-step" onClick={() => onOpenTask(t)}>
+                      {statusIcon(t)}
+                      <span className="ellipsis">{t.title}</span>
+                      <span className="muted small">{taskFailed(t) ? 'failed, retry it to continue' : taskSucceeded(t) ? 'succeeded' : t.column === 'running' ? 'running' : 'not run yet'}</span>
+                    </button>
+                  </li>
+                ))}
+                <li>
+                  <div className="chain-step current">
+                    <span className="chain-dot" />
+                    <span className="ellipsis strong">{task.title}</span>
+                    <span className="muted small">
+                      {task.column === 'todo' ? (deps.kind === 'blocked' ? 'blocked' : deps.kind === 'waiting' ? 'waiting' : deps.kind === 'ready' ? 'ready' : 'to do') : 'this task'}
+                    </span>
+                  </div>
+                </li>
+                {after.map((t) => (
+                  <li key={t.id}>
+                    <button className="chain-step" onClick={() => onOpenTask(t)}>
+                      {statusIcon(t)}
+                      <span className="ellipsis">{t.title}</span>
+                      <span className="muted small">runs after this</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              {deps.kind === 'blocked' && <p className="field-hint warn">A task before this one failed. Open it and press Run again (or fix its checks); this one starts once it succeeds. Or press Run anyway.</p>}
+            </section>
+          )}
+
           <section>
             <h3>Prompt</h3>
             {editable ? (
@@ -178,6 +279,74 @@ export default function TaskDrawer({ task, agent, onClose, onStart, onStop, onCo
               <div className="markdown result-view">
                 <Markdown>{run.result}</Markdown>
               </div>
+              {run.commit && task.worktree && (
+                <p className="muted small commit-note">
+                  <GitCommitHorizontal size={12} /> Changes committed as <code>{run.commit}</code> on <code>{task.worktree.branch}</code>. Review and merge them in Changes.
+                </p>
+              )}
+            </section>
+          )}
+
+          {run?.checks && (
+            <section>
+              <h3>
+                <ShieldCheck size={12} /> Checks
+              </h3>
+              <div className={`checks-box check-${run.checks.status}`}>
+                <div className="checks-head">
+                  {run.checks.status === 'running' ? <Loader2 size={14} className="spin" /> : run.checks.status === 'passed' ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                  <span className="strong">{run.checks.status === 'running' ? 'Running' : run.checks.status === 'passed' ? 'Passed' : run.checks.status === 'failed' ? 'Failed' : 'Error'}</span>
+                  <code className="ellipsis">{run.checks.command}</code>
+                  {run.checks.exitCode !== undefined && <span className="muted small">exit {run.checks.exitCode}</span>}
+                  <span className="spacer" />
+                  {!running && run.checks.status !== 'running' && (
+                    <Button size="sm" variant="ghost" icon={RotateCcw} onClick={rerunChecks}>
+                      Re-run checks
+                    </Button>
+                  )}
+                </div>
+                {run.checks.output.trim() && <pre className="checks-output">{run.checks.output.trim()}</pre>}
+              </div>
+            </section>
+          )}
+          {!run?.checks && run?.finishedAt && !running && !run.error && task.mode === 'headless' && (
+            <p className="muted small">
+              No checks ran. Set a check command (like <code>npm test</code>) in the project’s Overview tab.{' '}
+              <button className="link" onClick={rerunChecks}>
+                Run checks now
+              </button>
+            </p>
+          )}
+
+          {canFollowUp && (
+            <section>
+              <h3>
+                <Send size={12} /> Follow up
+              </h3>
+              <form
+                className="follow-up"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (followUp.trim()) sendFollowUp()
+                }}
+              >
+                <textarea
+                  className="prompt-input"
+                  rows={3}
+                  placeholder="e.g. Also add a test for the empty case."
+                  value={followUp}
+                  onChange={(e) => setFollowUp(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.ctrlKey && followUp.trim()) sendFollowUp()
+                  }}
+                />
+                <div className="follow-up-foot">
+                  <span className="muted small">Continues the same chat in the background{task.worktree ? ', in the same worktree' : ''}. Ctrl+Enter sends.</span>
+                  <Button size="sm" variant="primary" icon={Send} type="submit" disabled={!followUp.trim()}>
+                    Send
+                  </Button>
+                </div>
+              </form>
             </section>
           )}
 

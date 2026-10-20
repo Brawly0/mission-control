@@ -2,7 +2,13 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.6)
+## Features (v0.7)
+
+- **Chains**: give a task one or more tasks to **run after**. It waits (🔒) until they succeed, then starts by itself. If one fails, it stays blocked until you retry that task, or you press **Run anyway**. In worktrees, each step starts from the previous step's branch, so merging the last step brings in the whole chain. Templates can hold several **steps** (a pipeline), and pipelines can be recurring.
+- **Checks**: set a check command per project (Overview → Automation, e.g. `npm test`). It runs after every headless task, the card shows ✓ or ✗ with the output, and a chain only moves on when the checks pass. Headless tasks in worktrees **commit their changes** automatically, so they're ready to merge.
+- **Follow up**: continue a finished task's chat from its panel, in the background, without opening a terminal.
+- **Turn on git**: one click makes a project a git repository after showing exactly what the first commit contains. Secrets (`.env`, keys) and dependencies are kept out.
+- **Guardrails**: a default budget for headless tasks, and a monthly budget per project with a warning at 80%. Over budget, or while plan usage is high, the queue, recurring tasks and chains hold for that project.
 
 - **Templates**: save tasks you run often (Save as template in New task, or Tasks → Templates). Titles and prompts can use `{{project}}`, `{{date}}`, `{{time}}` and `{{weekday}}`.
 - **Recurring tasks**: give a template a schedule (every N hours, daily, weekdays or weekly at a time). When it fires, the new task starts, joins the queue, or waits in To do. Schedules run while Mission Control is open (it keeps running in the tray). If one came due while the app was closed, it runs once at the next start.
@@ -64,6 +70,7 @@ npm run dev
 | `npm run dev` | Run the app with hot reload |
 | `npm run build` | Build to `out/` |
 | `npm run typecheck` | Type-check main and renderer |
+| `npm test` | Unit tests (Vitest); free, no Claude usage |
 | `npm run dist` | Build the Windows installer into `release/` |
 | `npm run release` | Build and publish a release for auto-update (see docs/DEVELOPMENT.md) |
 | `npm run icon` | Re-render `build/icon.png` from `build/icon.svg` |

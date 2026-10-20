@@ -24,6 +24,33 @@ export interface ProjectMeta {
   status?: ProjectStatus
   /** Free-form Markdown notes. */
   notes: string
+  /** Command run after a headless task finishes, e.g. "npm test". Exit code 0 = passed. */
+  checkCommand?: string
+  /** Estimated monthly spend (USD, at API prices) after which automation for this project holds. */
+  monthlyBudgetUsd?: number
+}
+
+export interface GitInitPreview {
+  alreadyRepo: boolean
+  /** Files that would go into the first commit (relative paths, first 200). */
+  files: string[]
+  fileCount: number
+  totalBytes: number
+  /** Files over 50 MB that would be committed. */
+  large: { path: string; bytes: number }[]
+  /** Files that look secret and are kept out by the ignore rules. */
+  secretsExcluded: string[]
+  gitignoreExists: boolean
+  /** Lines that would be added to .gitignore. */
+  gitignoreAdditions: string[]
+}
+
+export interface BudgetState {
+  budget: number
+  /** Estimated spend this calendar month, including the project's worktrees. */
+  spent: number
+  ratio: number
+  over: boolean
 }
 
 /** Token totals; cost is an estimate at Anthropic API list prices. */
@@ -218,6 +245,23 @@ export interface TaskRun {
   events: TaskEvent[]
   /** Interactive runs: the agent (PTY) id while it's open. */
   agentId?: string
+  /** Result of the project's check command after the run. */
+  checks?: CheckResult
+  /** Cost of earlier turns, before the current follow-up (internal). */
+  costBefore?: number
+  followUps?: number
+  /** Commit made automatically from the run's worktree changes. */
+  commit?: string
+}
+
+export interface CheckResult {
+  command: string
+  status: 'running' | 'passed' | 'failed' | 'error'
+  exitCode?: number
+  /** Last part of the combined output. */
+  output: string
+  startedAt: number
+  finishedAt?: number
 }
 
 export interface Task {
@@ -243,6 +287,10 @@ export interface Task {
   run?: TaskRun
   /** Waiting in the auto-queue (headless To do tasks only). */
   queued?: boolean
+  /** Tasks that must succeed before this one runs. */
+  dependsOn?: string[]
+  /** What happens when all dependencies have succeeded (default: start). */
+  whenReady?: 'start' | 'queue' | 'none'
   /** The template this task was made from, if any. */
   templateId?: string
 }
@@ -280,6 +328,8 @@ export interface TaskTemplate {
   budgetUsd?: number
   model?: string
   schedule?: Schedule
+  /** Pipeline: more steps that each run after the previous one succeeds (same project and settings). */
+  steps?: { title: string; prompt: string }[]
   createdAt: number
   updatedAt: number
 }
@@ -295,6 +345,8 @@ export type UpdateState =
 export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model'> & {
   queued?: boolean
   templateId?: string
+  dependsOn?: string[]
+  whenReady?: Task['whenReady']
 }
 
 /** Plan rate-limit utilization reported by Claude Code (0-1 per window). */
@@ -317,6 +369,8 @@ export interface AppSettings {
   queuePauseAtPercent: number
   /** Check for app updates at startup and every few hours. */
   autoUpdate: boolean
+  /** Spending cap (USD) for headless tasks that don't set their own; 0 = none. */
+  defaultTaskBudgetUsd: number
 }
 
 export interface QueueStatus {
@@ -374,6 +428,15 @@ export interface MissionControlApi {
   listTasks(): Promise<Task[]>
   createTask(t: NewTask): Promise<Task>
   updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode' | 'queued'>>): Promise<void>
+  /** Continues a finished headless task's chat with a new prompt, in the background. */
+  followUpTask(id: string, prompt: string): Promise<void>
+  /** Runs the project's check command again for a finished task. */
+  rerunChecks(id: string): Promise<void>
+  previewGitInit(folder: string): Promise<GitInitPreview>
+  initGit(folder: string): Promise<{ commit: string; files: number }>
+  /** Monthly budget state of every project that has a budget, keyed by lower-cased project path. */
+  budgets(): Promise<Record<string, BudgetState>>
+  onBudgetsChanged(cb: () => void): () => void
   queueStatus(): Promise<QueueStatus>
   onQueueStatus(cb: (s: QueueStatus) => void): () => void
 

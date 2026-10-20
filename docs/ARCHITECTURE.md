@@ -65,6 +65,20 @@ When the process exits, the task moves to **Review**, whether it succeeded, fail
 - **Scheduler:** `templates.ts` ticks every 30 seconds. A template whose `nextRunAt` has passed runs **once**, even if several occurrences were missed while the app was closed, and then gets its next time computed from now (`nextRunAfter`: hourly / daily / weekdays / weekly). A fired interactive task asks the UI to open its agent (`task:launch`). Self-tests connect the UI but never run the timer.
 - **Auto-queue:** headless To do tasks with `queued: true` run in board order. `pumpQueue()` runs after every finish, on queue or setting changes, and every 30 seconds. It starts tasks while fewer than `queueParallel` headless runs are active, and holds while the queue is off or a plan window is at or above `queuePauseAtPercent`. A queued task that can't start (for example its worktree can't be created) goes to Review with the error.
 
+## Chains, checks and guardrails (v0.7)
+
+- **Dependencies** live on the task (`dependsOn`, `whenReady`). The rules are pure functions in `src/shared/deps.ts`, used by both the main process and the UI and covered by unit tests. "Succeeded" means finished without an error **and** checks (if any) passed. A failed dependency leaves dependents blocked. Loops are rejected when a task is created.
+- **After a headless run succeeds** (`tasks.ts → afterSuccess`):
+  1. In a worktree, everything is committed (`commitIfDirty`).
+  2. The project's `checkCommand` runs in PowerShell in the task's folder, with a 10-minute limit; exit code 0 means passed.
+  3. The task moves to Review.
+  4. `onTaskSettled` starts dependents that are now ready (subject to guardrails).
+- **Branch chaining:** `chainBaseFor` picks the most recently finished successful worktree dependency. The new worktree branches from it but keeps the original `base`, so merging the last step merges the whole chain.
+- **Follow-up** resumes the run's session (`claude -p --resume <id>`). The cost so far is kept in `run.costBefore`, and the stream parser adds the new cost to it.
+- **Guardrails** (`automationHold`): plan usage at or above `queuePauseAtPercent`, or the project over its `monthlyBudgetUsd`, holds the queue, recurring tasks (that run is skipped, not the schedule) and chain auto-starts. Monthly spend comes from the chat index, including the project's worktrees (`budget.ts`). A warning fires once per month at 80%. Tasks you start yourself are never blocked.
+- **Turn on git** (`git.ts`): `previewGitInit` lists what would be committed using a throwaway git directory in the temp folder (the project folder isn't touched). `initGit` merges `DEFAULT_GITIGNORE` into `.gitignore`, runs `git init -b main`, sets a repo-local identity only if none is configured (from the GitHub CLI account, as a noreply address), and commits.
+- **Tests:** pure logic (`src/shared/*.ts`, `streamParser.ts`, `pricing.ts`, `renderer/src/diff.ts`) has Vitest unit tests. CI (`.github/workflows/ci.yml`) type-checks, tests and builds on Windows.
+
 ## Updates
 
 `updater.ts` wraps electron-updater. Packaged builds check `Brawly0/mission-control-releases` 15 seconds after start and every 6 hours (setting `autoUpdate`), download in the background, and install on the next restart or right away from **Update ready · Restart**. See ADR 0006 for why releases live in a separate public repo.

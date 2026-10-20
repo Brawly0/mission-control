@@ -1,8 +1,9 @@
+import { app } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, promises as fs } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import type { ChangedFile, GitChanges, GitInfo, WorktreeInfo } from '../shared/types'
+import type { ChangedFile, GitChanges, GitInfo, GitInitPreview, WorktreeInfo } from '../shared/types'
 
 /** Runs git and resolves with stdout; rejects with git's own error text. */
 function git(cwd: string, args: string[], allowExit1 = false): Promise<string> {
@@ -80,11 +81,12 @@ export async function gitInfoMany(paths: string[]): Promise<Record<string, GitIn
  * Creates a worktree + branch for one agent, under <repo>/.claude/worktrees/<name>, the same place
  * Claude Code puts its own worktrees. The folder is excluded locally so the main checkout stays clean.
  */
-export async function createWorktree(projectPath: string): Promise<WorktreeInfo> {
+export async function createWorktree(projectPath: string, opts: { fromBranch?: string; base?: string } = {}): Promise<WorktreeInfo> {
   const info = await gitInfo(projectPath)
   if (!info.isRepo || !info.mainRoot) throw new Error('This folder is not a git repository.')
   const repoRoot = info.mainRoot
-  const base = (await git(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+  // In a chain, the new branch starts from the previous task's branch but still merges into the original base.
+  const base = opts.base ?? (await git(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
   if (base === 'HEAD') throw new Error('The main checkout is on a detached HEAD; check out a branch first.')
   try {
     await git(repoRoot, ['rev-parse', '--verify', 'HEAD'])
@@ -107,9 +109,149 @@ export async function createWorktree(projectPath: string): Promise<WorktreeInfo>
     /* not fatal: the folder just shows as untracked */
   }
 
-  await git(repoRoot, ['worktree', 'add', '-b', branch, path, base])
+  await git(repoRoot, ['worktree', 'add', '-b', branch, path, opts.fromBranch ?? base])
   infoCache.clear()
   return { path, branch, base, repoRoot }
+}
+
+/** Commits everything in a worktree, if anything changed. Returns the short commit hash, or null. */
+export async function commitIfDirty(path: string, message: string): Promise<string | null> {
+  const status = await git(path, ['status', '--porcelain'])
+  if (!status.trim()) return null
+  await git(path, ['add', '-A'])
+  await git(path, ['commit', '-m', message])
+  infoCache.clear()
+  return (await git(path, ['rev-parse', '--short', 'HEAD'])).trim()
+}
+
+// ---------------------------------------------------------------- Turn on git
+
+/** Always kept out of a new repository: dependencies, build output, secrets, logs, OS clutter. */
+export const DEFAULT_GITIGNORE = [
+  '# Added by Mission Control',
+  'node_modules/',
+  '.venv/',
+  'venv/',
+  '__pycache__/',
+  '*.pyc',
+  'dist/',
+  'build/',
+  'out/',
+  '.next/',
+  '.cache/',
+  '*.log',
+  '.env',
+  '.env.*',
+  '!.env.example',
+  '*.pem',
+  '*.key',
+  '*.pfx',
+  'Thumbs.db',
+  'desktop.ini',
+  '.DS_Store',
+  '.claude/worktrees/'
+]
+
+
+const PREVIEW_LIMIT = 4000
+const LARGE_BYTES = 50 * 1024 * 1024
+
+/**
+ * Shows what "Turn on git" would commit, without changing anything: runs `git ls-files` against a
+ * throwaway index in a temporary repository pointed at the folder, using the merged ignore rules.
+ */
+export async function previewGitInit(folder: string): Promise<GitInitPreview> {
+  const info = await gitInfo(folder)
+  const gitignorePath = join(folder, '.gitignore')
+  const existing = existsSync(gitignorePath) ? (await fs.readFile(gitignorePath, 'utf8')).split(/\r?\n/) : []
+  const additions = DEFAULT_GITIGNORE.filter((l) => !l.startsWith('#') && !existing.includes(l))
+  if (info.isRepo) {
+    return { alreadyRepo: true, files: [], fileCount: 0, totalBytes: 0, large: [], secretsExcluded: [], gitignoreExists: existing.length > 0, gitignoreAdditions: [] }
+  }
+
+  const tmpGit = join(app.getPath('temp'), `mc-git-preview-${randomBytes(4).toString('hex')}`)
+  const excludes = join(tmpGit, 'exclude')
+  try {
+    await git(folder, ['init', '-q', '--separate-git-dir', tmpGit, join(tmpGit, 'wt')])
+    await fs.writeFile(excludes, [...existing, ...DEFAULT_GITIGNORE].join('\n'))
+    const common = ['--git-dir', tmpGit, '--work-tree', folder, '-c', `core.excludesFile=${excludes}`]
+    const listed = (await git(folder, [...common, 'ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
+    const all = (await git(folder, ['--git-dir', tmpGit, '--work-tree', folder, 'ls-files', '--others', '-z'])).split('\0').filter(Boolean)
+    const included = new Set(listed)
+    const secretsExcluded = all.filter((f) => !included.has(f) && /(^|\/)(\.env(\.|$)|.*\.(pem|key|pfx)$|id_rsa|credentials)/i.test(f)).slice(0, 50)
+
+    let totalBytes = 0
+    const large: { path: string; bytes: number }[] = []
+    for (const f of listed.slice(0, PREVIEW_LIMIT)) {
+      try {
+        const size = (await fs.stat(join(folder, f))).size
+        totalBytes += size
+        if (size > LARGE_BYTES) large.push({ path: f, bytes: size })
+      } catch {
+        /* vanished */
+      }
+    }
+    return {
+      alreadyRepo: false,
+      files: listed.slice(0, 200),
+      fileCount: listed.length,
+      totalBytes,
+      large,
+      secretsExcluded,
+      gitignoreExists: existing.length > 0,
+      gitignoreAdditions: additions
+    }
+  } finally {
+    await fs.rm(tmpGit, { recursive: true, force: true }).catch(() => undefined)
+    await fs.rm(join(tmpGit, 'wt'), { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/** The name and email for commits: git's own config if set, else the GitHub CLI's account (noreply address). */
+async function commitIdentity(folder: string): Promise<{ name: string; email: string } | null> {
+  try {
+    const email = (await git(folder, ['config', 'user.email'])).trim()
+    const name = (await git(folder, ['config', 'user.name'])).trim()
+    if (email && name) return null // already configured; nothing to set
+  } catch {
+    /* not set */
+  }
+  return new Promise((resolve) => {
+    execFile('gh', ['api', 'user', '--jq', '.login + " " + (.id|tostring)'], { windowsHide: true }, (err, stdout) => {
+      const [login, id] = String(stdout).trim().split(' ')
+      if (err || !login || !id) return resolve({ name: '', email: '' })
+      resolve({ name: login, email: `${id}+${login}@users.noreply.github.com` })
+    })
+  })
+}
+
+/**
+ * Turns a folder into a git repository: `git init -b main`, adds missing ignore rules to .gitignore,
+ * and makes a first commit. Never pushes anywhere.
+ */
+export async function initGit(folder: string): Promise<{ commit: string; files: number }> {
+  if ((await gitInfo(folder)).isRepo) throw new Error('This folder is already a git repository.')
+  const gitignorePath = join(folder, '.gitignore')
+  const existing = existsSync(gitignorePath) ? await fs.readFile(gitignorePath, 'utf8') : ''
+  const lines = existing.split(/\r?\n/)
+  const add = DEFAULT_GITIGNORE.filter((l) => !lines.includes(l))
+  if (add.length) await fs.writeFile(gitignorePath, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${existing ? '\n' : ''}${add.join('\n')}\n`)
+
+  await git(folder, ['init', '-q', '-b', 'main'])
+  const identity = await commitIdentity(folder)
+  if (identity) {
+    if (!identity.email) {
+      throw new Error('Git needs a name and email for commits. Run: git config --global user.name "Your Name" and git config --global user.email you@example.com')
+    }
+    // Only for this repository; the user's global git config isn't touched.
+    await git(folder, ['config', 'user.name', identity.name])
+    await git(folder, ['config', 'user.email', identity.email])
+  }
+  await git(folder, ['add', '-A'])
+  const files = (await git(folder, ['diff', '--cached', '--name-only'])).split('\n').filter(Boolean).length
+  await git(folder, ['commit', '-q', '-m', 'Initial commit (set up by Mission Control)'])
+  infoCache.clear()
+  return { commit: (await git(folder, ['rev-parse', '--short', 'HEAD'])).trim(), files }
 }
 
 function parseNameStatus(text: string, staged: boolean): ChangedFile[] {
