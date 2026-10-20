@@ -6,7 +6,7 @@ Mission Control is an Electron app with three parts, built by `electron-vite`.
 src/
   main/        Node side: file access, PTYs, IPC handlers
     index.ts       window + IPC registration
-    claudeData.ts  reads ~/.claude/projects (projects, sessions, chat transcripts)
+    claudeData.ts  reads ~/.claude/projects (projects, sessions, chat transcripts); folds worktree chats into their project
     pty.ts         spawns claude / PowerShell in pseudo-terminals (ConPTY)
     store.ts       the app's own JSON store (pins, added folders, open agents, UI state, window bounds)
     hookServer.ts  local HTTP endpoint that receives Claude Code hook calls
@@ -21,19 +21,25 @@ src/
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
+    projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
     src/App.tsx              app state: projects, git info, agents, views, command palette
     src/terminalBus.ts       routes PTY output to the right terminal pane
     src/agentStatus.ts       hook event -> agent status, and what each status looks like
     src/toast.tsx            in-app messages (useToast)
+    src/projectLook.tsx      icon components and LookContext: any project path or name -> name, icon, color
     src/components/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
       Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, DocsPanel
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
-      SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog
+      SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog
     src/organize.css         styles for groups, tags, overview, search and usage
     src/tasks.css            styles for the task board, dialogs, task drawer, meters
 ```
+
+## Project names and worktree chats
+
+`listProjects` reads each `~/.claude/projects` folder's working directory from its newest chat. A folder whose directory is inside `<project>\.claude\worktrees\` is added to that project's `keys` instead of becoming a project of its own. `listSessions`, search and per-chat usage take all of a project's `keys`. `describe()` fills in each project's name, description, icon and color (see decision 0008). The UI looks these up through `LookContext`, so a task or agent that stored an older name or a worktree path still shows the right icon.
 
 ## Tasks
 
