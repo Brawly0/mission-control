@@ -25,6 +25,21 @@ export function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
+/** 1234 -> "1.2K", 3_400_000 -> "3.4M". */
+export function formatTokens(n: number): string {
+  if (n < 1000) return String(Math.round(n))
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}M`
+  return `${(n / 1_000_000_000).toFixed(1)}B`
+}
+
+export function formatCost(usd: number): string {
+  if (usd === 0) return '$0'
+  if (usd < 0.01) return '<$0.01'
+  if (usd < 100) return `$${usd.toFixed(2)}`
+  return `$${Math.round(usd).toLocaleString()}`
+}
+
 export function basename(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() ?? p
 }

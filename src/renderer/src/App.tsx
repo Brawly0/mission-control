@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BarChart3,
   Bell,
   Bot,
+  TextSearch,
   FolderOpen,
   FolderPlus,
   GitFork,
@@ -15,7 +17,9 @@ import {
   Terminal,
   X
 } from 'lucide-react'
-import type { GitInfo, Project, RecentSession, SavedAgent } from '@shared/types'
+import type { GitInfo, IndexStatus, Project, RecentSession, SavedAgent, SearchHit } from '@shared/types'
+import SearchView from './components/SearchView'
+import UsageView from './components/UsageView'
 import Sidebar from './components/Sidebar'
 import HomeView from './components/HomeView'
 import ProjectView from './components/ProjectView'
@@ -55,6 +59,13 @@ export default function App() {
   /** Agents from the last run that haven't been restored or dismissed yet; null until loaded. */
   const [pendingRestore, setPendingRestore] = useState<SavedAgent[] | null>(null)
   const [uiLoaded, setUiLoaded] = useState(false)
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+  const [focusSession, setFocusSession] = useState<{ sessionId: string; nonce: number } | undefined>()
+
+  useEffect(() => {
+    window.mc.indexStatus().then(setIndexStatus)
+    return window.mc.onIndexStatus(setIndexStatus)
+  }, [])
   const [, setTick] = useState(0)
 
   // Hook events and timers run outside React's render cycle; refs give them current values.
@@ -283,9 +294,22 @@ export default function App() {
   }, [])
 
   const openProject = useCallback((path: string) => {
-    setSelectedPath(path)
+    // Paths from the index may differ in letter case from the project list.
+    const match = projectsRef.current.find((p) => p.path.toLowerCase() === path.toLowerCase())
+    if (match?.worktree) setShowWorktrees(true)
+    setSelectedPath(match?.path ?? path)
     setView('project')
   }, [])
+
+  const openSession = useCallback(
+    (projectPath: string, sessionId: string) => {
+      openProject(projectPath)
+      setFocusSession({ sessionId, nonce: Date.now() })
+    },
+    [openProject]
+  )
+
+  const groups = useMemo(() => [...new Set(projects.map((p) => p.meta.group).filter((g): g is string => !!g))].sort(), [projects])
 
   const addProject = useCallback(async () => {
     const path = await window.mc.addProject()
@@ -320,6 +344,10 @@ export default function App() {
         e.preventDefault()
         e.stopPropagation()
         openPalette()
+      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        e.stopPropagation()
+        setView('search')
       }
     }
     window.addEventListener('keydown', onKey, true)
@@ -329,7 +357,9 @@ export default function App() {
   const commands = useMemo<Command[]>(() => {
     const list: Command[] = [
       { id: 'go-home', group: 'Go to', title: 'Home', icon: House, run: () => setView('home') },
-      { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') }
+      { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') },
+      { id: 'go-search', group: 'Go to', title: 'Search all chats', hint: 'Ctrl+Shift+F', icon: TextSearch, keywords: 'find full text', run: () => setView('search') },
+      { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') }
     ]
     if (selected) {
       list.push(
@@ -421,6 +451,8 @@ export default function App() {
                 project={selected}
                 git={git[selected.path]}
                 visible={view === 'project'}
+                groups={groups}
+                focus={focusSession}
                 onLaunch={launch}
                 onLaunchWorktree={launchWorktree}
                 onChanged={() => {
@@ -448,8 +480,29 @@ export default function App() {
               onGitChanged={refreshGit}
             />
           </div>
+          <div className={view === 'search' ? 'view-pane' : 'view-pane hidden'}>
+            <SearchView
+              visible={view === 'search'}
+              projects={projects}
+              status={indexStatus}
+              onOpen={openSession}
+              onResume={(h: SearchHit) =>
+                launch({
+                  cwd: h.projectPath,
+                  projectName: h.projectPath.split(/[\\/]/).pop() ?? h.projectPath,
+                  projectPath: h.projectPath,
+                  title: h.title.slice(0, 48),
+                  args: ['--resume', h.sessionId]
+                })
+              }
+            />
+          </div>
+          <div className={view === 'usage' ? 'view-pane' : 'view-pane hidden'}>
+            <UsageView visible={view === 'usage'} status={indexStatus} onOpenProject={openProject} onOpenSession={openSession} />
+          </div>
         </div>
         <StatusBar
+          indexStatus={indexStatus}
           view={view}
           project={selected}
           git={selected ? git[selected.path] : undefined}

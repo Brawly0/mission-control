@@ -1,5 +1,5 @@
-import { Bell, BellOff, CircleAlert, GitBranch, Radio } from 'lucide-react'
-import type { GitInfo, Project } from '@shared/types'
+import { Bell, BellOff, CircleAlert, Database, GitBranch, Radio } from 'lucide-react'
+import type { GitInfo, IndexStatus, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 
 interface Props {
@@ -8,11 +8,12 @@ interface Props {
   git?: GitInfo
   agents: Agent[]
   notify: boolean
+  indexStatus: IndexStatus | null
   onToggleNotify: () => void
   onShowAttention: () => void
 }
 
-export default function StatusBar({ view, project, git, agents, notify, onToggleNotify, onShowAttention }: Props) {
+export default function StatusBar({ view, project, git, agents, notify, indexStatus, onToggleNotify, onShowAttention }: Props) {
   const live = agents.filter((a) => !a.exited)
   const attention = live.filter((a) => a.hookStatus === 'needs-input').length
   return (
@@ -26,6 +27,12 @@ export default function StatusBar({ view, project, git, agents, notify, onToggle
         </button>
       )}
       <span className="sb-spacer" />
+      {indexStatus && (
+        <span className="sb-item" title={indexStatus.error ? `Last index error: ${indexStatus.error}` : 'Chats indexed for search and usage'}>
+          <Database size={12} />
+          {indexStatus.indexing ? `Indexing ${indexStatus.done}/${indexStatus.total}` : `${indexStatus.sessions} chats indexed`}
+        </span>
+      )}
       {view === 'project' && project && git?.isRepo && (
         <span className="sb-item">
           <GitBranch size={12} /> {git.branch}

@@ -2,7 +2,7 @@ import { app, type BrowserWindow } from 'electron'
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
-import { listProjects, listSessions } from './claudeData'
+import { listProjects, listSessions, normalizePath, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, mergeWorktree, removeWorktree } from './git'
 import { killTerminalsIn } from './pty'
 import { updateStore } from './store'
@@ -72,15 +72,39 @@ async function uiTour(win: BrowserWindow, outFile: string, repo: string): Promis
   await js(`window.__mcSmoke.setView('home')`)
   await shot('home')
 
+  // Wait for the chat index, then show Usage and a search.
+  for (let i = 0; i < 120 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+  log('index:', JSON.stringify(await js('window.mc.indexStatus()')))
+  await js(`window.__mcSmoke.setView('usage')`)
+  await sleep(800)
+  await shot('usage')
+  await js(`window.__mcSmoke.setView('search')`)
+  await js(`(() => {
+    const input = document.querySelector('.search-box input')
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    set.call(input, ${JSON.stringify(process.env.MC_SMOKE_QUERY || 'trading bot')})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  await sleep(800)
+  log('search results shown:', await js(`document.querySelectorAll('.result').length`))
+  await shot('search')
+
   // Show the throwaway repo as a project for the duration of the tour.
   updateStore((s) => {
     s.manualProjects.push(repo)
+  })
+  setProjectMeta(repo, {
+    group: 'Demo',
+    tags: ['test', 'ui'],
+    status: 'active',
+    notes: '## Next steps\n\n- Try a worktree agent\n- Merge its branch\n\nNotes are **Markdown** and save as you type.'
   })
   try {
     await projectTour()
   } finally {
     updateStore((s) => {
       s.manualProjects = s.manualProjects.filter((p) => p !== repo)
+      delete s.projectMeta[normalizePath(repo)]
     })
   }
 
@@ -90,7 +114,7 @@ async function uiTour(win: BrowserWindow, outFile: string, repo: string): Promis
   await js(`window.__mcSmoke.selectProject(${JSON.stringify(repo)}); window.__mcSmoke.setView('project')`)
   writeFileSync(join(repo, 'README.md'), '# Demo repo\n\nAn uncommitted edit in the main checkout.\n')
   await sleep(600)
-  await shot('project-chats')
+  await shot('project-overview')
   await click('.page-tabs button', 'Changes')
   await shot('project-changes')
   await click('.page-tabs button', 'Docs')

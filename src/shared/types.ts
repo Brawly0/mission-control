@@ -11,6 +11,60 @@ export interface Project {
   manual: boolean
   /** True for Claude Code worktrees, desktop scratch workspaces and temp folders; hidden by default. */
   worktree: boolean
+  meta: ProjectMeta
+}
+
+export type ProjectStatus = 'active' | 'paused' | 'done'
+
+/** The user's own organization of a project, kept in the app's store. */
+export interface ProjectMeta {
+  /** Sidebar section, e.g. "Work" or "Trading". */
+  group?: string
+  tags: string[]
+  status?: ProjectStatus
+  /** Free-form Markdown notes. */
+  notes: string
+}
+
+/** Token totals; cost is an estimate at Anthropic API list prices. */
+export interface UsageTotals {
+  input: number
+  output: number
+  cacheWrite: number
+  cacheRead: number
+  cost: number
+  sessions?: number
+}
+
+export interface UsageReport {
+  /** Since this time (ms); 0 for all time. */
+  since: number
+  totals: UsageTotals
+  byDay: (UsageTotals & { day: string })[]
+  byProject: (UsageTotals & { projectKey: string; projectPath: string })[]
+  byModel: (UsageTotals & { model: string })[]
+  topSessions: (UsageTotals & { sessionId: string; projectKey: string; projectPath: string; title: string; updated: number })[]
+}
+
+export interface SearchHit {
+  sessionId: string
+  projectKey: string
+  projectPath: string
+  title: string
+  role: 'user' | 'assistant'
+  /** Text with matches wrapped in \u0001 … \u0002. */
+  snippet: string
+  timestamp: number
+}
+
+export interface IndexStatus {
+  indexing: boolean
+  done: number
+  total: number
+  sessions: number
+  messages: number
+  lastRun: number
+  error?: string
 }
 
 export interface SessionSummary {
@@ -125,7 +179,7 @@ export interface GitChanges {
 /** UI state remembered between runs. */
 export interface UiState {
   selectedPath?: string
-  view?: 'home' | 'project' | 'agents'
+  view?: 'home' | 'project' | 'agents' | 'search' | 'usage'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
 }
@@ -170,6 +224,14 @@ export interface MissionControlApi {
   mergeWorktree(wt: WorktreeInfo): Promise<string>
   /** Asks the user in a native dialog first; resolves false if they cancel. */
   removeWorktree(wt: WorktreeInfo): Promise<boolean>
+  setProjectMeta(path: string, patch: Partial<ProjectMeta>): Promise<void>
+  search(query: string, opts?: { projectKey?: string; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
+  usageReport(sinceMs: number): Promise<UsageReport>
+  /** Per-session estimated cost and tokens for one project (from the index). */
+  sessionUsage(projectKey: string): Promise<Record<string, UsageTotals>>
+  indexStatus(): Promise<IndexStatus>
+  reindex(): void
+  onIndexStatus(cb: (s: IndexStatus) => void): () => void
   getUiState(): Promise<UiState>
   setUiState(patch: Partial<UiState>): void
 

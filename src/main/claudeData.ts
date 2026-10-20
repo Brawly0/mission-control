@@ -2,8 +2,8 @@ import { createReadStream, existsSync, promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline'
-import type { ChatMessage, Project, RecentSession, SessionDetail, SessionSummary } from '../shared/types'
-import { loadStore } from './store'
+import type { ChatMessage, Project, ProjectMeta, RecentSession, SessionDetail, SessionSummary } from '../shared/types'
+import { loadStore, updateStore, type StoreData } from './store'
 
 /**
  * Read-only access to Claude Code's on-disk data in ~/.claude/projects.
@@ -165,7 +165,8 @@ export async function listProjects(): Promise<Project[]> {
         lastActivity: stats[0].s.mtimeMs,
         pinned: pinned.has(normalizePath(path)),
         manual: false,
-        worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]|[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(path)
+        worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]|[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(path),
+        meta: metaFor(store, path)
       }
       // Two keys can resolve to the same folder; keep the more recently used one.
       const existing = byPath.get(normalizePath(path))
@@ -184,13 +185,32 @@ export async function listProjects(): Promise<Project[]> {
       lastActivity: 0,
       pinned: pinned.has(norm),
       manual: true,
-      worktree: false
+      worktree: false,
+      meta: metaFor(store, path)
     })
   }
 
   return [...byPath.values()]
     .filter((p) => p.manual || existsSync(p.path) || p.sessionCount > 0)
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
+}
+
+function metaFor(store: StoreData, path: string): ProjectMeta {
+  const m = store.projectMeta[normalizePath(path)] as ProjectMeta | undefined
+  return { ...m, tags: m?.tags ?? [], notes: m?.notes ?? '' }
+}
+
+export function setProjectMeta(path: string, patch: Partial<ProjectMeta>): void {
+  updateStore((s) => {
+    const key = normalizePath(path)
+    const cur = s.projectMeta[key] as ProjectMeta | undefined
+    const next: ProjectMeta = { ...cur, ...patch, tags: patch.tags ?? cur?.tags ?? [], notes: patch.notes ?? cur?.notes ?? '' }
+    next.tags = [...new Set(next.tags.map((t) => t.trim()).filter(Boolean))]
+    if (!next.group?.trim()) delete next.group
+    else next.group = next.group.trim()
+    if (!next.status) delete next.status
+    s.projectMeta[key] = next
+  })
 }
 
 /** The most recently updated sessions across all projects, for the Home view. */

@@ -2,7 +2,11 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.3)
+## Features (v0.4)
+
+- **Search all chats** (`Ctrl+Shift+F`): full-text search over everything you and Claude wrote in every project, with highlighted snippets, filters for your prompts or Claude's replies, and one-click Open or Resume.
+- **Usage**: estimated cost and tokens per day, project, model and chat, at Anthropic API list prices (an estimate; subscription plans don't pay these). Subagent usage counts toward its parent chat.
+- **Organize projects**: put projects in groups (sidebar sections), add tags (filter chips), mark them active / paused / done, and keep Markdown notes in each project's **Overview** tab.
 
 - **Home dashboard**: what every agent is doing, who needs you, recent chats across all projects, and one-click "New session" per project.
 - **Command palette** (`Ctrl+K`, or `Ctrl+Shift+P` inside a terminal): jump to any project, agent or chat, or run any action.

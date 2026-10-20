@@ -3,6 +3,8 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
+  Coins,
+  LayoutDashboard,
   Code2,
   FileText,
   FolderOpen,
@@ -17,35 +19,41 @@ import {
   Terminal,
   Trash2
 } from 'lucide-react'
-import type { GitInfo, Project, SessionSummary } from '@shared/types'
+import type { GitInfo, Project, SessionSummary, UsageTotals } from '@shared/types'
 import type { LaunchOptions } from '../types'
-import { formatBytes, shortPath, timeAgo } from '../util'
+import { formatBytes, formatCost, shortPath, timeAgo } from '../util'
 import SessionViewer from './SessionViewer'
 import DocsPanel from './DocsPanel'
 import ChangesPanel from './ChangesPanel'
+import OverviewPanel from './OverviewPanel'
 import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
 
 interface Props {
   project: Project
   git?: GitInfo
   visible: boolean
+  groups: string[]
+  /** A chat to show, e.g. one picked in search; the nonce re-triggers the same chat. */
+  focus?: { sessionId: string; nonce: number }
   onLaunch: (opts: LaunchOptions) => void
   onLaunchWorktree: (project: Project) => void
   onChanged: () => void
 }
 
-type Tab = 'chats' | 'changes' | 'docs'
+type Tab = 'overview' | 'chats' | 'changes' | 'docs'
 
-export default function ProjectView({ project, git, visible, onLaunch, onLaunchWorktree, onChanged }: Props) {
+export default function ProjectView({ project, git, visible, groups, focus, onLaunch, onLaunchWorktree, onChanged }: Props) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [usage, setUsage] = useState<Record<string, UsageTotals>>({})
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<SessionSummary | null>(null)
-  const [tab, setTab] = useState<Tab>(project.key ? 'chats' : 'docs')
+  const [tab, setTab] = useState<Tab>(project.key ? 'chats' : 'overview')
 
   useEffect(() => {
     if (!project.key) {
       setSessions([])
+      setUsage({})
       return
     }
     setLoading(true)
@@ -56,7 +64,20 @@ export default function ProjectView({ project, git, visible, onLaunch, onLaunchW
         setSelected((cur) => cur ?? list[0] ?? null)
       })
       .finally(() => setLoading(false))
+    window.mc.sessionUsage(project.key).then(setUsage).catch(() => setUsage({}))
   }, [project.key])
+
+  useEffect(() => {
+    if (!focus) return
+    const s = sessions.find((x) => x.id === focus.sessionId)
+    if (s) {
+      setSelected(s)
+      setTab('chats')
+      setFilter('')
+    }
+  }, [focus, sessions])
+
+  const projectCost = Object.values(usage).reduce((t, u) => t + u.cost, 0)
 
   const q = filter.trim().toLowerCase()
   const visibleSessions = q
@@ -102,6 +123,17 @@ export default function ProjectView({ project, git, visible, onLaunch, onLaunchW
                   <ArrowDown size={12} /> {git.behind}
                 </span>
               )}
+              {projectCost > 0 && (
+                <button className="chip" title="Estimated at API prices; see Overview" onClick={() => setTab('overview')}>
+                  <Coins size={12} /> {formatCost(projectCost)}
+                </button>
+              )}
+              {project.meta.group && <span className="chip">{project.meta.group}</span>}
+              {project.meta.tags.map((t) => (
+                <span key={t} className="chip chip-tag">
+                  #{t}
+                </span>
+              ))}
             </div>
           </div>
         </div>
@@ -165,6 +197,10 @@ export default function ProjectView({ project, git, visible, onLaunch, onLaunchW
       </header>
 
       <nav className="page-tabs">
+        <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>
+          <LayoutDashboard size={15} /> Overview
+          {project.meta.status && <span className={`tab-count status-${project.meta.status}`}>{project.meta.status}</span>}
+        </button>
         <button className={tab === 'chats' ? 'active' : ''} onClick={() => setTab('chats')}>
           <MessagesSquare size={15} /> Chats <span className="tab-count">{sessions.length}</span>
         </button>
@@ -196,7 +232,7 @@ export default function ProjectView({ project, git, visible, onLaunch, onLaunchW
                       <div className="session-meta">
                         <span>{timeAgo(s.updatedAt)}</span>
                         <span className="meta-sep">·</span>
-                        <span>{formatBytes(s.sizeBytes)}</span>
+                        {usage[s.id] ? <span title="Estimated at API prices">{formatCost(usage[s.id].cost)}</span> : <span>{formatBytes(s.sizeBytes)}</span>}
                         {s.gitBranch && (
                           <>
                             <span className="meta-sep">·</span>
@@ -230,6 +266,7 @@ export default function ProjectView({ project, git, visible, onLaunch, onLaunchW
             </section>
           </div>
         )}
+        {tab === 'overview' && <OverviewPanel project={project} groups={groups} usage={usage} onChanged={onChanged} />}
         {tab === 'changes' && git?.isRepo && <ChangesPanel path={project.path} visible={visible && tab === 'changes'} onChanged={onChanged} />}
         {tab === 'docs' && <DocsPanel projectPath={project.path} />}
       </div>

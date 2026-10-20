@@ -3,8 +3,9 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
-import type { DocFile, HookEvent, SavedAgent, TerminalInfo, TerminalSpec, UiState, WorktreeInfo } from '../shared/types'
-import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists } from './claudeData'
+import type { DocFile, HookEvent, ProjectMeta, SavedAgent, TerminalInfo, TerminalSpec, UiState, WorktreeInfo } from '../shared/types'
+import { getSession, listProjects, listSessions, normalizePath, recentSessions, sessionExists, setProjectMeta } from './claudeData'
+import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
 import { commitAll, createWorktree, getChanges, gitInfoMany, mergeWorktree, removeWorktree } from './git'
 import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } from './hookServer'
 import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, writeTerminal, whichSync } from './pty'
@@ -237,6 +238,13 @@ function registerIpc(): void {
     return true
   })
 
+  ipcMain.handle('projects:setMeta', (_e, path: string, patch: Partial<ProjectMeta>) => setProjectMeta(path, patch))
+  ipcMain.handle('index:search', (_e, query: string, opts?: object) => queryIndex('search', query, opts ?? {}))
+  ipcMain.handle('index:usage', (_e, since: number) => queryIndex('usageReport', since))
+  ipcMain.handle('index:sessionUsage', (_e, key: string) => queryIndex('sessionUsage', key))
+  ipcMain.handle('index:status', () => indexStatus())
+  ipcMain.on('index:run', () => reindex())
+
   ipcMain.handle('ui:get', () => loadStore().ui)
   ipcMain.on('ui:set', (_e, patch: Partial<UiState>) => {
     if (process.env.MC_SMOKE) return
@@ -264,6 +272,7 @@ app.whenReady().then(async () => {
   })
   registerIpc()
   createWindow()
+  startIndexer((status) => sendToWindow('index:status', status))
   if (process.env.MC_SMOKE && mainWindow) {
     const win = mainWindow
     win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps }))
@@ -277,6 +286,7 @@ app.on('before-quit', () => {
   quitting = true
   killAllTerminals()
   stopHookServer()
+  stopIndexer()
 })
 app.on('window-all-closed', () => {
   quitting = true

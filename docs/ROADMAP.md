@@ -24,11 +24,11 @@
 - [x] Redesigned UI: Home dashboard, project avatars, icons, page tabs, status bar, toasts
 - [x] Command palette (Ctrl+K, or Ctrl+Shift+P inside a terminal)
 
-## v0.4: Organization
-- [ ] Tags and groups for projects (Work / Trading / Games …)
-- [ ] Per-project notes and status (active / paused / done)
-- [ ] Full-text search across all chats (SQLite FTS index)
-- [ ] Token and cost stats per project and session
+## ✅ v0.4: Organization
+- [x] Groups (sidebar sections, collapsible) and tags (filter chips) for projects
+- [x] Per-project status (active / paused / done) and Markdown notes that save as you type, in a new Overview tab
+- [x] Full-text search across all chats (SQLite FTS5 in a worker thread, incremental; Ctrl+Shift+F)
+- [x] Usage view: estimated cost and tokens per day, project, model and chat; cost per chat in chat lists
 
 ## v0.5: Tasks
 - [ ] Kanban board: a card is a task; "Start" launches an agent on it
@@ -36,6 +36,8 @@
 - [ ] Global hotkey and tray icon
 
 ## Later
-- [ ] Installer and auto-update (`electron-builder`)
+- [x] Installer (`npm run dist`)
+- [ ] Auto-update
+- [ ] Usage: per-project budgets and alerts
 - [ ] Themes (light mode)
 - [ ] MCP server and plugin overview per project

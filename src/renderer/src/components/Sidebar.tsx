@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Bot, FolderPlus, GitBranch, House, RefreshCw, Search, Star } from 'lucide-react'
+import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
 import type { GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 import { timeAgo } from '../util'
@@ -21,9 +21,33 @@ interface Props {
   onAdd: () => void
 }
 
+function loadCollapsed(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem('mc.collapsedGroups') ?? '[]'))
+  } catch {
+    return new Set()
+  }
+}
+
 export default function Sidebar(props: Props) {
   const { projects, git, loading, selectedPath, view, agents, showWorktrees } = props
   const [filter, setFilter] = useState('')
+  const [activeTags, setActiveTags] = useState<string[]>([])
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
+
+  const toggleGroup = (name: string) => {
+    setCollapsed((cur) => {
+      const next = new Set(cur)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      try {
+        localStorage.setItem('mc.collapsedGroups', JSON.stringify([...next]))
+      } catch {
+        /* just won't persist */
+      }
+      return next
+    })
+  }
 
   const runningByProject = useMemo(() => {
     const counts = new Map<string, { running: number; attention: number }>()
@@ -41,12 +65,25 @@ export default function Sidebar(props: Props) {
   const live = agents.filter((a) => !a.exited)
   const attention = live.filter((a) => a.hookStatus === 'needs-input').length
 
+  const allTags = useMemo(() => [...new Set(projects.flatMap((p) => p.meta.tags))].sort((a, b) => a.localeCompare(b)), [projects])
+
   const q = filter.trim().toLowerCase()
   const visible = projects.filter(
-    (p) => (showWorktrees || !p.worktree) && (!q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+    (p) =>
+      (showWorktrees || !p.worktree) &&
+      (!q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q) || p.meta.tags.some((t) => t.toLowerCase().includes(q))) &&
+      activeTags.every((t) => p.meta.tags.includes(t))
   )
-  const pinned = visible.filter((p) => p.pinned)
-  const rest = visible.filter((p) => !p.pinned)
+  // Finished projects sink to the bottom of their section.
+  const ordered = [...visible].sort((a, b) => Number(a.meta.status === 'done') - Number(b.meta.status === 'done'))
+  const pinned = ordered.filter((p) => p.pinned)
+  const groups = new Map<string, Project[]>()
+  for (const p of ordered.filter((x) => !x.pinned)) {
+    const g = p.meta.group || ''
+    groups.set(g, [...(groups.get(g) ?? []), p])
+  }
+  const groupNames = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b))
+  const ungrouped = groups.get('') ?? []
   const hiddenCount = projects.filter((p) => p.worktree).length
 
   const renderItem = (p: Project) => {
@@ -55,10 +92,18 @@ export default function Sidebar(props: Props) {
     const selected = view === 'project' && p.path === selectedPath
     return (
       <li key={p.path}>
-        <button className={`project-item ${selected ? 'selected' : ''}`} onClick={() => props.onSelect(p.path)} title={p.path}>
+        <button
+          className={`project-item ${selected ? 'selected' : ''} ${p.meta.status === 'done' ? 'is-done' : ''}`}
+          onClick={() => props.onSelect(p.path)}
+          title={p.path}
+        >
           <Avatar name={p.name} size={30} />
           <div className="project-item-text">
-            <div className="project-name">{p.name}</div>
+            <div className="project-name">
+              <span className="ellipsis">{p.name}</span>
+              {p.meta.status === 'paused' && <Pause size={11} className="status-icon paused" aria-label="Paused" />}
+              {p.meta.status === 'done' && <Check size={12} className="status-icon done" aria-label="Done" />}
+            </div>
             <div className="project-meta">
               {g?.isRepo ? (
                 <span className="meta-branch">
@@ -90,6 +135,20 @@ export default function Sidebar(props: Props) {
     )
   }
 
+  const renderGroup = (name: string, items: Project[]) => {
+    const isCollapsed = collapsed.has(name)
+    return (
+      <div key={name} className="group">
+        <button className="group-label group-toggle" onClick={() => toggleGroup(name)} aria-expanded={!isCollapsed}>
+          <ChevronRight size={12} className={isCollapsed ? '' : 'rot90'} />
+          <span>{name}</span>
+          <span className="group-count">{items.length}</span>
+        </button>
+        {!isCollapsed && <ul>{items.map(renderItem)}</ul>}
+      </div>
+    )
+  }
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -106,7 +165,7 @@ export default function Sidebar(props: Props) {
 
       <button className="search-trigger" onClick={props.onOpenPalette}>
         <Search size={14} />
-        <span>Search or jump to…</span>
+        <span>Jump to…</span>
         <Kbd>Ctrl K</Kbd>
       </button>
 
@@ -123,6 +182,17 @@ export default function Sidebar(props: Props) {
             {live.length > 0 && <span className="count">{live.length}</span>}
           </span>
         </button>
+        <button className={`nav-item ${view === 'search' ? 'active' : ''}`} onClick={() => props.onNavigate('search')}>
+          <TextSearch size={16} strokeWidth={1.9} />
+          <span>Search chats</span>
+          <span className="nav-end">
+            <Kbd>Ctrl ⇧ F</Kbd>
+          </span>
+        </button>
+        <button className={`nav-item ${view === 'usage' ? 'active' : ''}`} onClick={() => props.onNavigate('usage')}>
+          <BarChart3 size={16} strokeWidth={1.9} />
+          <span>Usage</span>
+        </button>
       </nav>
 
       <div className="section-head">
@@ -132,18 +202,30 @@ export default function Sidebar(props: Props) {
           <IconButton icon={FolderPlus} label="Add a project folder" size={14} onClick={props.onAdd} />
         </div>
       </div>
-      <input className="filter" placeholder="Filter projects" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      <input className="filter" placeholder="Filter projects or tags" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      {allTags.length > 0 && (
+        <div className="tag-filter">
+          {allTags.map((t) => {
+            const on = activeTags.includes(t)
+            return (
+              <button
+                key={t}
+                className={`tag ${on ? 'on' : ''}`}
+                aria-pressed={on}
+                onClick={() => setActiveTags((cur) => (on ? cur.filter((x) => x !== t) : [...cur, t]))}
+              >
+                #{t}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="project-list">
         {loading && projects.length === 0 && <div className="muted pad">Scanning ~/.claude…</div>}
-        {pinned.length > 0 && (
-          <>
-            <div className="group-label">Pinned</div>
-            <ul>{pinned.map(renderItem)}</ul>
-            <div className="group-label">All</div>
-          </>
-        )}
-        <ul>{rest.map(renderItem)}</ul>
+        {pinned.length > 0 && renderGroup('Pinned', pinned)}
+        {groupNames.map((g) => renderGroup(g, groups.get(g)!))}
+        {ungrouped.length > 0 && (groupNames.length > 0 || pinned.length > 0 ? renderGroup('Other', ungrouped) : <ul>{ungrouped.map(renderItem)}</ul>)}
         {!loading && visible.length === 0 && <div className="muted pad">No projects match.</div>}
       </div>
 

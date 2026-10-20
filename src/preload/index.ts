@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HookEvent, MissionControlApi } from '../shared/types'
+import type { HookEvent, IndexStatus, MissionControlApi } from '../shared/types'
 
 const api: MissionControlApi = {
   listProjects: () => ipcRenderer.invoke('projects:list'),
@@ -47,6 +47,17 @@ const api: MissionControlApi = {
   commitAll: (path, message) => ipcRenderer.invoke('git:commitAll', path, message),
   mergeWorktree: (wt) => ipcRenderer.invoke('git:mergeWorktree', wt),
   removeWorktree: (wt) => ipcRenderer.invoke('git:removeWorktree', wt),
+  setProjectMeta: (path, patch) => ipcRenderer.invoke('projects:setMeta', path, patch),
+  search: (query, opts) => ipcRenderer.invoke('index:search', query, opts),
+  usageReport: (since) => ipcRenderer.invoke('index:usage', since),
+  sessionUsage: (key) => ipcRenderer.invoke('index:sessionUsage', key),
+  indexStatus: () => ipcRenderer.invoke('index:status'),
+  reindex: () => ipcRenderer.send('index:run'),
+  onIndexStatus: (cb) => {
+    const handler = (_e: unknown, s: IndexStatus) => cb(s)
+    ipcRenderer.on('index:status', handler)
+    return () => ipcRenderer.removeListener('index:status', handler)
+  },
   getUiState: () => ipcRenderer.invoke('ui:get'),
   setUiState: (patch) => ipcRenderer.send('ui:set', patch),
 

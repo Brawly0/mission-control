@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
+import './organize.css'
 import App from './App'
 import { ToastProvider } from './toast'
 
