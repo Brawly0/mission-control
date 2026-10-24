@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Notification, screen, shell } from
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type {
   AppSettings,
   BudgetState,
@@ -25,7 +25,7 @@ import type {
   UsageReport,
   WorktreeInfo
 } from '../shared/types'
-import { takeDueReminders, createTask,
+import { automationHold, takeDueReminders, createTask,
   deleteTask,
   followUpTask,
   rerunChecks,
@@ -58,6 +58,7 @@ import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBri
 import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { runSmoke } from './smoke'
 import { refreshPlanUsage, startPlanUsage, stopPlanUsage } from './planUsage'
+import { buildVault, stopVaultWatch, vaultNotes, watchVault } from './vault'
 import { windowLabel } from '../shared/planUsage'
 
 let mainWindow: BrowserWindow | null = null
@@ -264,6 +265,7 @@ function registerIpc(): void {
   ipcMain.handle('docs:list', (_e, projectPath: string) => listDocs(projectPath))
   ipcMain.handle('docs:read', (_e, file: string) => fs.readFile(file, 'utf8'))
   ipcMain.handle('docs:write', async (_e, file: string, content: string) => {
+    await fs.mkdir(dirname(file), { recursive: true })
     await fs.writeFile(file, content, 'utf8')
     invalidateKnowledge()
   })
@@ -276,6 +278,9 @@ function registerIpc(): void {
   ipcMain.handle('notes:list', () => listNotes())
   ipcMain.handle('notes:save', (_e, note: Partial<Note>) => saveNote(note))
   ipcMain.handle('notes:delete', (_e, id: string) => deleteNote(id))
+  ipcMain.handle('vault:notes', (_e, path: string) => vaultNotes(path))
+  ipcMain.handle('vault:build', (_e, path: string, name: string, mode: 'build' | 'update', model?: string) => buildVault(path, name, mode, model))
+  ipcMain.on('vault:watch', (_e, path: string | null) => watchVault(path, (p) => sendToWindow('vault:changed', p)))
   ipcMain.handle('knowledge:list', () => knowledgeDocs(listDocs))
   ipcMain.handle('knowledge:search', (_e, q: string) => searchKnowledge(q, listDocs))
   ipcMain.handle('claude:status', (_e, force?: boolean) => claudeStatus(!!force))
@@ -502,6 +507,15 @@ async function checkChatCosts(): Promise<void> {
   }
 }
 
+/** After a compaction in a project with "keep docs up to date" on, Claude refreshes its vault (unless automation is on hold). */
+async function autoUpdateVault(projectPath: string, projectName: string): Promise<void> {
+  if (!loadStore().projectMeta[normalizePath(projectPath)]?.autoDocs) return
+  if (await automationHold(projectPath)) return
+  const info = await vaultNotes(projectPath).catch(() => null)
+  if (!info?.hasIndex) return
+  await buildVault(projectPath, projectName, 'update').catch(() => undefined)
+}
+
 /** One notification per plan window when it passes your alert level, and one when it runs out. */
 function checkPlanLimits(info: RateLimitInfo): void {
   const level = loadStore().settings.planAlertPercent
@@ -509,16 +523,25 @@ function checkPlanLimits(info: RateLimitInfo): void {
   const shown = new Set(loadStore().limitAlerted)
   for (const w of info.windows) {
     const pct = Math.round(w.utilization * 100)
-    const kind = pct >= 100 ? 'out' : pct >= level ? 'near' : ''
-    const key = `${w.name}@${w.resetsAt}:${kind}`
+    // "pace": not there yet, but heading to run out soon (within the hour for the session, a day for a week).
+    const soon = w.name === 'five_hour' ? 3_600_000 : 86_400_000
+    const pace = !!w.forecast?.runsOutAt && w.forecast.runsOutAt - info.at < soon
+    const kind = pct >= 100 ? 'out' : pct >= level ? 'near' : pace ? 'pace' : ''
+    // A reading's reset time wobbles by milliseconds; key on the minute.
+    const key = `${w.name}@${Math.round(w.resetsAt / 60_000)}:${kind}`
     if (!kind || shown.has(key)) continue
     updateStore((s) => {
       s.limitAlerted = [...s.limitAlerted, key].slice(-20)
     })
     const resets = w.resetsAt ? new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'soon'
     const n = new Notification({
-      title: kind === 'out' ? `${windowLabel(w.name, true)} limit reached` : `${windowLabel(w.name, true)} limit at ${pct}%`,
-      body: kind === 'out' ? `Claude is paused until it resets (${resets}).` : `Resets ${resets}. Smaller models and fresh chats make what's left go further.`,
+      title:
+        kind === 'out'
+          ? `${windowLabel(w.name, true)} limit reached`
+          : kind === 'pace'
+            ? `${windowLabel(w.name, true)} limit runs out ~${new Date(w.forecast!.runsOutAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} at this pace`
+            : `${windowLabel(w.name, true)} limit at ${pct}%`,
+      body: kind === 'out' ? `Claude is paused until it resets (${resets}).` : `${pct}% used, resets ${resets}. Smaller models and fresh chats make what's left go further.`,
       icon: join(__dirname, '../../build/icon.png')
     })
     n.on('click', () => {
@@ -618,6 +641,7 @@ app.whenReady().then(async () => {
       void checkChatCosts()
       void saveNewBriefings((b, file) => {
         if (process.env.MC_SMOKE) return
+        void autoUpdateVault(b.projectPath, b.projectName)
         const n = new Notification({ title: 'Session briefing saved', body: `${b.title || 'A chat'} (${b.projectName}) · ${file.split(/[\\/]/).slice(-3).join('/')}`, icon: join(__dirname, '../../build/icon.png') })
         n.on('click', () => shell.openPath(file))
         n.show()
@@ -672,6 +696,7 @@ app.on('before-quit', () => {
   stopIndexer()
   stopScheduler()
   stopPlanUsage()
+  stopVaultWatch()
   destroyTray()
 })
 app.on('window-all-closed', () => {

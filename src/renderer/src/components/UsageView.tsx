@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Coins, Info, MessagesSquare, RefreshCw, Sigma, Table2, Zap } from 'lucide-react'
 import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
-import { resetsIn, windowLabel } from '@shared/planUsage'
+import { paceText, resetsIn, windowLabel } from '@shared/planUsage'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
 import { Avatar, EmptyState, IconButton, Segmented } from './ui'
 import { useLook } from '../projectLook'
@@ -172,10 +172,13 @@ function PlanLimits({ info }: { info: RateLimitInfo }) {
       {info.error && <p className="plan-error small">{info.error}</p>}
       {info.windows.map((w) => {
         const pct = Math.round(w.utilization * 100)
+        const pace = paceText(w, Date.now())
+        const projected = w.forecast ? Math.min(100, Math.round(w.forecast.atReset * 100)) : 0
         return (
           <div key={w.name} className="meter-row">
             <span className="meter-label">{windowLabel(w.name, true)}</span>
-            <span className="meter-track" aria-hidden>
+            <span className="meter-track meter-track-stack" aria-hidden>
+              {projected > pct && <span className={`meter-fill meter-projected ${projected >= 90 ? 'high' : projected >= 70 ? 'warn' : ''}`} style={{ width: `${projected}%` }} />}
               <span className={`meter-fill ${pct >= 90 ? 'high' : pct >= 70 ? 'warn' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
             </span>
             <span className="meter-value">
@@ -188,6 +191,12 @@ function PlanLimits({ info }: { info: RateLimitInfo }) {
                   : `resets in ${resetsIn(w.resetsAt, Date.now())} (${new Date(w.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
                 : ''}
             </span>
+            {pace && (
+              <span className={`meter-pace small ${w.forecast?.runsOutAt ? 'out' : 'muted'}`}>
+                {pace}
+                {w.forecast?.basis === 'recent' ? ' (based on the last hour)' : w.name === 'five_hour' ? ' (based on this session so far)' : ' (based on this week so far)'}
+              </span>
+            )}
           </div>
         )
       })}

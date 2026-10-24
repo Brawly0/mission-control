@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { RateLimitInfo } from '../shared/types'
-import { parsePlanUsage } from '../shared/planUsage'
+import { forecast, parsePlanUsage } from '../shared/planUsage'
 import { getRateLimit, setRateLimit } from './tasks'
 
 /**
@@ -22,6 +22,22 @@ let timer: NodeJS.Timeout | null = null
 let lastFetch = 0
 let backoff = 0
 let inFlight: Promise<void> | null = null
+/** Recent readings per window, [time, utilization], for the pace forecast. Cleared when a window resets. */
+const samples = new Map<string, { resetsAt: number; points: [number, number][] }>()
+
+/** Adds this reading to the window's history and attaches where each window is heading. */
+function withForecast(info: RateLimitInfo): RateLimitInfo {
+  const windows = info.windows.map((w) => {
+    let s = samples.get(w.name)
+    // resets_at can wobble by milliseconds between responses; a new window moves it by hours.
+    if (!s || Math.abs(s.resetsAt - w.resetsAt) > 60_000) samples.set(w.name, (s = { resetsAt: w.resetsAt, points: [] }))
+    const f = forecast(w, s.points, info.at)
+    s.points.push([info.at, w.utilization])
+    if (s.points.length > 120) s.points.shift()
+    return { ...w, forecast: f }
+  })
+  return { ...info, windows }
+}
 
 interface Login {
   token: string
@@ -63,7 +79,7 @@ async function fetchOnce(): Promise<void> {
     if (res.status === 401 || res.status === 403) return fail('Claude rejected the saved login. Run any Claude chat once and it refreshes.')
     if (!res.ok) return fail(`Usage check failed (HTTP ${res.status}).`)
     backoff = 0
-    const info = parsePlanUsage(await res.json(), Date.now(), login.plan)
+    const info = withForecast(parsePlanUsage(await res.json(), Date.now(), login.plan))
     setRateLimit({ ...info, error: undefined })
     onFresh?.(info)
   } catch (err) {

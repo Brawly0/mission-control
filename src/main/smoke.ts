@@ -1,8 +1,9 @@
 import { app, type BrowserWindow } from 'electron'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
 import { refreshPlanUsage } from './planUsage'
+import { vaultNotes } from './vault'
 import { automationHold, claudeCommand, getRateLimit, takeDueReminders, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
 import { invalidateBudgets, projectBudget } from './budget'
 import { reindex } from './indexer'
@@ -443,6 +444,92 @@ async function briefTour(win: BrowserWindow, outFile: string, folder: string): P
   const shotFile = outFile.replace(/\.png$/, '-briefings.png')
   writeFileSync(shotFile, (await win.webContents.capturePage()).toPNG())
   log('screenshot:', shotFile)
+}
+
+/**
+ * MC_SMOKE_VAULT=<empty scratch folder>: writes a small sample vault there (INDEX, notes with
+ * [[links]], a decision, frontmatter, a table), shows the folder as a project for the tour,
+ * checks links, backlinks and the live watcher, and screenshots the note, a linked note, the
+ * graph, the empty "build" screen and its dialog as <MC_SMOKE>-vault-*.png. Free: nothing is sent to Claude.
+ */
+async function vaultTour(win: BrowserWindow, outFile: string, dir: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 900) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-vault-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const click = (selector: string, text: string) =>
+    js(`[...document.querySelectorAll(${JSON.stringify(selector)})].find(e => e.textContent.includes(${JSON.stringify(text)}))?.click()`)
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  const fm = (title: string, tags: string) => `---\ntitle: ${title}\ntags: [${tags}]\nupdated: 2026-10-24\ngenerated: claude\n---\n`
+  const fence = '```'
+  const files: Record<string, string> = {
+    'CLAUDE.md': '# Demo app\n\n## Project docs\n\nStart with docs/INDEX.md: it links to the overview, architecture, setup, conventions and current status.\n',
+    'README.md': '# Demo app\n\nA tiny app for the vault tour.\n',
+    'docs/INDEX.md': `${fm('Demo app: index', 'hub')}# Demo app\n\nA small web app that turns notes into flashcards.\n\n## Map\n\n- [[overview]]: what it is and who it is for\n- [[architecture]]: how the pieces fit\n- [[setup]]: run, build, test\n- [[conventions]]: rules to follow\n- [[status]]: where things stand\n- [[decisions/0001-sqlite|Why SQLite]]\n- [[glossary]] (not written yet)\n`,
+    'docs/overview.md': `${fm('Overview', 'product')}# Overview\n\nTurns Markdown notes into spaced-repetition cards. Built with **React** and **SQLite**. See [[architecture]].\n\nBack to [[INDEX]]\n`,
+    'docs/architecture.md': `${fm('Architecture', 'code, design')}# Architecture\n\n## Modules\n\n| Module | Does |\n|---|---|\n| src/parser.ts | Markdown to cards |\n| src/store.ts | SQLite storage, see [[decisions/0001-sqlite]] |\n| src/ui/ | React screens |\n\n## Data flow\n\n1. Parse notes\n2. Store cards\n3. Schedule reviews\n\nSet up first: [[setup]]. Rules: [[conventions]].\n\nBack to [[INDEX]]\n`,
+    'docs/setup.md': `${fm('Setup', 'dev')}# Setup\n\n${fence}\nnpm install\nnpm run dev\n${fence}\n\n- [x] Node 22\n- [ ] Docker (optional)\n\nBack to [[INDEX]]\n`,
+    'docs/conventions.md': `${fm('Conventions', 'code')}# Conventions\n\n- Plain CSS, no framework\n- Never write to the user home folder (see [[architecture]])\n\nBack to [[INDEX]]\n`,
+    'docs/status.md': `${fm('Status', 'status')}# Status\n\n## Done\n\n- Parser and store\n\n## Next\n\n- Review screen ([[architecture#data-flow|data flow]])\n\nBack to [[INDEX]]\n`,
+    'docs/decisions/0001-sqlite.md': `${fm('0001: SQLite for storage', 'adr')}# 0001: SQLite for storage\n\nOne file, no server. Used by [[architecture]].\n`,
+    'docs/briefings/2026-10-24-1200-first-chat.md': '# Session briefing\n\nParser done; next is the review screen. See [[status]].\n'
+  }
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(join(dir, rel, '..'), { recursive: true })
+    writeFileSync(join(dir, rel), text)
+  }
+  updateStore((s) => {
+    s.manualProjects.push(dir)
+  })
+  try {
+    const info = await vaultNotes(dir)
+    const arch = info.notes.find((n) => n.rel === 'docs/architecture.md')
+    log('vault notes:', info.notes.length, 'hasIndex:', info.hasIndex, 'claudeMdLinked:', info.claudeMdLinked, 'updatedAt>0:', info.updatedAt > 0)
+    log('architecture links:', JSON.stringify(arch?.links), 'index unresolved:', JSON.stringify(info.notes.find((n) => n.name === 'INDEX')?.unresolved))
+    log('backlinks to architecture:', info.notes.filter((n) => n.links.includes('docs/architecture.md')).map((n) => n.rel).join(', '))
+
+    await js('window.__mcSmoke.refresh()')
+    await sleep(800)
+    await js(`window.__mcSmoke.selectProject(${JSON.stringify(dir)}); window.__mcSmoke.setView('project')`)
+    await sleep(600)
+    await click('.page-tabs button', 'Docs')
+    await shot('index', 1500)
+    log('open note:', await js(`document.querySelector('.vault .doc-title .strong')?.textContent`))
+    log('tree notes:', await js(`document.querySelectorAll('.vault-note').length`), 'missing links shown:', await js(`document.querySelectorAll('a.note-link.missing').length`))
+    await click('a.note-link', 'architecture')
+    await shot('architecture')
+    log('after link click:', await js(`document.querySelector('.vault .doc-title .strong')?.textContent`), '| side:', await js(`[...document.querySelectorAll('.vault-side h4')].map(h => h.textContent).join(' | ')`))
+
+    // Live: a note written on disk shows up without reloading.
+    writeFileSync(join(dir, 'docs', 'glossary.md'), `${fm('Glossary', 'terms')}# Glossary\n\n- **Card**: one question and answer\n\nBack to [[INDEX]]\n`)
+    await sleep(1500)
+    log('tree after new file:', await js(`document.querySelectorAll('.vault-note').length`))
+
+    await click('.vault-head .segmented button', 'Graph')
+    await shot('graph', 1200)
+    log('graph nodes:', await js(`document.querySelectorAll('.vg-node').length`), 'edges:', await js(`document.querySelectorAll('.vg-edge').length`))
+
+    // Without docs/INDEX.md: the build screen and its dialog (cancelled; nothing runs).
+    rmSync(join(dir, 'docs', 'INDEX.md'))
+    await click('.page-tabs button', 'Overview')
+    await sleep(500)
+    await click('.page-tabs button', 'Docs')
+    await shot('empty', 1500)
+    log('hero shown:', await js(`!!document.querySelector('.vault-hero')`))
+    await click('.vault-hero button', 'Build vault')
+    await shot('build-dialog', 900)
+    log('build dialog:', await js(`document.querySelector('.vault-dialog h2')?.textContent`))
+    await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+  } finally {
+    updateStore((s) => {
+      s.manualProjects = s.manualProjects.filter((p) => p !== dir)
+    })
+  }
 }
 
 /**
@@ -964,6 +1051,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
     if (process.env.MC_SMOKE_PLAN) await planTour(win, outFile)
+    if (process.env.MC_SMOKE_VAULT) await vaultTour(win, outFile, process.env.MC_SMOKE_VAULT)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
     if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)
     if (process.env.MC_SMOKE_HUB) {

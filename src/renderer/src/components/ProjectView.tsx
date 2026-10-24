@@ -25,7 +25,7 @@ import type { BudgetState, GitInfo, Project, SessionSummary, UsageTotals } from 
 import type { LaunchOptions } from '../types'
 import { formatBytes, formatCost, shortPath, timeAgo } from '../util'
 import SessionViewer from './SessionViewer'
-import DocsPanel from './DocsPanel'
+import VaultView from './VaultView'
 import ChangesPanel from './ChangesPanel'
 import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
@@ -439,7 +439,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
           />
         )}
         {tab === 'changes' && git?.isRepo && <ChangesPanel path={project.path} visible={visible && tab === 'changes'} onChanged={onChanged} />}
-        {tab === 'docs' && <DocsPanel projectPath={project.path} />}
+        {tab === 'docs' && <VaultView project={project} onChanged={onChanged} />}
       </div>
     </div>
   )

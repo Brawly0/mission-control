@@ -86,7 +86,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  width: min(480px, 46%);
+  flex: 1 1 240px;
+  min-width: 180px;
+  max-width: 480px;
   height: 38px;
   padding: 0 8px 0 14px;
   border: 1px solid var(--border);
@@ -1217,7 +1219,7 @@ input[type='time'] {
   font: 400 12px var(--font);
   cursor: pointer;
   white-space: nowrap;
-  min-width: 0;
+  flex-shrink: 0;
 }
 .plan-meter:hover {
   border-color: var(--border-strong);
@@ -1238,6 +1240,7 @@ input[type='time'] {
   color: var(--muted);
 }
 .plan-meter-track {
+  position: relative;
   width: 56px;
   height: 6px;
   border-radius: 3px;
@@ -1245,8 +1248,8 @@ input[type='time'] {
   overflow: hidden;
 }
 .plan-meter-track > span {
-  display: block;
-  height: 100%;
+  position: absolute;
+  inset: 0 auto 0 0;
   border-radius: 3px;
   background: var(--green);
 }
@@ -1255,6 +1258,10 @@ input[type='time'] {
 }
 .plan-meter-track > span.high {
   background: var(--red);
+}
+/* Where it's heading by the reset, behind what's used. */
+.plan-meter-track > .plan-meter-projected {
+  opacity: 0.3;
 }
 .plan-meter-pct {
   min-width: 30px;
@@ -1272,11 +1279,15 @@ input[type='time'] {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
+.plan-meter-reset.plan-meter-out {
+  color: var(--orange);
+  font-weight: 600;
+}
 .plan-meter-error {
   color: var(--orange);
 }
 @media (max-width: 1280px) {
-  .plan-meter-reset {
+  .plan-meter-reset:not(.plan-meter-out) {
     display: none;
   }
 }

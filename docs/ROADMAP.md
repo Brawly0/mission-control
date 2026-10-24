@@ -95,6 +95,12 @@
 - [x] Usage page: % left, reset times, plan name, extra-usage status, Check now
 - [x] Alert when a limit passes a set level (default 80%) and when it runs out (Settings → Spending)
 
+## ✅ v0.14: Pace forecast and docs vault
+- [x] Pace forecast for plan limits: projected usage at reset (faint bar), "out in …" in the top bar when a limit will run out first, a pace line on the Usage card, and an early alert
+- [x] Docs vault per project: Claude builds docs/ as an Obsidian-style vault (INDEX hub, overview, architecture, setup, conventions, status, decisions) and links it from CLAUDE.md
+- [x] Vault browser in the Docs tab: tree, [[wikilinks]], properties, outline, links and backlinks, graph view, live updates, new note
+- [x] "Keep up to date": Claude refreshes the vault after each compaction (opt-in per project)
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

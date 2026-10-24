@@ -49,6 +49,8 @@ export interface ProjectMeta {
   defaultModel?: string
   /** MCP servers loaded for agents Mission Control starts here; unset = all of them. */
   mcpAllow?: string[]
+  /** Have Claude update the docs vault after each compaction (session briefing). */
+  autoDocs?: boolean
 }
 
 export interface GitInitPreview {
@@ -147,7 +149,41 @@ export interface SessionDetail {
   truncated: boolean
 }
 
+/** A Markdown note in a project's docs vault (docs/ plus CLAUDE.md, README.md…). */
+export interface VaultNote {
+  path: string
+  /** Path from the project folder, with forward slashes. */
+  rel: string
+  /** File name without .md. */
+  name: string
+  title: string
+  /** Folder from the project folder ('' for the project root). */
+  folder: string
+  mtime: number
+  size: number
+  tags: string[]
+  /** Notes this one links to (rel paths). */
+  links: string[]
+  /** Link targets that match no note. */
+  unresolved: string[]
+  /** Written by Claude for the vault (frontmatter "generated: claude"). */
+  generated: boolean
+}
+
+export interface VaultInfo {
+  projectPath: string
+  notes: VaultNote[]
+  /** docs/INDEX.md exists: the vault has been built. */
+  hasIndex: boolean
+  /** CLAUDE.md points Claude at docs/INDEX.md. */
+  claudeMdLinked: boolean
+  /** Newest change to a Claude-written note (ms), 0 if none. */
+  updatedAt: number
+}
+
 export interface DocFile {
+  /** Changes when the file changed on disk, so viewers re-read it. */
+  version?: number
   name: string
   path: string
 }
@@ -445,11 +481,23 @@ export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectNa
 }
 
 /** Plan rate-limit utilization reported by Claude Code (0-1 per window). */
+/** Where a plan window is heading at the current pace. */
+export interface PaceForecast {
+  /** Share of the limit used per hour (0–1 scale). */
+  ratePerHour: number
+  /** Projected utilization when the window resets (can pass 1). */
+  atReset: number
+  /** When it runs out at this pace, if that's before the reset; 0 otherwise. */
+  runsOutAt: number
+  /** "recent": from the last hour of readings; "window": the average since the window started. */
+  basis: 'recent' | 'window'
+}
+
 export interface RateLimitInfo {
   at: number
   status: string
   /** utilization is 0–1; resetsAt is epoch ms (0 when unknown). */
-  windows: { name: string; utilization: number; resetsAt: number }[]
+  windows: { name: string; utilization: number; resetsAt: number; forecast?: PaceForecast }[]
   /** "plan": polled from your Claude account; "task": reported by a headless task run. */
   source?: 'plan' | 'task'
   /** Subscription from Claude Code's login, e.g. "pro" or "max". */
@@ -574,6 +622,13 @@ export interface MissionControlApi {
   removeProject(path: string): Promise<void>
   togglePin(path: string): Promise<void>
   listDocs(projectPath: string): Promise<DocFile[]>
+  /** Every note in the project's docs vault, with links resolved. */
+  vaultNotes(projectPath: string): Promise<VaultInfo>
+  /** Has Claude build (or update) the vault as a headless task; returns the task. */
+  buildVault(projectPath: string, projectName: string, mode: 'build' | 'update', model?: string): Promise<Task>
+  /** Watches one project's vault (null stops); vault:changed fires when its notes change. */
+  watchVault(projectPath: string | null): void
+  onVaultChanged(cb: (projectPath: string) => void): () => void
   readDoc(filePath: string): Promise<string>
   writeDoc(filePath: string, content: string): Promise<void>
   openInExplorer(path: string): Promise<void>

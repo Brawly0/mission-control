@@ -2,6 +2,11 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.14)
+
+- **Docs vault for every project**: the Docs tab is now an Obsidian-style vault of the project's `docs/` folder. Click **Build vault with Claude** and Claude reads the project and writes a linked set of notes (INDEX hub, overview, architecture, setup, conventions, status, decisions), then points CLAUDE.md at it, so every new chat starts out knowing the project. Browse it with a folder tree, clickable `[[links]]`, backlinks, an outline and a **graph view**. Notes appear live as Claude writes them. Turn on **Keep up to date** and Claude refreshes the vault after each compaction. It runs as a background task with Sonnet by default, and it never touches your code.
+- **Pace forecast**: the plan meters now show where you're heading. A faint bar shows the projected usage at reset; the top bar says **out in 2d 16h** when a limit will run out before it resets; the Usage page says when (for example "runs out ~Tue 12:29 PM, 2d 18h before it resets"); and you get an alert when you're on pace to run out soon.
+
 ## Features (v0.13)
 
 - **Plan limits, always in view**: the top bar shows how much of your **5-hour session** and **weekly** limit you've used, with a colored bar and the time until each resets. They're the same numbers `/usage` shows in Claude Code, refreshed every 3 minutes and whenever you come back to the window. Click for details on the Usage page (% left, exact reset times, extra usage). You get a notification when a limit passes 80% (change it in Settings → Spending) and when one runs out.

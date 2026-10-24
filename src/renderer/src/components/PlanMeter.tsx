@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CircleAlert } from 'lucide-react'
 import type { RateLimitInfo } from '@shared/types'
-import { resetsIn, windowLabel } from '@shared/planUsage'
+import { duration, paceText, resetsIn, windowLabel } from '@shared/planUsage'
 import { timeAgo } from '../util'
 
 interface Props {
@@ -39,7 +39,8 @@ export default function PlanMeter({ info, onOpen }: Props) {
     ...windows.map((w) => {
       const pct = Math.round(w.utilization * 100)
       const when = w.resetsAt ? new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'unknown'
-      return `${windowLabel(w.name, true)}: ${pct}% used, ${Math.max(0, 100 - pct)}% left · resets ${when}`
+      const pace = paceText(w, now)
+      return `${windowLabel(w.name, true)}: ${pct}% used, ${Math.max(0, 100 - pct)}% left · resets ${when}${pace ? `\n  ${pace}` : ''}`
     }),
     info.plan ? `Plan: ${info.plan[0].toUpperCase()}${info.plan.slice(1)}` : '',
     `Updated ${timeAgo(info.at)}`,
@@ -51,14 +52,23 @@ export default function PlanMeter({ info, onOpen }: Props) {
     <button className={`plan-meter ${stale ? 'stale' : ''}`} onClick={onOpen} title={tip}>
       {windows.map((w) => {
         const pct = Math.round(w.utilization * 100)
+        const f = w.forecast
+        // Heading to run out before the reset: say when, instead of when it resets.
+        const outIn = f?.runsOutAt && pct < 100 ? Math.max(0, f.runsOutAt - now) : null
+        const projected = f ? Math.min(100, Math.round(f.atReset * 100)) : 0
         return (
-          <span key={w.name} className="plan-meter-item">
+          <span key={w.name} className={`plan-meter-item ${outIn !== null ? 'pace-out' : ''}`}>
             <span className="plan-meter-name">{windowLabel(w.name)}</span>
             <span className="plan-meter-track" aria-hidden>
-              <span className={levelClass(pct)} style={{ width: `${Math.min(100, pct)}%` }} />
+              {projected > pct && <span className={`plan-meter-projected ${levelClass(projected)}`} style={{ width: `${projected}%` }} />}
+              <span className={`plan-meter-fill ${levelClass(pct)}`} style={{ width: `${Math.min(100, pct)}%` }} />
             </span>
             <span className={`plan-meter-pct ${levelClass(pct)}`}>{pct}%</span>
-            {w.resetsAt > 0 && <span className="plan-meter-reset">{resetsIn(w.resetsAt, now)}</span>}
+            {outIn !== null ? (
+              <span className="plan-meter-reset plan-meter-out">out in {duration(outIn)}</span>
+            ) : (
+              w.resetsAt > 0 && <span className="plan-meter-reset">{resetsIn(w.resetsAt, now)}</span>
+            )}
           </span>
         )
       })}

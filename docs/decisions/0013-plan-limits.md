@@ -16,6 +16,11 @@ The user wants to see their Claude plan limits all the time: how much of the 5-h
 - **Top bar, not status bar.** The top bar is on every page and has room for two labeled meters with countdowns; the status bar's tiny "Plan 5h N%" item was removed as a duplicate. Under 1280 px the countdowns hide; the tooltip still has everything.
 - **Alerts** at a user-set level (default 80%, Settings → Spending, 0 = off) and when a window hits 100%, once per window per reset (`limitAlerted` in the store).
 
+## Pace forecast (v0.14)
+
+- The session window uses the last hour of readings once there are 15 minutes of them (how you're working now). Before that, and for weekly windows, it uses the average since the window started (reset minus 5 hours or 7 days), which already includes nights and breaks. Readings are kept in memory only.
+- The meter draws the projected usage at reset as a faint bar. When the window will run out before it resets, the top bar shows "out in …" in place of the reset countdown. A "pace" alert fires once per window when it's due to run out within the hour (session) or day (week).
+
 ## Risks
 
 - The endpoint isn't a documented public API; its shape could change. Unknown or missing fields are skipped, and failures keep the last good numbers with the error in the tooltip and on the Usage card.
