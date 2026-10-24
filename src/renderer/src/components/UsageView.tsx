@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BarChart3, Coins, Info, MessagesSquare, Sigma, Table2, Zap } from 'lucide-react'
+import { BarChart3, Coins, Info, MessagesSquare, RefreshCw, Sigma, Table2, Zap } from 'lucide-react'
 import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
+import { resetsIn, windowLabel } from '@shared/planUsage'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
 import { Avatar, EmptyState, IconButton, Segmented } from './ui'
 import { useLook } from '../projectLook'
@@ -151,29 +152,50 @@ function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; av
   )
 }
 
-const WINDOW_NAMES: Record<string, string> = { five_hour: '5-hour window', seven_day: '7-day window' }
-
-/** Plan limits as last reported by Claude Code: one meter per window. */
+/** Plan limits from your Claude account: one meter per window, what's left and when it resets. */
 function PlanLimits({ info }: { info: RateLimitInfo }) {
+  const [refreshing, setRefreshing] = useState(false)
+  const refresh = (): void => {
+    setRefreshing(true)
+    window.mc.refreshRateLimit().finally(() => setRefreshing(false))
+  }
+  const x = info.extraUsage
   return (
     <section className="card usage-card">
       <div className="usage-card-head">
-        <h2>Plan limits</h2>
-        <span className="muted small">as of {timeAgo(info.at)}</span>
+        <h2>Plan limits{info.plan ? ` · ${info.plan[0].toUpperCase()}${info.plan.slice(1)}` : ''}</h2>
+        <span className="muted small">
+          updated {timeAgo(info.at)}
+          <IconButton icon={RefreshCw} label="Check now" size={13} onClick={refresh} disabled={refreshing} />
+        </span>
       </div>
+      {info.error && <p className="plan-error small">{info.error}</p>}
       {info.windows.map((w) => {
         const pct = Math.round(w.utilization * 100)
         return (
           <div key={w.name} className="meter-row">
-            <span className="meter-label">{WINDOW_NAMES[w.name] ?? w.name}</span>
+            <span className="meter-label">{windowLabel(w.name, true)}</span>
             <span className="meter-track" aria-hidden>
-              <span className={`meter-fill ${pct >= 80 ? 'warn' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
+              <span className={`meter-fill ${pct >= 90 ? 'high' : pct >= 70 ? 'warn' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
             </span>
-            <span className="meter-value">{pct}% used</span>
-            <span className="muted small">resets {new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="meter-value">
+              {pct}% used · <span className="muted">{Math.max(0, 100 - pct)}% left</span>
+            </span>
+            <span className="muted small">
+              {w.resetsAt
+                ? w.resetsAt - Date.now() > 86_400_000
+                  ? `resets ${resetsIn(w.resetsAt, Date.now())}`
+                  : `resets in ${resetsIn(w.resetsAt, Date.now())} (${new Date(w.resetsAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`
+                : ''}
+            </span>
           </div>
         )
       })}
+      {x && (
+        <p className="muted small plan-extra">
+          Extra usage {x.enabled ? `on: $${x.usedUsd.toFixed(2)} of $${x.limitUsd.toFixed(2)} used this month` : 'off: when a limit runs out, Claude waits for the reset'}.
+        </p>
+      )}
     </section>
   )
 }

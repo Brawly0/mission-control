@@ -843,7 +843,7 @@ export default function App() {
         }}
       />
       <main className="main">
-        <TopBar theme={theme} userName={userName} currentProject={selected?.name} onShortcut={(id) => runShortcutRef.current(id)} />
+        <TopBar theme={theme} userName={userName} currentProject={selected?.name} rateLimit={rateLimit} onShortcut={(id) => runShortcutRef.current(id)} />
         {pendingRestore && pendingRestore.length > 0 && (
           <div className="restore-banner">
             <RotateCcw size={15} />
@@ -1015,7 +1015,6 @@ export default function App() {
         )}
         <StatusBar
           indexStatus={indexStatus}
-          rateLimit={rateLimit}
           update={update}
           onOpenSettings={() => setSettingsOpen(true)}
           view={view}

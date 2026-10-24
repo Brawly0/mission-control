@@ -20,10 +20,12 @@ src/
     updater.ts     auto-update via electron-updater (public releases repo)
     briefings.ts   session briefings: saves compaction summaries to docs/briefings/ (ADR 0012)
     hub.ts         notes, Knowledge (docs across projects), Claude Code status, greeting name, quick chats, new projects
+    planUsage.ts   plan limits (session / weekly) polled from your Claude account with Claude Code's saved login, read-only (ADR 0013)
     spend.ts       live chat size, startup report, MCP servers per project, extra launch args (model, --strict-mcp-config)
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
+    planUsage.ts    parses the plan-usage response; window names, "resets in" text (pure, unit-tested)
     projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
     src/App.tsx              app state: projects, git info, agents, views, command palette

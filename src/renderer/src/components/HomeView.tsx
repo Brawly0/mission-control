@@ -23,6 +23,7 @@ import {
 import type { ClaudeStatus, Project, RateLimitInfo, RecentSession, Task, UsageReport } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
+import { windowLabel } from '@shared/planUsage'
 import { elapsed, timeAgo } from '../util'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
@@ -101,7 +102,6 @@ function Clock() {
   )
 }
 
-const WINDOW_NAMES: Record<string, string> = { five_hour: '5-hour limit', seven_day: 'Weekly limit' }
 
 export default function HomeView(props: Props) {
   const { agents, lastOutput, projects, tasks, visible, userName, rateLimit, onOpenAgent, onOpenProject, onResume, onShortcut } = props
@@ -410,9 +410,9 @@ export default function HomeView(props: Props) {
               {(rateLimit?.windows.length ? rateLimit.windows : [{ name: 'five_hour', utilization: 0, resetsAt: 0 }, { name: 'seven_day', utilization: 0, resetsAt: 0 }]).map((w) => {
                 const pct = Math.round(w.utilization * 100)
                 return (
-                  <div key={w.name} className="meter" title={w.resetsAt ? `Resets ${new Date(w.resetsAt).toLocaleString()}` : 'Shows after your next chat or task'}>
+                  <div key={w.name} className="meter" title={w.resetsAt ? `Resets ${new Date(w.resetsAt).toLocaleString()}` : rateLimit?.error ?? 'Checking your plan limits…'}>
                     <div className="meter-label">
-                      <span>{WINDOW_NAMES[w.name] ?? w.name}</span>
+                      <span>{windowLabel(w.name, true)}</span>
                       <span>{rateLimit ? `${pct}%` : '–'}</span>
                     </div>
                     <div className="meter-track">

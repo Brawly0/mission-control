@@ -196,4 +196,6 @@ Settings are restored afterwards.
 
 It removes what it created.
 
+`MC_SMOKE_PLAN=1` asks your Claude account for your plan limits (one small request, no model use), logs the windows and plan, checks the top-bar meter text and screenshots Home and Usage. Free. (Normal smoke runs don't poll.)
+
 `MC_SMOKE_BRIEF=<empty scratch folder>` lists the session briefings (compaction summaries) in your chats. It writes the newest one as a file into the scratch folder (never into your projects), checks the wrapper lines are gone and that "latest briefing" finds it, and screenshots Knowledge → Session briefings. Free.

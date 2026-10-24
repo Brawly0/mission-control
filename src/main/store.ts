@@ -35,6 +35,8 @@ export interface StoreData {
   chatProjects: Record<string, string>
   /** Chats already reported as expensive today: { day: "2026-10-24", ids }. */
   costAlerted: { day: string; ids: string[] }
+  /** Plan-limit alerts already shown, as "window@resetsAt:kind", so each fires once per window. */
+  limitAlerted: string[]
   /** Your own notes (Notebook). */
   notes: Note[]
   /** Compactions from this time on are saved as briefings automatically (set the first time the app runs it). */
@@ -55,6 +57,7 @@ const defaults: StoreData = {
   chatTitles: {},
   chatProjects: {},
   costAlerted: { day: '', ids: [] },
+  limitAlerted: [],
   notes: [],
   briefingsFrom: 0,
   briefingsSaved: {},
@@ -62,6 +65,7 @@ const defaults: StoreData = {
     defaultTaskBudgetUsd: 0,
     defaultTaskModel: '',
     chatCostAlertUsd: 20,
+    planAlertPercent: 80,
     contextWarnTokens: 200_000,
     keybindings: {},
     theme: 'dark',

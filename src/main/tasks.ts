@@ -177,6 +177,13 @@ export function getRateLimit(): RateLimitInfo | null {
   return lastRateLimit
 }
 
+/** New plan-limit numbers, from a task run or the account poll; keeps the plan details a task run doesn't carry. */
+export function setRateLimit(info: RateLimitInfo): void {
+  lastRateLimit = { ...lastRateLimit, ...info }
+  hooks?.onRateLimit(lastRateLimit)
+  hooks?.onQueueStatus(queueStatus())
+}
+
 function find(id: string): Task {
   const t = tasks.find((x) => x.id === id)
   if (!t) throw new Error('Task not found')
@@ -383,11 +390,7 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
       }
       const out = applyStreamEvent(run, e, t.permission)
       if (out.final) sawResult = true
-      if (out.rateLimit) {
-        lastRateLimit = out.rateLimit
-        hooks?.onRateLimit(out.rateLimit)
-        hooks?.onQueueStatus(queueStatus())
-      }
+      if (out.rateLimit) setRateLimit({ ...out.rateLimit, source: 'task', error: undefined })
     }
     t.updatedAt = Date.now()
     emit()

@@ -1,7 +1,9 @@
 import { ChevronDown, FolderPlus, ListPlus, MessageSquareDashed, Moon, NotebookPen, Play, Plus, Search, Settings, Sun } from 'lucide-react'
+import type { RateLimitInfo } from '@shared/types'
 import { useKeyFor, withKey } from '../shortcuts'
 import { initials } from '../util'
 import { KeyCombo } from './ShortcutsDialog'
+import PlanMeter from './PlanMeter'
 import { IconButton, MenuButton } from './ui'
 
 interface Props {
@@ -9,11 +11,12 @@ interface Props {
   userName: string
   /** Name of the project "New session" starts in. */
   currentProject?: string
+  rateLimit: RateLimitInfo | null
   onShortcut: (id: string) => void
 }
 
-/** Search, the New menu, theme, settings and you, across the top of every page. */
-export default function TopBar({ theme, userName, currentProject, onShortcut }: Props) {
+/** Search, plan limits, the New menu, theme, settings and you, across the top of every page. */
+export default function TopBar({ theme, userName, currentProject, rateLimit, onShortcut }: Props) {
   const keyFor = useKeyFor()
   return (
     <header className="topbar">
@@ -22,6 +25,7 @@ export default function TopBar({ theme, userName, currentProject, onShortcut }: 
         <span>Search projects, chats, tasks…</span>
         {keyFor('palette') && <KeyCombo combo={keyFor('palette')} />}
       </button>
+      <PlanMeter info={rateLimit} onOpen={() => onShortcut('goUsage')} />
       <div className="topbar-actions">
         <MenuButton
           align="right"

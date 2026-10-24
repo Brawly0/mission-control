@@ -527,7 +527,7 @@
 /* ---------- plan limit meters + status bar ---------- */
 .meter-row {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) 80px 150px;
+  grid-template-columns: 150px minmax(0, 1fr) 150px 170px;
   align-items: center;
   gap: 12px;
   padding: 6px 4px;
@@ -549,6 +549,16 @@
 }
 .meter-fill.warn {
   background: var(--orange);
+}
+.meter-fill.high {
+  background: var(--red);
+}
+.plan-error {
+  margin: 0 0 6px;
+  color: var(--orange);
+}
+.plan-extra {
+  margin: 8px 4px 0;
 }
 .meter-value {
   font-variant-numeric: tabular-nums;

@@ -89,6 +89,12 @@
 - [x] New session from latest briefing; Knowledge → Session briefings (save older ones, start from any)
 - [x] Briefing button / Ctrl+Shift+B asks a running agent for a briefing before the limit
 
+## ✅ v0.13: Plan limits, always in view
+- [x] Session (5-hour) and weekly limit meters in the top bar on every page: % used, color by level, time to reset
+- [x] Polled from your Claude account every 3 minutes and when the window gets focus (the numbers `/usage` shows), not only during headless tasks
+- [x] Usage page: % left, reset times, plan name, extra-usage status, Check now
+- [x] Alert when a limit passes a set level (default 80%) and when it runs out (Settings → Spending)
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

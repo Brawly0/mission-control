@@ -104,6 +104,7 @@ const api: MissionControlApi = {
     return () => ipcRenderer.removeListener('ratelimit', handler)
   },
   getRateLimit: () => ipcRenderer.invoke('ratelimit:get'),
+  refreshRateLimit: () => ipcRenderer.invoke('ratelimit:refresh'),
   followUpTask: (id, prompt) => ipcRenderer.invoke('tasks:followUp', id, prompt),
   rerunChecks: (id) => ipcRenderer.invoke('tasks:rerunChecks', id),
   previewGitInit: (folder) => ipcRenderer.invoke('git:previewInit', folder),

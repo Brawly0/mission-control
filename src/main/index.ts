@@ -12,6 +12,7 @@ import type {
   Schedule,
   TemplateInput,
   ProjectMeta,
+  RateLimitInfo,
   Note,
   SavedAgent,
   SearchHit,
@@ -56,6 +57,8 @@ import { contextUsage, launchArgs, startupReport } from './spend'
 import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing, saveNewBriefings } from './briefings'
 import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { runSmoke } from './smoke'
+import { refreshPlanUsage, startPlanUsage, stopPlanUsage } from './planUsage'
+import { windowLabel } from '../shared/planUsage'
 
 let mainWindow: BrowserWindow | null = null
 let toldAboutTray = false
@@ -113,6 +116,10 @@ function createWindow(): void {
 
   if (bounds?.maximized) mainWindow.maximize()
 
+  // Coming back to the window: fresh plan numbers (at most every 20 seconds).
+  mainWindow.on('focus', () => {
+    if (!process.env.MC_SMOKE) void refreshPlanUsage()
+  })
   mainWindow.on('close', (e) => {
     const win = mainWindow
     if (!win || process.env.MC_SMOKE) return
@@ -401,6 +408,10 @@ function registerIpc(): void {
   ipcMain.handle('tasks:stop', (_e, id: string) => stopTask(id))
   ipcMain.handle('tasks:setRun', (_e, id: string, patch: Partial<TaskRun>, column?: TaskColumn) => setTaskRun(id, patch, column))
   ipcMain.handle('ratelimit:get', () => getRateLimit())
+  ipcMain.handle('ratelimit:refresh', async () => {
+    await refreshPlanUsage(true)
+    return getRateLimit()
+  })
 
   ipcMain.handle('settings:get', () => loadStore().settings)
   ipcMain.handle('settings:set', (_e, patch: Partial<AppSettings>) => {
@@ -491,6 +502,33 @@ async function checkChatCosts(): Promise<void> {
   }
 }
 
+/** One notification per plan window when it passes your alert level, and one when it runs out. */
+function checkPlanLimits(info: RateLimitInfo): void {
+  const level = loadStore().settings.planAlertPercent
+  if (!level) return
+  const shown = new Set(loadStore().limitAlerted)
+  for (const w of info.windows) {
+    const pct = Math.round(w.utilization * 100)
+    const kind = pct >= 100 ? 'out' : pct >= level ? 'near' : ''
+    const key = `${w.name}@${w.resetsAt}:${kind}`
+    if (!kind || shown.has(key)) continue
+    updateStore((s) => {
+      s.limitAlerted = [...s.limitAlerted, key].slice(-20)
+    })
+    const resets = w.resetsAt ? new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'soon'
+    const n = new Notification({
+      title: kind === 'out' ? `${windowLabel(w.name, true)} limit reached` : `${windowLabel(w.name, true)} limit at ${pct}%`,
+      body: kind === 'out' ? `Claude is paused until it resets (${resets}).` : `Resets ${resets}. Smaller models and fresh chats make what's left go further.`,
+      icon: join(__dirname, '../../build/icon.png')
+    })
+    n.on('click', () => {
+      showWindow()
+      sendToWindow('navigate', { view: 'usage' })
+    })
+    n.show()
+  }
+}
+
 function notifyTasks(title: string, body: string): void {
   if (process.env.MC_SMOKE) return
   const n = new Notification({ title, body, icon: join(__dirname, '../../build/icon.png') })
@@ -558,6 +596,7 @@ app.whenReady().then(async () => {
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
+  if (!process.env.MC_SMOKE) startPlanUsage(checkPlanLimits)
   setFolderSource((ids) => queryIndex('sessionFolders', ids))
   // Due-date reminders, checked every minute.
   setInterval(() => {
@@ -632,6 +671,7 @@ app.on('before-quit', () => {
   stopHookServer()
   stopIndexer()
   stopScheduler()
+  stopPlanUsage()
   destroyTray()
 })
 app.on('window-all-closed', () => {

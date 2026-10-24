@@ -1,5 +1,5 @@
-import { Bell, BellOff, CircleAlert, Database, Download, Gauge, GitBranch, Radio, Settings } from 'lucide-react'
-import type { GitInfo, IndexStatus, Project, RateLimitInfo, UpdateState } from '@shared/types'
+import { Bell, BellOff, CircleAlert, Database, Download, GitBranch, Radio, Settings } from 'lucide-react'
+import type { GitInfo, IndexStatus, Project, UpdateState } from '@shared/types'
 import type { Agent, View } from '../types'
 
 interface Props {
@@ -9,19 +9,15 @@ interface Props {
   agents: Agent[]
   notify: boolean
   indexStatus: IndexStatus | null
-  rateLimit: RateLimitInfo | null
   update: UpdateState
   onToggleNotify: () => void
   onShowAttention: () => void
   onOpenSettings: () => void
 }
 
-const WINDOW_LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d' }
-
-export default function StatusBar({ view, project, git, agents, notify, indexStatus, rateLimit, update, onToggleNotify, onShowAttention, onOpenSettings }: Props) {
+export default function StatusBar({ view, project, git, agents, notify, indexStatus, update, onToggleNotify, onShowAttention, onOpenSettings }: Props) {
   const live = agents.filter((a) => !a.exited)
   const attention = live.filter((a) => a.hookStatus === 'needs-input').length
-  const busiest = rateLimit?.windows.reduce((a, b) => (b.utilization > a.utilization ? b : a), rateLimit.windows[0])
   return (
     <footer className="statusbar">
       <span className="sb-item" title="Agents running">
@@ -41,16 +37,6 @@ export default function StatusBar({ view, project, git, agents, notify, indexSta
       {update.state === 'downloading' && (
         <span className="sb-item" title="Downloading the new version in the background">
           <Download size={12} /> Downloading {update.version} {update.percent !== undefined ? `${update.percent}%` : ''}
-        </span>
-      )}
-      {busiest && (
-        <span
-          className={`sb-item ${busiest.utilization >= 0.8 ? 'sb-warn' : ''}`}
-          title={rateLimit!.windows
-            .map((w) => `${WINDOW_LABEL[w.name] ?? w.name} window: ${Math.round(w.utilization * 100)}% used, resets ${new Date(w.resetsAt).toLocaleString()}`)
-            .join('\n')}
-        >
-          <Gauge size={12} /> Plan {WINDOW_LABEL[busiest.name] ?? busiest.name} {Math.round(busiest.utilization * 100)}%
         </span>
       )}
       {indexStatus && (

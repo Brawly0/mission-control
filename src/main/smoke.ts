@@ -2,7 +2,8 @@ import { app, type BrowserWindow } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
-import { automationHold, claudeCommand, takeDueReminders, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
+import { refreshPlanUsage } from './planUsage'
+import { automationHold, claudeCommand, getRateLimit, takeDueReminders, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
 import { invalidateBudgets, projectBudget } from './budget'
 import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
@@ -442,6 +443,27 @@ async function briefTour(win: BrowserWindow, outFile: string, folder: string): P
   const shotFile = outFile.replace(/\.png$/, '-briefings.png')
   writeFileSync(shotFile, (await win.webContents.capturePage()).toPNG())
   log('screenshot:', shotFile)
+}
+
+/**
+ * MC_SMOKE_PLAN=1: asks your Claude account for the plan limits (one small request, no model use),
+ * logs them and screenshots Home's top bar and the Usage page as <MC_SMOKE>-plan-*.png. Free.
+ */
+async function planTour(win: BrowserWindow, outFile: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  const info = await refreshPlanUsage(true).then(() => getRateLimit())
+  log('plan limits:', info?.error ? `error: ${info.error}` : '', JSON.stringify(info?.windows), 'plan:', info?.plan)
+  for (const name of ['home', 'usage']) {
+    win.webContents.send('navigate', { view: name })
+    await sleep(1200)
+    const file = outFile.replace(/.png$/, `-plan-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  log('top bar meter:', await js(`document.querySelector('.plan-meter')?.textContent ?? 'missing'`))
 }
 
 /**
@@ -941,6 +963,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_CHAIN) await chainTour(win, outFile, process.env.MC_SMOKE_CHAIN)
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
+    if (process.env.MC_SMOKE_PLAN) await planTour(win, outFile)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
     if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)
     if (process.env.MC_SMOKE_HUB) {

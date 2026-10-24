@@ -448,7 +448,16 @@ export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectNa
 export interface RateLimitInfo {
   at: number
   status: string
+  /** utilization is 0–1; resetsAt is epoch ms (0 when unknown). */
   windows: { name: string; utilization: number; resetsAt: number }[]
+  /** "plan": polled from your Claude account; "task": reported by a headless task run. */
+  source?: 'plan' | 'task'
+  /** Subscription from Claude Code's login, e.g. "pro" or "max". */
+  plan?: string
+  /** Pay-as-you-go credits used once plan limits run out. */
+  extraUsage?: { enabled: boolean; usedUsd: number; limitUsd: number }
+  /** Why the latest refresh failed; the windows are then the last good ones. */
+  error?: string
 }
 
 export interface AppSettings {
@@ -470,6 +479,8 @@ export interface AppSettings {
   defaultTaskModel: string
   /** Notify when one chat's estimated cost today passes this (USD); 0 = off. */
   chatCostAlertUsd: number
+  /** Notify when the session or weekly plan limit passes this percentage (and again when it's used up); 0 = off. */
+  planAlertPercent: number
   /** A live chat turns amber (and you get one reminder) at this many tokens of context. */
   contextWarnTokens: number
   /** Your own key combinations by shortcut id ('' turns one off); missing ids use the defaults. */
@@ -639,6 +650,8 @@ export interface MissionControlApi {
   onTasksChanged(cb: (tasks: Task[]) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void
   getRateLimit(): Promise<RateLimitInfo | null>
+  /** Asks your Claude account for the latest plan-limit numbers now. */
+  refreshRateLimit(): Promise<RateLimitInfo | null>
   /** Live agent counts, shown in the tray tooltip and menu. */
   reportStatus(summary: { agents: number; attention: number }): void
 

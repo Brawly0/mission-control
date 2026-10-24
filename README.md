@@ -2,6 +2,10 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.13)
+
+- **Plan limits, always in view**: the top bar shows how much of your **5-hour session** and **weekly** limit you've used, with a colored bar and the time until each resets. They're the same numbers `/usage` shows in Claude Code, refreshed every 3 minutes and whenever you come back to the window. Click for details on the Usage page (% left, exact reset times, extra usage). You get a notification when a limit passes 80% (change it in Settings → Spending) and when one runs out.
+
 ## Features (v0.12)
 
 - **Automatic session briefings**: when a chat runs out of room (or you `/compact`), Claude Code writes a summary so it can carry on. Mission Control saves that summary as a Markdown file in the project's `docs/briefings/` folder and notifies you. This works for every chat, including ones started outside Mission Control, and costs nothing extra. Chats without a real project folder save to Mission Control's own folder. It's on by default; turn it off in Settings → General.

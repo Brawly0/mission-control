@@ -315,6 +315,25 @@ export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: 
             </div>
 
             <div className="field">
+              <span className="field-label">Plan limit alert</span>
+              <label className="inline-field">
+                Notify me when my session or weekly limit passes
+                <input
+                  className="text-input num-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={settings.planAlertPercent}
+                  onChange={(e) => setSettings({ ...settings, planAlertPercent: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })}
+                  onBlur={() => apply({ planAlertPercent: settings.planAlertPercent })}
+                />
+                %
+              </label>
+              <span className="field-hint">Once per window, plus once when a limit runs out. The meters in the top bar update every few minutes. 0 turns it off.</span>
+            </div>
+
+            <div className="field">
               <span className="field-label">Large chat warning</span>
               <label className="inline-field">
                 Mark a live chat amber at
