@@ -74,7 +74,7 @@ import NotebookView from './components/NotebookView'
 import KnowledgeView from './components/KnowledgeView'
 import NewProjectDialog from './components/NewProjectDialog'
 import { sidebarOrder } from './components/Sidebar'
-import { worktreeParent } from '@shared/projectLook'
+import { briefingFileName, briefingPrompt, worktreeParent, writeBriefingPrompt } from '@shared/projectLook'
 
 function loadNotifyPref(): boolean {
   try {
@@ -216,7 +216,7 @@ export default function App() {
         const u = next[a.sessionId!]
         if (!u || u.tokens < warnAt || warnedContext.current.has(a.sessionId!)) continue
         warnedContext.current.add(a.sessionId!)
-        toast('info', `${a.title} is getting large`, `${Math.round(u.tokens / 1000)}K tokens: each reply re-reads all of it (about $${u.perTurnUsd.toFixed(2)}). Press Compact on the agent to shrink it.`)
+        toast('info', `${a.title} is getting large`, `${Math.round(u.tokens / 1000)}K tokens: each reply re-reads all of it (about $${u.perTurnUsd.toFixed(2)}). Press Compact on the agent to shrink it, or ${keyOf('writeBriefing') || 'Write briefing'} for a handoff first.`)
       }
     }
     void tick()
@@ -612,8 +612,25 @@ export default function App() {
       runShortcutRef.current(id)
     }
     window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    const onRun = (e: Event) => setTimeout(() => runShortcutRef.current((e as CustomEvent<string>).detail), 0)
+    window.addEventListener('mc:run-shortcut', onRun)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('mc:run-shortcut', onRun)
+    }
   }, [openPalette])
+
+  /** New session that starts by reading the project's newest briefing. */
+  const startFromBriefing = async (projectPath?: string, file?: string) => {
+    const p = projects.find((x) => x.path === (projectPath ?? selected?.path))
+    if (!p) return
+    const path = file ?? (await window.mc.latestBriefing(p.path))
+    if (!path) {
+      toast('info', `No briefing for ${p.name} yet`, 'One is saved automatically the next time a chat there runs out of room, or ask an agent with Write briefing.')
+      return
+    }
+    launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · from briefing`, args: [briefingPrompt(path)] })
+  }
 
   /** What each shortcut does. Anything not listed here is handled by the visible view (see useShortcutEvent). */
   const runShortcutRef = useRef<(id: string) => void>(() => undefined)
@@ -690,8 +707,16 @@ export default function App() {
       compactAgent: () => {
         if (!active || active.kind !== 'claude' || active.exited) return
         window.mc.ptyWrite(active.id, '/compact\r')
-        toast('info', `Compacting ${active.title}`, 'Claude summarizes the chat so far and continues from the summary.')
+        toast('info', `Compacting ${active.title}`, 'Claude summarizes the chat so far and continues from the summary. Mission Control saves that summary as a session briefing.')
       },
+      writeBriefing: () => {
+        if (!active || active.kind !== 'claude' || active.exited) return
+        window.mc.ptyWrite(active.id, writeBriefingPrompt(`docs/briefings/${briefingFileName(Date.now(), active.title).replace(/\.md$/, '')}.md`) + '\r')
+        setView('agents')
+        setActiveAgent(active.id)
+        toast('info', `Asked ${active.title} for a briefing`, 'It writes it to docs/briefings/ in its folder.')
+      },
+      briefingSession: () => void startFromBriefing(),
       toggleReview: () => {
         setView('agents')
         setTimeout(() => broadcast('toggleReview'), 50)
@@ -874,6 +899,7 @@ export default function App() {
                 budget={budgets[selected.path.toLowerCase().replace(/[\\/]+$/, '')]}
                 onLaunch={launch}
                 onLaunchWorktree={launchWorktree}
+                onStartFromBriefing={() => void startFromBriefing(selected.path)}
                 onChanged={() => {
                   refreshProjects()
                 }}
@@ -937,7 +963,7 @@ export default function App() {
             <NotebookView projects={projects} visible={view === 'notebook'} newNoteRequest={newNoteRequest} onOpenProject={openProject} onProjectNotesSaved={() => void refreshProjects()} />
           </div>
           <div className={view === 'knowledge' ? 'view-pane' : 'view-pane hidden'}>
-            <KnowledgeView visible={view === 'knowledge'} />
+            <KnowledgeView visible={view === 'knowledge'} onStartFromBriefing={(projectPath, file) => void startFromBriefing(projectPath, file)} />
           </div>
           <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
             <TasksView

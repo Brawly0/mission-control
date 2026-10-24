@@ -83,6 +83,12 @@
 - [x] Task due dates with reminders; New project (folder, CLAUDE.md, git); Quick chat in a throwaway folder
 - [x] Icon guessing goes by the README title, then the most-mentioned kind
 
+## ✅ v0.12: Session briefings
+- [x] Every compaction summary saved as docs/briefings/<date>-<chat>.md (automatic, free, any chat), with a notification
+- [x] "Summary instructions" for CLAUDE.md so summaries are written as a handoff
+- [x] New session from latest briefing; Knowledge → Session briefings (save older ones, start from any)
+- [x] Briefing button / Ctrl+Shift+B asks a running agent for a briefing before the limit
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

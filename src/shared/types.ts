@@ -332,6 +332,27 @@ export interface Task {
   remindedAt?: number
 }
 
+/** A compaction summary: what Claude Code wrote to carry on when a chat ran out of room. */
+export interface Briefing {
+  sessionId: string
+  /** When the chat was compacted (ms). */
+  at: number
+  /** "auto" (the chat hit its limit) or "manual" (/compact). */
+  trigger: string
+  /** Chat size before compacting, in tokens. */
+  preTokens: number
+  title: string
+  /** The project it belongs to (worktree chats and chats started from C:\ count as their project). */
+  projectPath: string
+  projectName: string
+  /** The summary as Claude wrote it. */
+  text: string
+  /** The chat's .jsonl file. */
+  transcript?: string
+  /** Where Mission Control saved it, if it did. */
+  savedPath?: string
+}
+
 /** A note of your own in the Notebook (project notes live in ProjectMeta.notes). */
 export interface Note {
   id: string
@@ -458,6 +479,8 @@ export interface AppSettings {
   uiZoom: number
   /** Your name for the Home greeting; empty = the first name of your Windows account. */
   userName: string
+  /** Save each compaction summary as a session briefing in the project's docs/briefings/. */
+  autoBriefings: boolean
 }
 
 /** How big a live chat's context is: every reply re-reads all of it. */
@@ -527,6 +550,14 @@ export interface MissionControlApi {
   claudeStatus(force?: boolean): Promise<ClaudeStatus>
   /** Your first name for the greeting ('' if unknown). */
   userName(): Promise<string>
+  listBriefings(): Promise<Briefing[]>
+  /** Saves a briefing as a file (for older ones); returns the path. */
+  saveBriefing(sessionId: string, at: number): Promise<string>
+  /** The newest briefing file for a project, or null. */
+  latestBriefing(projectPath: string): Promise<string | null>
+  hasSummaryInstructions(projectPath: string): Promise<boolean>
+  /** Adds "Summary instructions" to the project's CLAUDE.md so compaction writes a proper handoff. */
+  addSummaryInstructions(projectPath: string): Promise<void>
   /** Folder names of Desktop and Documents, for New project. */
   commonFolders(): Promise<{ desktop: string; documents: string; home: string }>
   removeProject(path: string): Promise<void>

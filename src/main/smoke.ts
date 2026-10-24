@@ -12,6 +12,8 @@ import { listProjects, listSessions, movedChatList, normalizePath, renameSession
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { agentEnv, killTerminal, killTerminalsIn } from './pty'
 import { contextUsage, launchArgs, startupReport } from './spend'
+import { latestBriefing, listBriefings } from './briefings'
+import { briefingFileName, briefingMarkdown } from '../shared/projectLook'
 import { claudeStatus, createProject, deleteNote, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { queryIndex } from './indexer'
 import { loadStore, updateStore } from './store'
@@ -406,6 +408,40 @@ async function hubTour(folder: string): Promise<void> {
   const status = await claudeStatus(true)
   log('hub: claude status', JSON.stringify({ installed: status.installed, version: status.version, loggedIn: status.loggedIn, plan: status.plan }))
   log('hub: greeting name', JSON.stringify(await userName()))
+}
+
+/**
+ * MC_SMOKE_BRIEF=<empty scratch folder>: session briefings. Lists the compaction summaries in your chats,
+ * writes the newest one as a briefing file into the scratch folder (never into your projects), checks
+ * "latest briefing" finds it, and screenshots Knowledge → Session briefings. Free.
+ */
+async function briefTour(win: BrowserWindow, outFile: string, folder: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+  const list = await listBriefings()
+  log(`brief: ${list.length} briefings found:`, list.slice(0, 8).map((b) => `"${b.title}" (${b.projectName}, ${b.trigger}, ${Math.round(b.preTokens / 1000)}K)`).join(', '))
+  const b = list[0]
+  if (!b) return
+  const dir = join(folder, 'docs', 'briefings')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, briefingFileName(b.at, b.title))
+  writeFileSync(file, briefingMarkdown(b), 'utf8')
+  const md = readFileSync(file, 'utf8')
+  log('brief: file starts with', JSON.stringify(md.split('\n').slice(0, 3).join(' | ').slice(0, 220)))
+  log('brief: wrapper lines removed', !md.includes('tools-used-before-summary') && !md.includes('Continue the conversation from where') ? 'ok' : 'FAILED')
+  log('brief: latest briefing found', (await latestBriefing(folder)) === file ? 'ok' : 'FAILED')
+  log('brief: auto-save starts from', new Date(loadStore().briefingsFrom).toLocaleString(), '| saved so far', Object.keys(loadStore().briefingsSaved).length)
+
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  await js(`window.__mcSmoke.setView('knowledge')`)
+  await sleep(800)
+  await js(`[...document.querySelectorAll('.kn-list .segmented button')].find(b => b.textContent.includes('Session briefings'))?.click()`)
+  await sleep(1500)
+  const shotFile = outFile.replace(/\.png$/, '-briefings.png')
+  writeFileSync(shotFile, (await win.webContents.capturePage()).toPNG())
+  log('screenshot:', shotFile)
 }
 
 /**
@@ -906,6 +942,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
+    if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)
     if (process.env.MC_SMOKE_HUB) {
       listDocsForSmoke = deps.listDocs
       await hubTour(process.env.MC_SMOKE_HUB)

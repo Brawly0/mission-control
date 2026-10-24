@@ -3,10 +3,13 @@ import { BookOpen, FileText, RefreshCw, Search } from 'lucide-react'
 import type { KnowledgeDoc, KnowledgeHit } from '@shared/types'
 import { formatBytes, timeAgo } from '../util'
 import DocViewer from './DocViewer'
-import { Avatar, EmptyState, IconButton } from './ui'
+import { Avatar, EmptyState, IconButton, Segmented } from './ui'
+import { BriefingDetail, BriefingList, useBriefings } from './BriefingsPane'
 
 /** Every CLAUDE.md, README and docs/ file across your projects, searchable, readable and editable in one place. */
-export default function KnowledgeView({ visible }: { visible: boolean }) {
+export default function KnowledgeView({ visible, onStartFromBriefing }: { visible: boolean; onStartFromBriefing: (projectPath: string, file: string) => void }) {
+  const [tab, setTab] = useState<'docs' | 'briefings'>('docs')
+  const briefings = useBriefings(visible && tab === 'briefings')
   const [docs, setDocs] = useState<KnowledgeDoc[] | null>(null)
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<KnowledgeHit[] | null>(null)
@@ -22,10 +25,10 @@ export default function KnowledgeView({ visible }: { visible: boolean }) {
 
   useEffect(() => {
     const q = query.trim()
-    if (!q) return setHits(null)
+    if (!q || tab !== 'docs') return setHits(null)
     const timer = setTimeout(() => window.mc.searchKnowledge(q).then(setHits).catch(() => setHits([])), 200)
     return () => clearTimeout(timer)
-  }, [query])
+  }, [query, tab])
 
   const byProject = useMemo(() => {
     const map = new Map<string, KnowledgeDoc[]>()
@@ -62,10 +65,21 @@ export default function KnowledgeView({ visible }: { visible: boolean }) {
           </h1>
           <IconButton icon={RefreshCw} label="Look for new docs" size={14} onClick={() => void load()} />
         </div>
+        <Segmented
+          value={tab}
+          options={[
+            { value: 'docs', label: 'Docs' },
+            { value: 'briefings', label: 'Session briefings' }
+          ]}
+          onChange={setTab}
+        />
         <div className="toolbar-search">
           <Search size={14} />
-          <input placeholder="Search all docs" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setQuery('')} />
+          <input placeholder={tab === 'docs' ? 'Search all docs' : 'Search briefings'} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setQuery('')} />
         </div>
+        {tab === 'briefings' ? (
+          <BriefingList state={briefings} query={query} />
+        ) : (
         <div className="kn-scroll scroll">
           {docs === null && <div className="muted pad">Looking through your projects…</div>}
           {hits ? (
@@ -94,8 +108,13 @@ export default function KnowledgeView({ visible }: { visible: boolean }) {
             ))
           )}
         </div>
+        )}
       </aside>
       <section className="kn-view">
+        {tab === 'briefings' ? (
+          <BriefingDetail state={briefings} onStartFromBriefing={onStartFromBriefing} />
+        ) : (
+        <>
         {current ? (
           <DocViewer key={current.path} doc={current} subtitle={current.projectName} />
         ) : (
@@ -104,6 +123,8 @@ export default function KnowledgeView({ visible }: { visible: boolean }) {
               Add a CLAUDE.md or README.md to a project and it shows here.
             </EmptyState>
           )
+        )}
+        </>
         )}
       </section>
     </div>

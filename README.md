@@ -2,6 +2,13 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.12)
+
+- **Automatic session briefings**: when a chat runs out of room (or you `/compact`), Claude Code writes a summary so it can carry on. Mission Control saves that summary as a Markdown file in the project's `docs/briefings/` folder and notifies you. This works for every chat, including ones started outside Mission Control, and costs nothing extra. Chats without a real project folder save to Mission Control's own folder. It's on by default; turn it off in Settings → General.
+- **Better briefings**: Overview → Automation → **Add to CLAUDE.md** adds a short "Summary instructions" section, so Claude writes those summaries as a proper handoff: state, decisions, next steps, gotchas.
+- **Start from a briefing**: **New session → from latest briefing** (`Ctrl+Alt+B`) starts Claude by reading the newest briefing and saying where things stand. **Knowledge → Session briefings** lists every briefing in your chats, including older ones you can save with one click.
+- **Briefing before the limit**: the **Briefing** button on an agent (`Ctrl+Shift+B`) asks Claude to write one now, to `docs/briefings/`.
+
 ## Features (v0.11)
 
 - **New look**:

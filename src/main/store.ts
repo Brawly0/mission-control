@@ -37,6 +37,10 @@ export interface StoreData {
   costAlerted: { day: string; ids: string[] }
   /** Your own notes (Notebook). */
   notes: Note[]
+  /** Compactions from this time on are saved as briefings automatically (set the first time the app runs it). */
+  briefingsFrom: number
+  /** Saved briefing files by "sessionId:time". */
+  briefingsSaved: Record<string, string>
 }
 
 const defaults: StoreData = {
@@ -52,6 +56,8 @@ const defaults: StoreData = {
   chatProjects: {},
   costAlerted: { day: '', ids: [] },
   notes: [],
+  briefingsFrom: 0,
+  briefingsSaved: {},
   settings: {
     defaultTaskBudgetUsd: 0,
     defaultTaskModel: '',
@@ -61,6 +67,7 @@ const defaults: StoreData = {
     theme: 'dark',
     uiZoom: 1,
     userName: '',
+    autoBriefings: true,
     hotkey: 'Ctrl+Alt+M',
     closeToTray: true,
     queueEnabled: false,

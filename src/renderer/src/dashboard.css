@@ -1152,3 +1152,53 @@ input[type='time'] {
 :root[data-theme='light'] input[type='time'] {
   color-scheme: light;
 }
+
+/* ---------- session briefings ---------- */
+.kn-list .segmented {
+  align-self: flex-start;
+}
+.briefing-saved {
+  margin-left: auto;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.briefing-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.briefing-actions > .muted {
+  flex: 1;
+  min-width: 0;
+}
+.kn-view > .doc-view {
+  flex: 1;
+  min-height: 0;
+}
+.briefing-text {
+  flex: 1;
+  padding: 18px 24px;
+}
+.agent-brief {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font: 600 11px var(--font);
+  cursor: pointer;
+}
+.agent-brief:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.agent-brief:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

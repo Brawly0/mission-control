@@ -16,7 +16,7 @@ import { titleFromPrompt, windowsPath } from '../shared/projectLook'
 import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
 
 const { dbPath, projectsDir } = workerData as { dbPath: string; projectsDir: string }
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 const MAX_BODY = 20_000
 
 function openDb(): DatabaseSync {
@@ -31,7 +31,7 @@ function openDb(): DatabaseSync {
   d.exec('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
   const version = (d.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value?: string } | undefined)?.value
   if (Number(version) !== SCHEMA_VERSION) {
-    d.exec('DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS msgs; DROP TABLE IF EXISTS fts; DROP TABLE IF EXISTS folders;')
+    d.exec('DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS msgs; DROP TABLE IF EXISTS fts; DROP TABLE IF EXISTS folders; DROP TABLE IF EXISTS briefings;')
   }
   d.exec(`
     CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, session_id TEXT, size INTEGER, mtime REAL, offset INTEGER);
@@ -43,6 +43,8 @@ function openDb(): DatabaseSync {
       input INTEGER, output INTEGER, cw5 INTEGER, cw1h INTEGER, cread INTEGER, cost REAL,
       PRIMARY KEY(session_id, msg_id));
     CREATE INDEX IF NOT EXISTS msgs_ts ON msgs(ts);
+    CREATE TABLE IF NOT EXISTS briefings(
+      session_id TEXT, ts INTEGER, trigger TEXT, pre_tokens INTEGER, text TEXT, PRIMARY KEY(session_id, ts));
     CREATE TABLE IF NOT EXISTS folders(
       session_id TEXT, folder_lc TEXT, folder TEXT, hits INTEGER, PRIMARY KEY(session_id, folder_lc));
     CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
@@ -71,6 +73,8 @@ function statements(d: DatabaseSync) {
     dropMsgs: d.prepare('DELETE FROM msgs WHERE session_id = ?'),
     dropFiles: d.prepare('DELETE FROM files WHERE session_id = ?'),
     dropFolders: d.prepare('DELETE FROM folders WHERE session_id = ?'),
+    dropBriefings: d.prepare('DELETE FROM briefings WHERE session_id = ?'),
+    addBriefing: d.prepare('INSERT OR REPLACE INTO briefings(session_id, ts, trigger, pre_tokens, text) VALUES (?, ?, ?, ?, ?)'),
     addFolder: d.prepare(
       `INSERT INTO folders(session_id, folder_lc, folder, hits) VALUES (?, ?, ?, ?)
        ON CONFLICT(session_id, folder_lc) DO UPDATE SET hits = hits + excluded.hits`
@@ -188,6 +192,7 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
       q.dropMsgs.run(sessionId)
       q.dropFiles.run(sessionId)
       q.dropFolders.run(sessionId)
+      q.dropBriefings.run(sessionId)
     }
   }
 
@@ -216,6 +221,8 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
     else folders.set(key, { folder: p, hits: 1 })
   }
 
+  let boundary: { trigger?: string; preTokens?: number } | null = null
+
   db.exec('BEGIN')
   try {
     const newOffset = readLines(file, offset, (line) => {
@@ -229,6 +236,13 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
       if (main) {
         if (!row.project_path && typeof e.cwd === 'string') row.project_path = e.cwd
         if (!e.isSidechain) hit(e.cwd, false)
+        // When a chat runs out of room, Claude Code writes a summary to carry on with: a session briefing.
+        if (e.type === 'system' && e.subtype === 'compact_boundary') boundary = e.compactMetadata ?? {}
+        if (e.type === 'user' && e.isCompactSummary) {
+          const text = messageText(e)
+          if (text) q.addBriefing.run(sessionId, ts || st.mtimeMs, String(boundary?.trigger ?? ''), Number(boundary?.preTokens ?? 0), text)
+          boundary = null
+        }
         if (e.type === 'assistant' && Array.isArray(e.message?.content)) {
           for (const b of e.message.content) {
             if (b?.type !== 'tool_use' || !b.input) continue
@@ -508,6 +522,28 @@ function chatsOverCost(since: number, usd: number): { sessionId: string; title: 
   ).map((r) => ({ sessionId: r.session_id, title: r.title, projectPath: r.project_path, cost: r.cost }))
 }
 
+/** Compaction summaries (session briefings), newest first, with their chat's title and folder. */
+function briefings(since = 0, limit = 200): unknown[] {
+  return (
+    db
+      .prepare(
+        `SELECT b.session_id, b.ts, b.trigger, b.pre_tokens, b.text, s.title, s.project_key, s.project_path
+         FROM briefings b LEFT JOIN sessions s ON s.session_id = b.session_id
+         WHERE b.ts >= ? ORDER BY b.ts DESC LIMIT ?`
+      )
+      .all(since, limit) as any[]
+  ).map((r) => ({
+    sessionId: r.session_id,
+    at: r.ts,
+    trigger: r.trigger,
+    preTokens: r.pre_tokens,
+    text: r.text,
+    title: r.title ?? '',
+    projectKey: r.project_key ?? '',
+    projectPath: r.project_path ?? ''
+  }))
+}
+
 /** Usage totals per chat since a time, for moving a chat's usage to the project it's shown under. */
 function sessionTotals(since: number, sessionIds: string[]): unknown[] {
   if (!sessionIds.length) return []
@@ -550,6 +586,7 @@ const handlers: Record<string, (...args: any[]) => unknown> = {
   sessionUsage,
   sessionFolders,
   sessionTotals,
+  briefings,
   firstReplies,
   chatsOverCost,
   status: () => status

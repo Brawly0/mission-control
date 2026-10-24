@@ -214,3 +214,67 @@ export function pickProject(folders: { folder: string; hits: number }[], cwd: st
   const best = [...byRoot.values()].sort((a, b) => b.hits - a.hits)[0]
   return best && best.hits >= 5 && best.hits >= total * 0.6 ? best.root : null
 }
+
+// ---------------------------------------------------------------- session briefings
+
+/** The compaction summary without Claude Code's wrapper lines (the intro, tool list and "continue" instructions). */
+export function cleanBriefing(text: string): string {
+  return text
+    .replace(/<[a-z-]+-authored-by-others\s*\/>\s*/g, '')
+    .replace(/\s*This session is being continued from a previous conversation that ran out of context\.( The summary below covers the earlier portion of the conversation\.)?\s*/, '\n\n')
+    .replace(/<tools-used-before-summary>[\s\S]*?<\/tools-used-before-summary>\s*/g, '')
+    .replace(/\n*Continue the conversation from where it left off[\s\S]*$/, '')
+    .replace(/\n*If you need specific details from before compaction[^\n]*\n?/, '\n')
+    .trim()
+}
+
+/** "2026-10-24-1405-project-organization-tool.md" */
+export function briefingFileName(at: number, title: string): string {
+  const d = new Date(at)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const slug =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48)
+      .replace(/-+$/, '') || 'session'
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}-${slug}.md`
+}
+
+/** The briefing file: a header the next session can act on, then the summary. */
+export function briefingMarkdown(b: { title: string; at: number; trigger: string; preTokens: number; sessionId: string; projectName: string; transcript?: string; text: string }): string {
+  const when = new Date(b.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+  const how = b.trigger === 'manual' ? 'compacted with /compact' : b.trigger === 'auto' ? 'the chat reached its limit' : 'compacted'
+  const size = b.preTokens ? ` at about ${Math.round(b.preTokens / 1000)}K tokens` : ''
+  return [
+    `# Session briefing: ${b.title || 'Untitled chat'}`,
+    '',
+    `${when} · ${b.projectName} · ${how}${size}. Saved by Mission Control.`,
+    '',
+    `To pick up where it left off, start a new chat and ask Claude to read this file. To reopen the original chat instead: \`claude --resume ${b.sessionId}\`${b.transcript ? ` (full transcript: \`${b.transcript}\`)` : ''}.`,
+    '',
+    '---',
+    '',
+    cleanBriefing(b.text),
+    ''
+  ].join('\n')
+}
+
+/** What a new session is told when it starts from a briefing. */
+export function briefingPrompt(path: string): string {
+  return `Read the session briefing at "${path}". It's the handoff from the previous session on this project. Then tell me in a few lines where things stand and what you'd do next, and wait for my go-ahead.`
+}
+
+/** What "Write briefing" types into a running agent, for a handoff before the chat runs out of room. */
+export function writeBriefingPrompt(file: string): string {
+  return `Write a session briefing for the next session to ${file}: the goal, what's done and verified, decisions and why, open problems, the exact next steps, gotchas, and the files that matter. Keep it skimmable. Then tell me the path.`
+}
+
+/** Added to a project's CLAUDE.md so the summary Claude writes when a chat runs out of room is a proper handoff. */
+export const COMPACT_INSTRUCTIONS = `## Summary instructions
+
+When you compact this conversation, write the summary as a session briefing for whoever picks this up next:
+the goal; what's done and verified (and what isn't); decisions made and why; open problems; the exact next
+steps; gotchas; and the files that matter.
+`

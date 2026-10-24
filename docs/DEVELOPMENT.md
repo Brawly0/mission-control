@@ -195,3 +195,5 @@ Settings are restored afterwards.
 - Claude Code status and the greeting name.
 
 It removes what it created.
+
+`MC_SMOKE_BRIEF=<empty scratch folder>` lists the session briefings (compaction summaries) in your chats. It writes the newest one as a file into the scratch folder (never into your projects), checks the wrapper lines are gone and that "latest briefing" finds it, and screenshots Knowledge → Session briefings. Free.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
-import { Check, Circle, Coins, Eye, GitBranch, Pause, Pencil, Plus, Workflow, X } from 'lucide-react'
+import { Check, Circle, Coins, Eye, FileText, GitBranch, Pause, Pencil, Plus, Workflow, X } from 'lucide-react'
 import type { BudgetState, Project, ProjectMeta, ProjectStatus, UsageTotals } from '@shared/types'
 import { formatCost, formatTokens } from '../util'
 import { Button, Segmented } from './ui'
@@ -16,6 +16,39 @@ interface Props {
   isRepo: boolean
   onTurnOnGit: () => void
   onChanged: () => void
+}
+
+/** Whether compaction writes a proper handoff here, and a button to make it so. */
+function BriefingField({ project }: { project: Project }) {
+  const [has, setHas] = useState<boolean | null>(null)
+  useEffect(() => {
+    window.mc.hasSummaryInstructions(project.path).then(setHas).catch(() => setHas(null))
+  }, [project.path])
+  return (
+    <div className="field">
+      <span className="field-label">Session briefings</span>
+      {has ? (
+        <span className="small">
+          <FileText size={12} /> CLAUDE.md asks for briefing-style summaries. Each one is saved to docs/briefings/ when a chat runs out of room.
+        </span>
+      ) : (
+        <div className="inline-field">
+          <span className="small muted">Briefings are saved to docs/briefings/. Add a few lines to CLAUDE.md so Claude writes them as a proper handoff (state, decisions, next steps, gotchas).</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={FileText}
+            onClick={async () => {
+              await window.mc.addSummaryInstructions(project.path)
+              setHas(true)
+            }}
+          >
+            Add to CLAUDE.md
+          </Button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Check command, monthly budget and git status: the settings automation relies on. */
@@ -53,6 +86,7 @@ function AutomationCard({ project, budget, isRepo, onTurnOnGit, onChanged }: Pic
           </div>
         )}
       </div>
+      <BriefingField project={project} />
       <label className="field">
         <span className="field-label">Check command</span>
         <input

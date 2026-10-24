@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, GitBranch, GitCompareArrows, LayoutGrid, Minimize2, Plus, Rows2, Terminal, X } from 'lucide-react'
+import { Bot, FileText, GitBranch, GitCompareArrows, LayoutGrid, Minimize2, Plus, Rows2, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
@@ -206,6 +206,20 @@ export default function AgentsView(props: Props) {
                       canCompact={!a.exited && st.cls !== 'working'}
                       onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
                     />
+                  )}
+                  {a.kind === 'claude' && !a.exited && (
+                    <button
+                      className="agent-brief"
+                      disabled={st.cls === 'working'}
+                      title={st.cls === 'working' ? 'Wait until Claude finishes' : withKey('Ask Claude to write a session briefing for the next session', keyFor('writeBriefing'))}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelect(a.id)
+                        window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
+                      }}
+                    >
+                      <FileText size={11} /> Briefing
+                    </button>
                   )}
                   <span className="muted small agent-elapsed">{elapsed(a.startedAt)}</span>
                 </div>

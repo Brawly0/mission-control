@@ -197,6 +197,13 @@ export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: 
               />
               <span className="field-hint">Leave empty to use the first name of your Windows account.</span>
             </label>
+            <label className="check-row">
+              <input type="checkbox" checked={settings.autoBriefings} onChange={(e) => apply({ autoBriefings: e.target.checked })} />
+              <span>
+                Save a session briefing whenever a chat runs out of room
+                <span className="field-hint block">Claude Code writes a summary when it compacts a chat. Mission Control saves it to the project’s docs/briefings/ folder, so a new session can start from it (New session → from latest briefing).</span>
+              </span>
+            </label>
             <div className="field">
               <span className="field-label">Global shortcut to show or hide Mission Control</span>
               <div className="hotkey-row">

@@ -53,6 +53,7 @@ import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTermin
 import { loadStore, updateStore, type WindowBounds } from './store'
 import { worktreeParent } from '../shared/projectLook'
 import { contextUsage, launchArgs, startupReport } from './spend'
+import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing, saveNewBriefings } from './briefings'
 import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { runSmoke } from './smoke'
 
@@ -161,7 +162,8 @@ export async function listDocs(projectPath: string): Promise<DocFile[]> {
       /* not present */
     }
   }
-  for (const dir of ['docs', '.claude']) {
+  // docs/briefings/ holds session briefings (saved automatically when a chat runs out of room).
+  for (const dir of ['docs', 'docs/briefings', '.claude']) {
     try {
       const entries = await fs.readdir(join(projectPath, dir), { withFileTypes: true })
       for (const e of entries) {
@@ -271,6 +273,11 @@ function registerIpc(): void {
   ipcMain.handle('knowledge:search', (_e, q: string) => searchKnowledge(q, listDocs))
   ipcMain.handle('claude:status', (_e, force?: boolean) => claudeStatus(!!force))
   ipcMain.handle('user:name', () => userName())
+  ipcMain.handle('briefings:list', () => listBriefings())
+  ipcMain.handle('briefings:save', (_e, id: string, at: number) => saveBriefing(id, at))
+  ipcMain.handle('briefings:latest', (_e, path: string) => latestBriefing(path))
+  ipcMain.handle('briefings:hasInstructions', (_e, path: string) => hasSummaryInstructions(path))
+  ipcMain.handle('briefings:addInstructions', (_e, path: string) => addSummaryInstructions(path))
   ipcMain.handle('folders:common', () => ({ desktop: app.getPath('desktop'), documents: app.getPath('documents'), home: app.getPath('home') }))
 
   ipcMain.handle('open:explorer', (_e, path: string) => shell.openPath(path))
@@ -570,6 +577,12 @@ app.whenReady().then(async () => {
     if (status.lastRun && status.lastRun !== lastIndexRun) {
       lastIndexRun = status.lastRun
       void checkChatCosts()
+      void saveNewBriefings((b, file) => {
+        if (process.env.MC_SMOKE) return
+        const n = new Notification({ title: 'Session briefing saved', body: `${b.title || 'A chat'} (${b.projectName}) · ${file.split(/[\\/]/).slice(-3).join('/')}`, icon: join(__dirname, '../../build/icon.png') })
+        n.on('click', () => shell.openPath(file))
+        n.show()
+      })
     }
   })
   if (!process.env.MC_SMOKE) {

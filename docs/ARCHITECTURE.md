@@ -18,6 +18,7 @@ src/
     tray.ts        tray icon, tray menu, global show/hide hotkey
     templates.ts   task templates, {{variables}}, scheduler for recurring templates
     updater.ts     auto-update via electron-updater (public releases repo)
+    briefings.ts   session briefings: saves compaction summaries to docs/briefings/ (ADR 0012)
     hub.ts         notes, Knowledge (docs across projects), Claude Code status, greeting name, quick chats, new projects
     spend.ts       live chat size, startup report, MCP servers per project, extra launch args (model, --strict-mcp-config)
     smoke.ts       self-test run with MC_SMOKE=<png path>

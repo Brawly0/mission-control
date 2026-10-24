@@ -44,13 +44,14 @@ interface Props {
   focus?: { sessionId: string; nonce: number }
   onLaunch: (opts: LaunchOptions) => void
   onLaunchWorktree: (project: Project) => void
+  onStartFromBriefing: () => void
   budget?: BudgetState
   onChanged: () => void
 }
 
 type Tab = 'overview' | 'chats' | 'changes' | 'docs'
 
-export default function ProjectView({ project, projects, git, visible, groups, focus, budget, onLaunch, onLaunchWorktree, onChanged }: Props) {
+export default function ProjectView({ project, projects, git, visible, groups, focus, budget, onLaunch, onLaunchWorktree, onStartFromBriefing, onChanged }: Props) {
   const [gitInitOpen, setGitInitOpen] = useState(false)
   const [identityOpen, setIdentityOpen] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null)
@@ -249,6 +250,12 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                   icon: GitFork,
                   disabled: !git?.isRepo || git.isWorktree,
                   onSelect: () => onLaunchWorktree(project)
+                },
+                {
+                  label: 'New session from latest briefing',
+                  hint: 'Starts by reading the last session’s handoff',
+                  icon: FileText,
+                  onSelect: onStartFromBriefing
                 },
                 {
                   label: 'Continue last chat',

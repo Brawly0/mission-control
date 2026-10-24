@@ -38,6 +38,7 @@ export const SHORTCUTS: ShortcutDef[] = [
 
   { id: 'newSession', label: 'New Claude session', group: 'Project', keys: ['Ctrl+N'] },
   { id: 'quickChat', label: 'Quick chat (temporary folder)', group: 'Project', keys: ['Ctrl+Alt+N'] },
+  { id: 'briefingSession', label: 'New session from latest briefing', group: 'Project', keys: ['Ctrl+Alt+B'] },
   { id: 'newProject', label: 'New project', group: 'Project', keys: ['Ctrl+Shift+O'] },
   { id: 'newWorktreeSession', label: 'New session in a worktree', group: 'Project', keys: ['Ctrl+Shift+N'] },
   { id: 'continueLast', label: 'Continue last chat', group: 'Project', keys: ['Ctrl+Shift+R'] },
@@ -65,6 +66,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'toggleGrid', label: 'Tabs or grid', group: 'Agents', keys: ['Ctrl+Shift+G'] },
   { id: 'toggleReview', label: 'Review panel (diff)', group: 'Agents', keys: ['Ctrl+Shift+D'] },
   { id: 'compactAgent', label: 'Compact agent’s chat', group: 'Agents', keys: ['Ctrl+Shift+K'] },
+  { id: 'writeBriefing', label: 'Ask the agent to write a session briefing', group: 'Agents', keys: ['Ctrl+Shift+B'] },
   { id: 'renameAgent', label: 'Rename agent', group: 'Agents', keys: ['Ctrl+Shift+E'] },
 
   { id: 'newTask', label: 'New task', group: 'Tasks', keys: ['Ctrl+T'] },
