@@ -20,8 +20,7 @@ import {
   Wrench,
   X,
   XCircle,
-  Info
-} from 'lucide-react'
+  Info, CalendarClock } from 'lucide-react'
 import type { Task, TaskEvent } from '@shared/types'
 import { dependencyState, dependentsOf, taskFailed, taskSucceeded } from '@shared/deps'
 import type { Agent } from '../types'
@@ -30,6 +29,7 @@ import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, IconButton } from './ui'
 import { useLook } from '../projectLook'
+import { dueFrom, dueInputs, dueLabel } from '../due'
 
 interface Props {
   task: Task
@@ -135,6 +135,20 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         <span className="chip">{task.permission === 'bypassPermissions' ? 'Bypass checks' : task.permission}</span>
         {task.model && <span className="chip">{task.model}</span>}
         {task.budgetUsd && <span className="chip">Budget {formatCost(task.budgetUsd)}</span>}
+        <label className={`chip due-edit ${dueLabel(task).tone}`} title="Due date (you get a reminder)">
+          <CalendarClock size={11} />
+          <input
+            type="date"
+            value={dueInputs(task).date}
+            onChange={(e) => void window.mc.updateTask(task.id, dueFrom(e.target.value, dueInputs(task).time))}
+            aria-label="Due date"
+          />
+          {task.dueAt && (
+            <button className="due-clear" title="Remove due date" onClick={() => void window.mc.updateTask(task.id, { dueAt: undefined, dueHasTime: undefined })}>
+              ×
+            </button>
+          )}
+        </label>
         {task.worktree && (
           <span className="chip chip-accent">
             <GitBranch size={11} /> {task.worktree.branch}

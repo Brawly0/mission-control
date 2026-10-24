@@ -2,6 +2,23 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.11)
+
+- **New look**:
+  - **Top bar:** search everything (`Ctrl+K`), a **+ New** menu (session, task, project, quick chat, note), theme, settings and your initials.
+  - **Sidebar:** grouped pages, compact project rows and a live **Claude Code · Connected** card. It shows whether Claude Code is installed and logged in, and your plan.
+- **Home dashboard**:
+  - The greeting with your name (Settings → General) and a clock.
+  - Stats for projects, chats, open tasks and agents.
+  - Action cards for New session, New task, New project and Quick chat.
+  - Recent activity, your projects as cards (with quick filters: Active, Favorites, Recent, Archived), Running now, and Upcoming tasks.
+  - This week's usage, and your plan limits.
+- **Projects page** (`Ctrl+7`): every project as cards or a list, with search and filters.
+- **Notebook** (`Ctrl+8`): your own notes plus every project's notes in one place, in Markdown, saved as you type (`Ctrl+Shift+J` for a new note).
+- **Knowledge** (`Ctrl+9`): every CLAUDE.md, README and `docs/` file across your projects, searchable, readable and editable in one view.
+- **Due dates and reminders**: give a task a due date (and time), see it on the card and under Upcoming on Home, and get a Windows reminder when it's due.
+- **New project** (`Ctrl+Shift+O`): creates a folder with a starter CLAUDE.md and git, or adds an existing folder. **Quick chat** (`Ctrl+Alt+N`) starts Claude in a throwaway folder that doesn't clutter your projects.
+
 ## Features (v0.10)
 
 - **Shortcuts for everything**: 57 keyboard shortcuts for going places (`Ctrl+1`–`6`), starting sessions and tasks (`Ctrl+N`, `Ctrl+T`), switching agents (`Ctrl+Tab`, `Alt+1`–`9`), project tabs (`Alt+O/C/G/D`), the chat list (`Ctrl+F`, `Alt+J/K`, `Ctrl+Enter`), compacting a chat (`Ctrl+Shift+K`) and the view. Press `Ctrl+/` (or `F1`) for the full list. Click any shortcut there to change it, and conflicts are handled. Inside a terminal, plain `Ctrl+letter` keys stay with Claude and the shell. Tooltips and the command palette show each action's keys.

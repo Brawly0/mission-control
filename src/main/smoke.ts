@@ -2,16 +2,17 @@ import { app, type BrowserWindow } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
-import { automationHold, claudeCommand, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
+import { automationHold, claudeCommand, takeDueReminders, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
 import { invalidateBudgets, projectBudget } from './budget'
 import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
 import { checkForUpdates, initUpdater, updateStatus } from './updater'
-import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
+import type { DocFile, HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions, movedChatList, normalizePath, renameSession, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { agentEnv, killTerminal, killTerminalsIn } from './pty'
 import { contextUsage, launchArgs, startupReport } from './spend'
+import { claudeStatus, createProject, deleteNote, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { queryIndex } from './indexer'
 import { loadStore, updateStore } from './store'
 
@@ -19,6 +20,7 @@ interface SmokeDeps {
   launchTerminal: (spec: TerminalSpec) => TerminalInfo
   ptyTaps: Set<{ data?: (id: string, d: string) => void; exit?: (id: string, code: number) => void }>
   hookTaps: Set<(e: HookEvent) => void>
+  listDocs: (projectPath: string) => Promise<DocFile[]>
 }
 
 /** Logs to stdout, and to MC_SMOKE_LOG if set (a packaged Windows app has no console). */
@@ -364,6 +366,49 @@ async function automationTour(win: BrowserWindow, outFile: string, repo: string)
 }
 
 /**
+ * MC_SMOKE_HUB=<empty scratch folder>: v0.11. Notes round trip, Knowledge list and search, a new project
+ * with CLAUDE.md and git, a quick-chat folder (must be hidden as scratch), a due-date reminder that
+ * fires once, Claude Code status and the greeting name. Cleans up after itself. Free.
+ */
+let listDocsForSmoke: (p: string) => Promise<DocFile[]> = async () => []
+async function hubTour(folder: string): Promise<void> {
+  const note = saveNote({ title: 'Smoke note', body: '# hello\nfrom the smoke test' })
+  log('hub: note saved', listNotes().some((n) => n.id === note.id) ? 'ok' : 'FAILED')
+  saveNote({ id: note.id, pinned: true })
+  log('hub: note pinned first', listNotes()[0]?.id === note.id ? 'ok' : 'FAILED')
+  deleteNote(note.id)
+  log('hub: note deleted', listNotes().some((n) => n.id === note.id) ? 'FAILED' : 'ok')
+
+  const docs = await knowledgeDocs(listDocsForSmoke)
+  log(`hub: knowledge has ${docs.length} docs in ${new Set(docs.map((d) => d.projectPath)).size} projects`)
+  const hits = await searchKnowledge('roadmap', listDocsForSmoke)
+  log('hub: search "roadmap":', hits.slice(0, 3).map((h) => `${h.doc.projectName}/${h.doc.name} (${h.snippets.length} lines)`).join(', ') || 'none')
+
+  mkdirSync(folder, { recursive: true })
+  const dir = await createProject({ parent: folder, name: 'smoke-project', claudeMd: true, git: true })
+  log('hub: project created', existsSync(join(dir, 'CLAUDE.md')) && existsSync(join(dir, '.git')) ? 'ok (CLAUDE.md + git)' : 'FAILED')
+  const listed = (await listProjects()).find((p) => normalizePath(p.path) === normalizePath(dir))
+  log('hub: new project listed as', listed ? `"${listed.name}" [${listed.icon}]` : 'MISSING')
+  updateStore((s) => {
+    s.manualProjects = s.manualProjects.filter((p) => normalizePath(p) !== normalizePath(dir))
+  })
+
+  const quick = quickChatFolder()
+  log('hub: quick chat folder', existsSync(quick) && /[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(quick) ? 'ok (hidden as scratch)' : `FAILED ${quick}`)
+
+  const t = createTask({ title: 'Smoke due task', prompt: 'x', projectPath: folder, projectName: 'smoke', mode: 'headless', permission: 'plan', useWorktree: false, dueAt: Date.now() - 1000 })
+  const first = takeDueReminders().filter((x) => x.id === t.id).length
+  const second = takeDueReminders().filter((x) => x.id === t.id).length
+  log('hub: due reminder fires once', first === 1 && second === 0 ? 'ok' : `FAILED (${first}, ${second})`)
+  deleteTask(t.id)
+  flushTasks()
+
+  const status = await claudeStatus(true)
+  log('hub: claude status', JSON.stringify({ installed: status.installed, version: status.version, loggedIn: status.loggedIn, plan: status.plan }))
+  log('hub: greeting name', JSON.stringify(await userName()))
+}
+
+/**
  * MC_SMOKE_SHOTS=<project folder name, e.g. bot>: screenshots every screen (Home, that project's tabs,
  * Tasks, Agents, Search, Usage, Settings, palette, shortcuts) as <MC_SMOKE>-shot-<name>.png. Free.
  */
@@ -389,6 +434,9 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
   const project = (await listProjects()).find((p) => p.folderName.toLowerCase() === folder.toLowerCase())
   await js(`window.__mcSmoke.setView('home')`)
   await shot('home')
+  await js(`document.querySelector('.home')?.scrollTo(0, 99999)`)
+  await shot('home-bottom')
+  await js(`document.querySelector('.home')?.scrollTo(0, 0)`)
   if (project) {
     await js(`window.__mcSmoke.selectProject(${JSON.stringify(project.path)}); window.__mcSmoke.setView('project')`)
     for (const tab of ['Chats', 'Overview', 'Docs']) {
@@ -396,7 +444,7 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
       await shot(`project-${tab.toLowerCase()}`, 1200)
     }
   }
-  for (const view of ['tasks', 'agents', 'usage']) {
+  for (const view of ['projects', 'notebook', 'knowledge', 'tasks', 'agents', 'usage']) {
     await js(`window.__mcSmoke.setView('${view}')`)
     await shot(view, 1200)
   }
@@ -412,6 +460,9 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
   await js(`window.__mcSmoke.openPalette()`)
   await shot('palette')
   await closeDialogs()
+  await js(`window.__mcSmoke.runShortcut?.('newProject')`)
+  await shot('new-project')
+  await closeDialogs()
   await js(`window.__mcSmoke.openSettings?.()`)
   await shot('settings')
   await closeDialogs()
@@ -426,8 +477,8 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
   for (const [k, mods, expect] of [
     ['2', ['control'], 'Agents'],
     ['3', ['control'], 'Tasks'],
-    ['5', ['control'], 'Usage'],
-    ['F', ['control', 'shift'], 'Search chats'],
+    ['5', ['control'], 'Usage & Insights'],
+    ['F', ['control', 'shift'], 'Chats'],
     ['1', ['control'], 'Home']
   ] as const) {
     key(k, [...mods])
@@ -450,7 +501,10 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
   key('L', ['control', 'shift'])
   await sleep(600)
   log('shortcut Ctrl+Shift+L switches theme:', await js(`document.documentElement.dataset.theme`))
-  await shot('light-home')
+  await js(`window.__mcSmoke.setView('home')`)
+  await shot('light-home', 1200)
+  await js(`window.__mcSmoke.setView('knowledge')`)
+  await shot('light-knowledge', 1200)
   if (project) {
     await js(`window.__mcSmoke.selectProject(${JSON.stringify(project.path)}); window.__mcSmoke.setView('project')`)
     key('C', ['alt'])
@@ -852,6 +906,10 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
+    if (process.env.MC_SMOKE_HUB) {
+      listDocsForSmoke = deps.listDocs
+      await hubTour(process.env.MC_SMOKE_HUB)
+    }
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

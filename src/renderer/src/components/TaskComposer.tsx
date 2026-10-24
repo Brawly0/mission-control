@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap } from 'lucide-react'
+import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap, CalendarClock } from 'lucide-react'
 import type { GitInfo, NewTask, Project, Task, TaskMode, TaskPermission } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
+import { dueFrom, dueInputs } from '../due'
 
 interface Props {
   projects: Project[]
@@ -37,6 +38,8 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
   const [useWorktree, setUseWorktree] = useState(initial?.useWorktree ?? isRepo)
   const [budget, setBudget] = useState(initial?.budgetUsd ? String(initial.budgetUsd) : '')
   const [model, setModel] = useState(initial?.model ?? '')
+  const [dueDate, setDueDate] = useState(() => dueInputs(initial as Task | undefined).date)
+  const [dueTime, setDueTime] = useState(() => dueInputs(initial as Task | undefined).time)
   const promptRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => promptRef.current?.focus(), [])
@@ -68,7 +71,8 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
       model: model || undefined,
       templateId: initial?.templateId,
       dependsOn: dependsOn.length ? dependsOn : undefined,
-      whenReady: dependsOn.length ? whenReady : undefined
+      whenReady: dependsOn.length ? whenReady : undefined,
+      ...dueFrom(dueDate, dueTime)
     }
   }
   // Tasks worth waiting on: not finished yet, or finished and waiting for review. Same project first.
@@ -168,6 +172,16 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
                 <option value="haiku">Haiku</option>
               </select>
             </label>
+            <div className="field due-field">
+              <span className="field-label">
+                <CalendarClock size={12} /> Due (optional)
+              </span>
+              <div className="inline-field">
+                <input className="text-input" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Due date" />
+                <input className="text-input" type="time" value={dueTime} disabled={!dueDate} onChange={(e) => setDueTime(e.target.value)} aria-label="Due time" />
+              </div>
+              <span className="field-hint">{dueDate ? `You get a reminder ${dueTime ? 'then' : 'at 9:00 that day'}.` : 'Shows on Home under Upcoming tasks.'}</span>
+            </div>
             {mode === 'headless' && (
               <label className="field budget-field">
                 <span className="field-label">Budget (USD)</span>

@@ -235,7 +235,7 @@ export interface GitChanges {
 /** UI state remembered between runs. */
 export interface UiState {
   selectedPath?: string
-  view?: 'home' | 'project' | 'agents' | 'search' | 'usage' | 'tasks'
+  view?: 'home' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
   /** Sidebar shrunk to an icon rail. */
@@ -324,6 +324,49 @@ export interface Task {
   whenReady?: 'start' | 'queue' | 'none'
   /** The template this task was made from, if any. */
   templateId?: string
+  /** When it's due (local time, ms). Without a time of day it's set to 9:00. */
+  dueAt?: number
+  /** Whether the user picked a time of day, or only a date. */
+  dueHasTime?: boolean
+  /** When the due reminder was shown, so it shows once. */
+  remindedAt?: number
+}
+
+/** A note of your own in the Notebook (project notes live in ProjectMeta.notes). */
+export interface Note {
+  id: string
+  title: string
+  /** Markdown. */
+  body: string
+  pinned?: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+/** A doc file in some project, for the Knowledge page. */
+export interface KnowledgeDoc extends DocFile {
+  projectPath: string
+  projectName: string
+  /** The first "# heading", if any. */
+  title: string
+  size: number
+  mtime: number
+}
+
+export interface KnowledgeHit {
+  doc: KnowledgeDoc
+  /** Up to three matching lines. */
+  snippets: { line: number; text: string }[]
+}
+
+/** Claude Code on this computer: installed, version, logged in. */
+export interface ClaudeStatus {
+  installed: boolean
+  version?: string
+  loggedIn: boolean
+  authMethod?: string
+  /** "pro", "max", … */
+  plan?: string
 }
 
 // ---------------------------------------------------------------- templates & schedules
@@ -373,7 +416,7 @@ export type UpdateState =
   | { state: 'ready'; version: string }
   | { state: 'error'; message: string }
 
-export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model'> & {
+export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'dueAt' | 'dueHasTime'> & {
   queued?: boolean
   templateId?: string
   dependsOn?: string[]
@@ -413,6 +456,8 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system'
   /** Zoom factor for the whole window, 0.7 to 1.6. */
   uiZoom: number
+  /** Your name for the Home greeting; empty = the first name of your Windows account. */
+  userName: string
 }
 
 /** How big a live chat's context is: every reply re-reads all of it. */
@@ -469,6 +514,21 @@ export interface MissionControlApi {
   renameSession(sessionId: string, title: string): Promise<void>
   getSession(projectKey: string, sessionId: string): Promise<SessionDetail>
   addProject(): Promise<string | null>
+  /** Asks for a folder in a native dialog; null if cancelled. */
+  pickFolder(title?: string): Promise<string | null>
+  createProject(opts: { parent: string; name: string; claudeMd: boolean; git: boolean }): Promise<string>
+  /** A fresh temp folder for a throwaway chat. */
+  quickChatFolder(): Promise<string>
+  listNotes(): Promise<Note[]>
+  saveNote(note: Partial<Note>): Promise<Note>
+  deleteNote(id: string): Promise<void>
+  knowledgeDocs(): Promise<KnowledgeDoc[]>
+  searchKnowledge(query: string): Promise<KnowledgeHit[]>
+  claudeStatus(force?: boolean): Promise<ClaudeStatus>
+  /** Your first name for the greeting ('' if unknown). */
+  userName(): Promise<string>
+  /** Folder names of Desktop and Documents, for New project. */
+  commonFolders(): Promise<{ desktop: string; documents: string; home: string }>
   removeProject(path: string): Promise<void>
   togglePin(path: string): Promise<void>
   listDocs(projectPath: string): Promise<DocFile[]>
@@ -509,7 +569,7 @@ export interface MissionControlApi {
   onIndexStatus(cb: (s: IndexStatus) => void): () => void
   listTasks(): Promise<Task[]>
   createTask(t: NewTask): Promise<Task>
-  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode' | 'queued'>>): Promise<void>
+  updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode' | 'queued' | 'dueAt' | 'dueHasTime'>>): Promise<void>
   /** Continues a finished headless task's chat with a new prompt, in the background. */
   followUpTask(id: string, prompt: string): Promise<void>
   /** Runs the project's check command again for a finished task. */
@@ -557,7 +617,7 @@ export interface MissionControlApi {
   /** Applies settings; resolves with an error message if the hotkey can't be registered. */
   setSettings(patch: Partial<AppSettings>): Promise<string | null>
   /** Main process asks the UI to go somewhere (tray menu, hotkey). */
-  onNavigate(cb: (target: { view: string; newTask?: boolean; chat?: { projectPath: string; sessionId: string } }) => void): () => void
+  onNavigate(cb: (target: { view: string; newTask?: boolean; taskId?: string; chat?: { projectPath: string; sessionId: string } }) => void): () => void
   /** Context size of live chats, by session id (chats without a reply yet are left out). */
   contextUsage(sessionIds: string[]): Promise<Record<string, ContextUsage>>
   startupReport(projectPath: string, keys: string[]): Promise<StartupReport>

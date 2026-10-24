@@ -56,6 +56,10 @@ describe('guessIcon', () => {
     expect(guessIcon('T019', 'ENCS3320 Computer Networks')).toBe('GraduationCap')
     expect(guessIcon('notes', 'nothing here')).toBe('Folder')
   })
+  it('goes by what the README mentions most, not a passing word', () => {
+    const readme = '# Mission Control\n\nRun several agents side by side. Agents report status; agents can be restored.\nIcons fit the project (game, journal, trading).'
+    expect(guessIcon('claude-hub', readme)).toBe('Brain')
+  })
   it('gives a drive root the drive icon', () => {
     expect(guessIcon('C: drive', '', 'C:\\')).toBe('HardDrive')
   })

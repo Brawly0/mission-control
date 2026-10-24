@@ -20,7 +20,8 @@ const ICON_RULES: [RegExp, ProjectIcon][] = [
   [/\b(bot|telegram|discord|automation)\b/i, 'Bot'],
   [/\b(course|semester|university|assignment|homework|student|exam|lecture|[A-Z]{3,4}\d{3,4})\b/, 'GraduationCap'],
   [/\b(socket|network|tcp|udp|server|client)\b/i, 'Network'],
-  [/\b(ai|llm|machine learning|neural|model|agents?|claude)\b/i, 'Brain'],
+  // Not "claude": every CLAUDE.md mentions it.
+  [/\b(ai|llm|machine learning|neural|model|agents?)\b/i, 'Brain'],
   [/\b(website|frontend|react|next\.?js|vite|html|css)\b/i, 'Globe'],
   [/\b(android|ios|mobile|flutter)\b/i, 'Smartphone']
 ]
@@ -28,11 +29,21 @@ const ICON_RULES: [RegExp, ProjectIcon][] = [
 /** Picks an icon from what a project's folder name and README say about it. */
 export function guessIcon(folderName: string, readme: string, path = ''): ProjectIcon {
   if (/^[a-z]:\\?$/i.test(path.trim())) return 'HardDrive'
-  // The folder's own name says the most ("bot"), then the README.
-  for (const text of [folderName.replace(/[-_]+/g, ' '), readme.slice(0, 3000)]) {
-    for (const [re, icon] of ICON_RULES) if (re.test(text)) return icon
+  // The folder's own name says the most ("bot").
+  const folder = folderName.replace(/[-_]+/g, ' ')
+  for (const [re, icon] of ICON_RULES) if (re.test(folder)) return icon
+  // Then the README's title ("WBP · Journal & Intel"), which says what the project is.
+  const text = readme.slice(0, 3000)
+  const title = text.split(/\r?\n/).find((l) => l.trim()) ?? ''
+  for (const [re, icon] of ICON_RULES) if (re.test(title)) return icon
+  // Then the kind the README mentions most, so a passing word ("…icons (game, journal…)") doesn't
+  // decide it. Ties go to the earlier rule.
+  let best: { icon: ProjectIcon; score: number } | null = null
+  for (const [re, icon] of ICON_RULES) {
+    const score = text.match(new RegExp(re.source, re.flags + 'g'))?.length ?? 0
+    if (score > (best?.score ?? 0)) best = { icon, score }
   }
-  return 'Folder'
+  return best?.icon ?? 'Folder'
 }
 
 /** Cleans Markdown out of a one-line heading. */

@@ -30,10 +30,15 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'goSearch', label: 'Search all chats', group: 'Go to', keys: ['Ctrl+Shift+F', 'Ctrl+4'] },
   { id: 'goUsage', label: 'Usage and cost', group: 'Go to', keys: ['Ctrl+5'] },
   { id: 'goProject', label: 'Current project', group: 'Go to', keys: ['Ctrl+6'] },
+  { id: 'goProjects', label: 'All projects', group: 'Go to', keys: ['Ctrl+7'] },
+  { id: 'goNotebook', label: 'Notebook', group: 'Go to', keys: ['Ctrl+8'] },
+  { id: 'goKnowledge', label: 'Knowledge (all docs)', group: 'Go to', keys: ['Ctrl+9'] },
   { id: 'prevProject', label: 'Previous project', group: 'Go to', keys: ['Alt+Up'] },
   { id: 'nextProject', label: 'Next project', group: 'Go to', keys: ['Alt+Down'] },
 
   { id: 'newSession', label: 'New Claude session', group: 'Project', keys: ['Ctrl+N'] },
+  { id: 'quickChat', label: 'Quick chat (temporary folder)', group: 'Project', keys: ['Ctrl+Alt+N'] },
+  { id: 'newProject', label: 'New project', group: 'Project', keys: ['Ctrl+Shift+O'] },
   { id: 'newWorktreeSession', label: 'New session in a worktree', group: 'Project', keys: ['Ctrl+Shift+N'] },
   { id: 'continueLast', label: 'Continue last chat', group: 'Project', keys: ['Ctrl+Shift+R'] },
   { id: 'powershell', label: 'PowerShell in project', group: 'Project', keys: ['Ctrl+Shift+`'] },
@@ -63,6 +68,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'renameAgent', label: 'Rename agent', group: 'Agents', keys: ['Ctrl+Shift+E'] },
 
   { id: 'newTask', label: 'New task', group: 'Tasks', keys: ['Ctrl+T'] },
+  { id: 'newNote', label: 'New note', group: 'Tasks', keys: ['Ctrl+Shift+J'] },
   { id: 'templates', label: 'Templates and schedules', group: 'Tasks', keys: ['Ctrl+Shift+T'] },
   { id: 'toggleQueue', label: 'Auto-run queue on or off', group: 'Tasks', keys: ['Ctrl+Shift+Q'] },
 

@@ -8,6 +8,7 @@ import './chains.css'
 import './identity.css'
 import './spend.css'
 import './ui2.css'
+import './dashboard.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

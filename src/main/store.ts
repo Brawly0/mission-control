@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { AppSettings, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
+import type { AppSettings, Note, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
 
 export interface WindowBounds {
   x: number
@@ -35,6 +35,8 @@ export interface StoreData {
   chatProjects: Record<string, string>
   /** Chats already reported as expensive today: { day: "2026-10-24", ids }. */
   costAlerted: { day: string; ids: string[] }
+  /** Your own notes (Notebook). */
+  notes: Note[]
 }
 
 const defaults: StoreData = {
@@ -49,6 +51,7 @@ const defaults: StoreData = {
   chatTitles: {},
   chatProjects: {},
   costAlerted: { day: '', ids: [] },
+  notes: [],
   settings: {
     defaultTaskBudgetUsd: 0,
     defaultTaskModel: '',
@@ -57,6 +60,7 @@ const defaults: StoreData = {
     keybindings: {},
     theme: 'dark',
     uiZoom: 1,
+    userName: '',
     hotkey: 'Ctrl+Alt+M',
     closeToTray: true,
     queueEnabled: false,

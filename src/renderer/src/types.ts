@@ -24,7 +24,7 @@ export interface Agent {
 }
 
 export type AgentLayout = 'tabs' | 'grid'
-export type View = 'home' | 'project' | 'agents' | 'search' | 'usage' | 'tasks'
+export type View = 'home' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge'
 
 export interface LaunchOptions {
   cwd: string

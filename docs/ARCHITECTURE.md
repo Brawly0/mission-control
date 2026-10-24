@@ -18,6 +18,7 @@ src/
     tray.ts        tray icon, tray menu, global show/hide hotkey
     templates.ts   task templates, {{variables}}, scheduler for recurring templates
     updater.ts     auto-update via electron-updater (public releases repo)
+    hub.ts         notes, Knowledge (docs across projects), Claude Code status, greeting name, quick chats, new projects
     spend.ts       live chat size, startup report, MCP servers per project, extra launch args (model, --strict-mcp-config)
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
@@ -35,6 +36,7 @@ src/
       Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, DocsPanel
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
       SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
+      TopBar, ProjectsView, NotebookView, KnowledgeView, DocViewer, NewProjectDialog
     src/organize.css         styles for groups, tags, overview, search and usage
     src/tasks.css            styles for the task board, dialogs, task drawer, meters
 ```

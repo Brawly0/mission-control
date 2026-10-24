@@ -21,6 +21,9 @@ import {
   Terminal,
   X,
   Keyboard,
+  BookOpen,
+  MessageSquareDashed,
+  NotebookPen,
   PanelLeft,
   SunMoon,
   ZoomIn,
@@ -65,6 +68,11 @@ import { errorMessage } from './util'
 import { LookContext, makeLookUp } from './projectLook'
 import { ShortcutContext, allowedIn, bindingIndex, comboFromEvent, effectiveKeys } from './shortcuts'
 import ShortcutsDialog from './components/ShortcutsDialog'
+import TopBar from './components/TopBar'
+import ProjectsView from './components/ProjectsView'
+import NotebookView from './components/NotebookView'
+import KnowledgeView from './components/KnowledgeView'
+import NewProjectDialog from './components/NewProjectDialog'
 import { sidebarOrder } from './components/Sidebar'
 import { worktreeParent } from '@shared/projectLook'
 
@@ -133,6 +141,7 @@ export default function App() {
       setView(target.view as View)
       if (target.newTask) setComposerOpen(true)
       if (target.chat) openSessionRef.current(target.chat.projectPath, target.chat.sessionId)
+      if (target.taskId) setOpenTaskId(target.taskId)
     })
     return () => {
       offTasks()
@@ -185,6 +194,12 @@ export default function App() {
   }, [appSettings?.uiZoom]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [newNoteRequest, setNewNoteRequest] = useState(0)
+  const [userName, setUserName] = useState('')
+  useEffect(() => {
+    window.mc.userName().then(setUserName).catch(() => undefined)
+  }, [settingsOpen])
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const shortcutKeys = useMemo(() => effectiveKeys(appSettings?.keybindings), [appSettings?.keybindings])
   const shortcutIndex = useRef(bindingIndex(shortcutKeys))
@@ -640,6 +655,19 @@ export default function App() {
       goSearch: () => setView('search'),
       goUsage: () => setView('usage'),
       goProject: () => selected && setView('project'),
+      goProjects: () => setView('projects'),
+      goNotebook: () => setView('notebook'),
+      goKnowledge: () => setView('knowledge'),
+      newProject: () => setNewProjectOpen(true),
+      newNote: () => {
+        setView('notebook')
+        setNewNoteRequest(Date.now())
+      },
+      quickChat: () =>
+        void window.mc
+          .quickChatFolder()
+          .then((folder) => launch({ cwd: folder, projectName: 'Quick chat', projectPath: folder, title: 'Quick chat' }))
+          .catch((e) => toast('error', 'Could not start a quick chat', errorMessage(e))),
       prevProject: () => cycleProject(-1),
       nextProject: () => cycleProject(1),
       newSession: () => selected && newInSelected(),
@@ -698,6 +726,12 @@ export default function App() {
       { id: 'go-search', group: 'Go to', title: 'Search all chats', hint: 'Ctrl+Shift+F', icon: TextSearch, keywords: 'find full text', run: () => setView('search') },
       { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') },
       { id: 'go-tasks', group: 'Go to', title: 'Task board', icon: KanbanSquare, keywords: 'kanban todo', run: () => setView('tasks') },
+      { id: 'go-projects', group: 'Go to', title: 'All projects', icon: FolderOpen, keywords: 'cards folders', run: () => setView('projects') },
+      { id: 'go-notebook', group: 'Go to', title: 'Notebook', icon: NotebookPen, keywords: 'notes write', run: () => setView('notebook') },
+      { id: 'go-knowledge', group: 'Go to', title: 'Knowledge (all docs)', icon: BookOpen, keywords: 'docs readme claude.md', run: () => setView('knowledge') },
+      { id: 'new-project', group: 'Actions', title: 'New project…', icon: FolderPlus, keywords: 'create folder', run: () => setNewProjectOpen(true) },
+      { id: 'quick-chat', group: 'Actions', title: 'Quick chat', icon: MessageSquareDashed, keywords: 'temporary scratch', run: () => runShortcutRef.current('quickChat') },
+      { id: 'new-note', group: 'Actions', title: 'New note', icon: NotebookPen, keywords: 'notebook write', run: () => runShortcutRef.current('newNote') },
       { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: () => setComposerOpen(true) },
       { id: 'templates', group: 'Actions', title: 'Task templates and schedules', icon: FileStack, keywords: 'recurring cron repeat', run: () => setTemplatesOpen(true) },
       { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) },
@@ -742,7 +776,8 @@ export default function App() {
     }
     // Show each command's shortcut.
     const shortcutOf: Record<string, string> = {
-      'go-home': 'goHome', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks',
+      'go-home': 'goHome', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
+      'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks',
       'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
       'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
       add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',
@@ -774,6 +809,7 @@ export default function App() {
         onOpenPalette={openPalette}
         onRefresh={refreshProjects}
         onAdd={addProject}
+        onOpenTemplates={() => setTemplatesOpen(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
         taskCounts={{
@@ -782,6 +818,7 @@ export default function App() {
         }}
       />
       <main className="main">
+        <TopBar theme={theme} userName={userName} currentProject={selected?.name} onShortcut={(id) => runShortcutRef.current(id)} />
         {pendingRestore && pendingRestore.length > 0 && (
           <div className="restore-banner">
             <RotateCcw size={15} />
@@ -802,7 +839,20 @@ export default function App() {
               agents={agents}
               lastOutput={lastOutput}
               projects={projects}
+              tasks={tasks}
               visible={view === 'home'}
+              userName={userName}
+              rateLimit={rateLimit}
+              indexRun={indexStatus?.lastRun ?? 0}
+              onOpenTask={(id) => {
+                setView('tasks')
+                setOpenTaskId(id)
+              }}
+              onTaskDone={(id) => {
+                void window.mc.updateTask(id, { column: 'done' })
+                toast('success', 'Marked done')
+              }}
+              onTogglePin={(p) => void window.mc.togglePin(p.path).then(refreshProjects)}
               onOpenAgent={focusAgent}
               onOpenProject={openProject}
               onResume={resumeRecent}
@@ -870,6 +920,24 @@ export default function App() {
           </div>
           <div className={view === 'usage' ? 'view-pane' : 'view-pane hidden'}>
             <UsageView visible={view === 'usage'} status={indexStatus} rateLimit={rateLimit} onOpenProject={openProject} onOpenSession={openSession} />
+          </div>
+          <div className={view === 'projects' ? 'view-pane' : 'view-pane hidden'}>
+            <ProjectsView
+              projects={projects}
+              tasks={tasks}
+              agents={agents}
+              git={git}
+              showWorktrees={showWorktrees}
+              onOpen={openProject}
+              onNewSession={(p) => launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
+              onNewProject={() => setNewProjectOpen(true)}
+            />
+          </div>
+          <div className={view === 'notebook' ? 'view-pane' : 'view-pane hidden'}>
+            <NotebookView projects={projects} visible={view === 'notebook'} newNoteRequest={newNoteRequest} onOpenProject={openProject} onProjectNotesSaved={() => void refreshProjects()} />
+          </div>
+          <div className={view === 'knowledge' ? 'view-pane' : 'view-pane hidden'}>
+            <KnowledgeView visible={view === 'knowledge'} />
           </div>
           <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
             <TasksView
@@ -982,6 +1050,21 @@ export default function App() {
         />
       )}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} onOpenShortcuts={() => setShortcutsOpen(true)} />}
+      {newProjectOpen && (
+        <NewProjectDialog
+          onClose={() => setNewProjectOpen(false)}
+          onAddExisting={() => {
+            setNewProjectOpen(false)
+            void addProject()
+          }}
+          onCreated={async (path) => {
+            setNewProjectOpen(false)
+            await refreshProjects()
+            openProject(path)
+            toast('success', 'Project created', path)
+          }}
+        />
+      )}
       {shortcutsOpen && (
         <ShortcutsDialog overrides={appSettings?.keybindings ?? {}} onChange={(keybindings) => void saveSettings({ keybindings })} onClose={() => setShortcutsOpen(false)} />
       )}

@@ -1,27 +1,75 @@
-import { useEffect, useState } from 'react'
-import { ArrowRight, Bot, CircleAlert, CircleCheck, FolderGit2, GitBranch, History, Keyboard, ListPlus, Play, Sparkles, TextSearch } from 'lucide-react'
-import type { Project, RecentSession } from '@shared/types'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  ArrowRight,
+  Bot,
+  CalendarDays,
+  ChevronRight,
+  CircleCheck,
+  Circle,
+  FolderKanban,
+  FolderOpen,
+  FolderPlus,
+  Layers,
+  ListChecks,
+  ListPlus,
+  MessageSquareDashed,
+  MessagesSquare,
+  MoreVertical,
+  Pin,
+  Play,
+  Plus,
+  Star
+} from 'lucide-react'
+import type { ClaudeStatus, Project, RateLimitInfo, RecentSession, Task, UsageReport } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed, timeAgo } from '../util'
-import { Avatar, Button, EmptyState } from './ui'
-import { KeyCombo } from './ShortcutsDialog'
-import { useKeyFor } from '../shortcuts'
+import { useKeyFor, withKey } from '../shortcuts'
+import { dueLabel } from '../due'
+import { Avatar, Button, MenuButton } from './ui'
 
 interface Props {
   agents: Agent[]
   lastOutput: Record<string, number>
   projects: Project[]
+  tasks: Task[]
   visible: boolean
+  userName: string
+  rateLimit: RateLimitInfo | null
+  /** Bumped by the index; refreshes chat counts and the week's usage. */
+  indexRun: number
   onOpenAgent: (id: string) => void
   onOpenProject: (path: string) => void
   onResume: (s: RecentSession) => void
   onNewSession: (p: Project) => void
-  /** Runs a shortcut's action, so the quick actions do exactly what their keys do. */
+  onOpenTask: (id: string) => void
+  onTaskDone: (id: string) => void
+  onTogglePin: (p: Project) => void
+  /** Runs a shortcut's action, so the cards do exactly what their keys do. */
   onShortcut: (id: string) => void
-  /** Name of the project New session starts in. */
   currentProject?: string
 }
+
+type Filter = 'all' | 'active' | 'favorites' | 'recent' | 'archived'
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'favorites', label: 'Favorites' },
+  { id: 'recent', label: 'Recent' },
+  { id: 'archived', label: 'Archived' }
+]
+const DAY = 86_400_000
+
+export function matchesFilter(p: Project, f: Filter): boolean {
+  if (f === 'favorites') return p.pinned
+  if (f === 'archived') return p.meta.status === 'done'
+  if (f === 'recent') return Date.now() - p.lastActivity < 3 * DAY
+  if (f === 'active') return p.meta.status === 'active' || (!p.meta.status && Date.now() - p.lastActivity < 14 * DAY)
+  return true
+}
+
+/** Short lines under the greeting, one per day. */
+const LINES = ['Build. Iterate. Ship.', 'Small steps, merged often.', 'Progress over perfection.', 'Clear prompts, clean diffs.', 'One task at a time.', 'Review, then merge.', 'Ship something today.']
 
 function greeting(): string {
   const h = new Date().getHours()
@@ -31,170 +79,386 @@ function greeting(): string {
   return 'Good evening'
 }
 
-export default function HomeView({ agents, lastOutput, projects, visible, onOpenAgent, onOpenProject, onResume, onNewSession, onShortcut, currentProject }: Props) {
-  const [recent, setRecent] = useState<RecentSession[] | null>(null)
+function Clock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 15_000)
+    return () => clearInterval(timer)
+  }, [])
+  return (
+    <div className="card clock-card">
+      <div className="clock-row">
+        <span className="tile tile-blue">
+          <CalendarDays size={20} />
+        </span>
+        <div>
+          <div className="muted small">{now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</div>
+          <div className="clock-time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+      </div>
+      <div className="clock-line">“{LINES[(now.getDate() + 3) % LINES.length]}”</div>
+    </div>
+  )
+}
+
+const WINDOW_NAMES: Record<string, string> = { five_hour: '5-hour limit', seven_day: 'Weekly limit' }
+
+export default function HomeView(props: Props) {
+  const { agents, lastOutput, projects, tasks, visible, userName, rateLimit, onOpenAgent, onOpenProject, onResume, onShortcut } = props
   const keyFor = useKeyFor()
+  const [recent, setRecent] = useState<RecentSession[] | null>(null)
+  const [week, setWeek] = useState<UsageReport | null>(null)
+  const [status, setStatus] = useState<ClaudeStatus | null>(null)
+  const [filter, setFilter] = useState<Filter>(() => {
+    try {
+      return (localStorage.getItem('mc.homeFilter') as Filter) || 'all'
+    } catch {
+      return 'all'
+    }
+  })
 
   useEffect(() => {
     if (!visible) return
-    window.mc.recentSessions(8).then(setRecent)
-  }, [visible])
+    window.mc.recentSessions(9).then(setRecent).catch(() => setRecent([]))
+    const monday = new Date()
+    monday.setHours(0, 0, 0, 0)
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+    window.mc.usageReport(monday.getTime()).then(setWeek).catch(() => setWeek(null))
+    window.mc.claudeStatus().then(setStatus).catch(() => undefined)
+  }, [visible, props.indexRun])
+
+  const pickFilter = (f: Filter) => {
+    setFilter(f)
+    try {
+      localStorage.setItem('mc.homeFilter', f)
+    } catch {
+      /* not remembered */
+    }
+  }
 
   const live = agents.filter((a) => !a.exited)
-  const needYou = live.filter((a) => a.hookStatus === 'needs-input')
-  const done = live.filter((a) => a.hookStatus === 'done')
-  const working = live.filter((a) => displayStatus(a, lastOutput[a.id]).cls === 'working')
-  const topProjects = projects.filter((p) => !p.worktree).slice(0, 6)
+  const real = projects.filter((p) => !p.worktree)
+  const totalChats = real.reduce((t, p) => t + p.sessionCount, 0)
+  const openTasks = tasks.filter((t) => t.column !== 'done')
+  const working = live.filter((a) => a.hookStatus === 'working' || a.hookStatus === undefined).length
+  const needYou = live.filter((a) => a.hookStatus === 'needs-input').length
 
-  const summary =
-    live.length === 0
-      ? 'No agents running. Start one from a project below.'
-      : [
-          `${live.length} ${live.length === 1 ? 'agent' : 'agents'} running`,
-          needYou.length ? `${needYou.length} ${needYou.length === 1 ? 'needs' : 'need'} you` : '',
-          done.length ? `${done.length} waiting for your next prompt` : ''
-        ]
-          .filter(Boolean)
-          .join(' · ')
+  const shownProjects = real.filter((p) => matchesFilter(p, filter)).slice(0, 8)
+  const taskCount = (p: Project) => tasks.filter((t) => t.projectPath.toLowerCase() === p.path.toLowerCase() && t.column !== 'done').length
+
+  // Due first (earliest), then the next To do tasks without a date.
+  const upcoming = useMemo(() => {
+    const open = tasks.filter((t) => t.column === 'todo' || t.column === 'running')
+    const dated = open.filter((t) => t.dueAt).sort((a, b) => a.dueAt! - b.dueAt!)
+    const undated = open.filter((t) => !t.dueAt && t.column === 'todo').sort((a, b) => a.order - b.order)
+    return [...dated, ...undated].slice(0, 5)
+  }, [tasks])
+
+  // Monday to Sunday of this week.
+  const days = useMemo(() => {
+    const monday = new Date()
+    monday.setHours(0, 0, 0, 0)
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+    return Array.from({ length: 7 }, (_, i) => {
+      // Calendar days, not 24-hour steps: a daylight-saving change would make two "Sat"s.
+      const d = new Date(monday)
+      d.setDate(monday.getDate() + i)
+      const key = d.toLocaleDateString('sv')
+      const row = week?.byDay.find((r) => r.day === key)
+      return { label: d.toLocaleDateString([], { weekday: 'short' }), cost: row?.cost ?? 0, future: d.getTime() > Date.now() }
+    })
+  }, [week])
+  const maxDay = Math.max(0.01, ...days.map((d) => d.cost))
+  const weekTasks = tasks.filter((t) => t.createdAt >= Date.now() - 7 * DAY).length
+
+  const summary = live.length
+    ? [`${live.length} ${live.length === 1 ? 'agent' : 'agents'} running`, needYou && `${needYou} need${needYou === 1 ? 's' : ''} you`].filter(Boolean).join(' · ')
+    : 'No agents running. Ready when you are.'
 
   return (
-    <div className="home scroll">
-      <header className="home-hero">
-        <div>
-          <h1>{greeting()}</h1>
-          <p className="muted">{summary}</p>
+    <div className="home dash scroll">
+      <section className="dash-top">
+        <div className="card hero-card">
+          <div className="hero-glow" />
+          <div className="hero-text">
+            <h1>
+              {greeting()}
+              {userName && (
+                <>
+                  , <span className="hero-name">{userName}</span>
+                </>
+              )}
+            </h1>
+            <p>{summary}</p>
+          </div>
         </div>
-      </header>
+        <Clock />
+      </section>
 
-      <section className="quick-actions">
+      <section className="dash-stats">
         {[
-          { id: 'newSession', icon: Play, label: currentProject ? `New session in ${currentProject}` : 'New session' },
-          { id: 'newTask', icon: ListPlus, label: 'New task' },
-          { id: 'goSearch', icon: TextSearch, label: 'Search all chats' },
-          { id: 'shortcuts', icon: Keyboard, label: 'All shortcuts' }
-        ].map((a) => (
-          <button key={a.id} className="quick-action" onClick={() => onShortcut(a.id)}>
-            <a.icon size={15} />
-            <span className="ellipsis">{a.label}</span>
-            {keyFor(a.id) && <KeyCombo combo={keyFor(a.id)} />}
+          { icon: FolderKanban, tone: 'green', value: real.length, label: 'Projects', go: 'goProjects' },
+          { icon: MessagesSquare, tone: 'blue', value: totalChats, label: 'Total chats', go: 'goSearch' },
+          { icon: ListChecks, tone: 'purple', value: openTasks.length, label: 'Open tasks', go: 'goTasks' },
+          { icon: Bot, tone: 'orange', value: live.length, label: needYou ? `Agents running · ${needYou} need you` : working ? 'Agents working' : 'Agents running', go: 'goAgents' }
+        ].map((s) => (
+          <button key={s.label} className="card dash-stat" onClick={() => onShortcut(s.go)} title={withKey(s.label, keyFor(s.go))}>
+            <span className={`tile tile-${s.tone}`}>
+              <s.icon size={22} />
+            </span>
+            <span className="dash-stat-text">
+              <span className="dash-stat-value">{s.value}</span>
+              <span className="muted small ellipsis">{s.label}</span>
+            </span>
+            <ChevronRight size={17} className="dash-go" />
           </button>
         ))}
       </section>
 
-      <section className="stat-row">
-        <div className="stat">
-          <Bot size={18} className="stat-icon tone-green" />
-          <div className="stat-value">{working.length}</div>
-          <div className="stat-label">Working</div>
-        </div>
-        <div className="stat">
-          <CircleAlert size={18} className="stat-icon tone-orange" />
-          <div className="stat-value">{needYou.length}</div>
-          <div className="stat-label">Need you</div>
-        </div>
-        <div className="stat">
-          <CircleCheck size={18} className="stat-icon tone-blue" />
-          <div className="stat-value">{done.length}</div>
-          <div className="stat-label">Your turn</div>
-        </div>
-        <div className="stat">
-          <FolderGit2 size={18} className="stat-icon tone-accent" />
-          <div className="stat-value">{projects.filter((p) => !p.worktree).length}</div>
-          <div className="stat-label">Projects</div>
-        </div>
+      <section className="dash-actions">
+        {[
+          { id: 'newSession', icon: Plus, title: 'New session', sub: props.currentProject ? `Claude in ${props.currentProject}` : 'Start a Claude Code session', primary: true },
+          { id: 'newTask', icon: ListPlus, title: 'New task', sub: 'A task or a reminder', tone: 'green' },
+          { id: 'newProject', icon: FolderPlus, title: 'New project', sub: 'Create or add a folder', tone: 'purple' },
+          { id: 'quickChat', icon: MessageSquareDashed, title: 'Quick chat', sub: 'A throwaway chat, no project', tone: 'blue' }
+        ].map((a) => (
+          <button key={a.id} className={`card dash-action ${a.primary ? 'primary' : ''}`} onClick={() => onShortcut(a.id)} title={withKey(a.title, keyFor(a.id))}>
+            <span className={`tile ${a.primary ? 'tile-white' : `tile-${a.tone}`}`}>
+              <a.icon size={20} />
+            </span>
+            <span className="dash-action-text">
+              <span className="strong">{a.title}</span>
+              <span className="small ellipsis">{a.sub}</span>
+            </span>
+            {a.primary && <ChevronRight size={18} />}
+          </button>
+        ))}
       </section>
 
-      {live.length > 0 && (
-        <section className="home-section">
-          <div className="home-section-head">
-            <h2>Agents</h2>
+      <section className="dash-main">
+        <div className="card dash-panel">
+          <div className="panel-head">
+            <h2>Recent activity</h2>
+            <button className="panel-link" onClick={() => onShortcut('goSearch')}>
+              View all <ArrowRight size={14} />
+            </button>
           </div>
-          <div className="agent-cards">
-            {[...needYou, ...live.filter((a) => a.hookStatus !== 'needs-input')].map((a) => {
-              const st = displayStatus(a, lastOutput[a.id])
+          <div className="activity-list">
+            {recent === null && <div className="muted pad">Loading…</div>}
+            {recent?.length === 0 && <div className="muted pad">No chats yet. Start a session and it shows here.</div>}
+            {recent?.map((s) => {
+              const sub = s.firstPrompt && s.firstPrompt.split('\n')[0].trim() !== s.title ? s.firstPrompt.split('\n')[0] : ''
               return (
-                <button key={a.id} className={`agent-card status-${st.cls}`} onClick={() => onOpenAgent(a.id)}>
-                  <div className="agent-card-top">
-                    <Avatar name={a.projectName} path={a.projectPath} size={26} />
-                    <div className="agent-card-title">
-                      <div className="ellipsis">{a.title}</div>
-                      <div className="muted small ellipsis">
-                        {a.worktree ? (
-                          <>
-                            <GitBranch size={11} /> {a.worktree.branch}
-                          </>
-                        ) : (
-                          a.projectName
-                        )}
-                      </div>
-                    </div>
-                    <span className="muted small">{elapsed(a.startedAt)}</span>
-                  </div>
-                  <div className="agent-card-status">
-                    <span className={`dot ${st.cls}`} />
-                    <span className="ellipsis">{st.label}</span>
-                    <ArrowRight size={14} className="agent-card-go" />
-                  </div>
-                </button>
+                <div key={s.id} className="activity-row">
+                  <Avatar name={s.projectName} path={s.projectPath} size={32} />
+                  <button className="activity-main" onClick={() => onOpenProject(s.projectPath)}>
+                    <span className="ellipsis">{s.title}</span>
+                    <span className="muted small ellipsis">
+                      {s.projectName}
+                      {sub && ` • ${sub}`}
+                    </span>
+                  </button>
+                  <span className="muted small activity-time">{timeAgo(s.updatedAt)}</span>
+                  <button className="activity-resume" title="Resume in a new agent" onClick={() => onResume(s)}>
+                    <Play size={13} fill="currentColor" />
+                  </button>
+                </div>
               )
             })}
           </div>
-        </section>
-      )}
+        </div>
 
-      <div className="home-columns">
-        <section className="home-section">
-          <div className="home-section-head">
-            <h2>
-              <History size={15} /> Recent chats
-            </h2>
+        <div className="card dash-panel">
+          <div className="panel-head">
+            <h2>Your projects</h2>
+            <button className="panel-link" onClick={() => onShortcut('goProjects')}>
+              View all <ArrowRight size={14} />
+            </button>
           </div>
-          <div className="card list-card">
-            {recent === null && <div className="muted pad">Loading…</div>}
-            {recent?.length === 0 && <EmptyState icon={Sparkles} title="No chats yet" />}
-            {recent?.map((s) => (
-              <div key={s.id} className="recent-row">
-                <Avatar name={s.projectName} path={s.projectPath} size={26} />
-                <button className="recent-main" onClick={() => onOpenProject(s.projectPath)}>
-                  <div className="ellipsis">{s.title}</div>
-                  <div className="muted small">
-                    {s.projectName} · {timeAgo(s.updatedAt)}
-                  </div>
-                </button>
-                <Button size="sm" variant="ghost" icon={Play} onClick={() => onResume(s)}>
-                  Resume
+          {shownProjects.length === 0 ? (
+            <div className="muted pad">No projects match “{FILTERS.find((f) => f.id === filter)?.label}”.</div>
+          ) : (
+            <div className="project-cards">
+              {shownProjects.map((p) => (
+                <ProjectCard key={p.path} project={p} openTasks={taskCount(p)} running={live.filter((a) => a.projectPath.toLowerCase() === p.path.toLowerCase()).length} {...props} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="dash-side">
+          <div className="card dash-panel">
+            <div className="panel-head">
+              <h2>Running now</h2>
+              <button className="panel-link" onClick={() => onShortcut('goAgents')}>
+                View all <ArrowRight size={14} />
+              </button>
+            </div>
+            {live.length === 0 ? (
+              <div className="running-empty">
+                <Layers size={34} strokeWidth={1.4} />
+                <div className="strong">No agents running</div>
+                <div className="muted small">Start a session or a task to begin</div>
+                <Button variant="primary" icon={Plus} onClick={() => onShortcut('newSession')}>
+                  Start an agent
                 </Button>
               </div>
+            ) : (
+              <div className="running-list">
+                {live.slice(0, 5).map((a) => {
+                  const st = displayStatus(a, lastOutput[a.id])
+                  return (
+                    <button key={a.id} className={`running-row status-${st.cls}`} onClick={() => onOpenAgent(a.id)}>
+                      <Avatar name={a.projectName} path={a.projectPath} size={26} />
+                      <span className="running-text">
+                        <span className="ellipsis">{a.title}</span>
+                        <span className="small ellipsis">
+                          <span className={`dot ${st.cls}`} /> {st.label}
+                        </span>
+                      </span>
+                      <span className="muted small">{elapsed(a.startedAt)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="card dash-panel">
+            <div className="panel-head">
+              <h2>Upcoming tasks</h2>
+              <button className="panel-link" onClick={() => onShortcut('goTasks')}>
+                View all <ArrowRight size={14} />
+              </button>
+            </div>
+            {upcoming.length === 0 ? (
+              <div className="muted small pad">Nothing due. Add a task with a due date and it shows here.</div>
+            ) : (
+              <ul className="upcoming-list">
+                {upcoming.map((t) => {
+                  const due = dueLabel(t)
+                  return (
+                    <li key={t.id}>
+                      <button className="upcoming-check" title="Mark done" onClick={() => props.onTaskDone(t.id)}>
+                        <Circle size={17} />
+                        <CircleCheck size={17} />
+                      </button>
+                      <button className="upcoming-title ellipsis" onClick={() => props.onOpenTask(t.id)} title={`${t.title}\n${t.projectName}`}>
+                        {t.title}
+                      </button>
+                      <span className={`upcoming-due ${due.tone}`}>{due.text || (t.column === 'running' ? 'Running' : '')}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="dash-bottom">
+        <div className="card dash-panel">
+          <h2>Quick filters</h2>
+          <div className="filter-chips">
+            {FILTERS.map((f) => (
+              <button key={f.id} className={`chip-btn ${filter === f.id ? 'on' : ''}`} onClick={() => pickFilter(f.id)}>
+                {f.label}
+              </button>
             ))}
           </div>
-        </section>
+        </div>
 
-        <section className="home-section">
-          <div className="home-section-head">
-            <h2>
-              <FolderGit2 size={15} /> Jump back in
-            </h2>
+        <div className="card dash-panel week-panel">
+          <h2>Usage this week</h2>
+          <div className="week-body">
+            <div className="week-bars" title="Estimated cost per day at API prices">
+              {days.map((d) => (
+                <div key={d.label} className={`week-day ${d.future ? 'future' : ''}`}>
+                  <span className="week-bar" style={{ height: `${Math.max(4, (d.cost / maxDay) * 100)}%` }} title={`$${d.cost.toFixed(2)}`} />
+                  <span className="muted tiny">{d.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="week-nums">
+              <div>
+                <span className="week-num">{week?.totals.sessions ?? 0}</span>
+                <span className="muted small">Chats</span>
+              </div>
+              <div>
+                <span className="week-num accent">{weekTasks}</span>
+                <span className="muted small">Tasks created</span>
+              </div>
+              <div>
+                <span className="week-num">{week?.byProject.filter((p) => p.cost > 0 && !/[\\/](AppData[\\/]Local[\\/]Temp|scratch-workspaces)[\\/]/i.test(p.projectPath)).length ?? 0}</span>
+                <span className="muted small">Active projects</span>
+              </div>
+            </div>
           </div>
-          <div className="project-tiles">
-            {topProjects.map((p) => (
-              <div key={p.path} className="project-tile">
-                <button className="project-tile-main" onClick={() => onOpenProject(p.path)}>
-                  <Avatar name={p.name} path={p.path} size={34} />
-                  <div className="project-tile-text">
-                    <div className="ellipsis strong">{p.name}</div>
-                    <div className="muted small">
-                      {p.sessionCount} {p.sessionCount === 1 ? 'chat' : 'chats'} · {timeAgo(p.lastActivity)}
+        </div>
+
+        <div className="card dash-panel">
+          <h2>System status</h2>
+          <div className="status-body">
+            <div className={`status-claude ${status?.loggedIn ? 'ok' : status ? 'bad' : ''}`}>
+              <span className="dot" />
+              <span>
+                <span className="strong">Claude Code</span>
+                <span className="small">{!status ? 'Checking…' : !status.installed ? 'Not installed' : status.loggedIn ? 'Connected' : 'Not logged in'}</span>
+              </span>
+            </div>
+            <div className="status-meters">
+              {(rateLimit?.windows.length ? rateLimit.windows : [{ name: 'five_hour', utilization: 0, resetsAt: 0 }, { name: 'seven_day', utilization: 0, resetsAt: 0 }]).map((w) => {
+                const pct = Math.round(w.utilization * 100)
+                return (
+                  <div key={w.name} className="meter" title={w.resetsAt ? `Resets ${new Date(w.resetsAt).toLocaleString()}` : 'Shows after your next chat or task'}>
+                    <div className="meter-label">
+                      <span>{WINDOW_NAMES[w.name] ?? w.name}</span>
+                      <span>{rateLimit ? `${pct}%` : '–'}</span>
+                    </div>
+                    <div className="meter-track">
+                      <span className={pct >= 90 ? 'high' : pct >= 70 ? 'warn' : ''} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
-                </button>
-                <Button size="sm" variant="secondary" icon={Play} onClick={() => onNewSession(p)} title="New Claude session">
-                  New
-                </Button>
-              </div>
-            ))}
+                )
+              })}
+            </div>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ProjectCard(props: Props & { project: Project; openTasks: number; running: number }) {
+  const { project: p } = props
+  return (
+    <div className={`project-card ${p.pinned ? 'pinned' : ''}`}>
+      <button className="project-card-main" onClick={() => props.onOpenProject(p.path)} title={p.description || p.path}>
+        <Avatar name={p.name} path={p.path} size={36} />
+        <span className="project-card-text">
+          <span className="strong ellipsis">{p.name}</span>
+          <span className="muted small">
+            {p.sessionCount} {p.sessionCount === 1 ? 'chat' : 'chats'} • {props.openTasks} {props.openTasks === 1 ? 'task' : 'tasks'}
+          </span>
+          <span className="muted tiny">{p.lastActivity ? `Updated ${timeAgo(p.lastActivity)}` : 'No chats yet'}</span>
+        </span>
+      </button>
+      {props.running > 0 && <span className="project-card-live" title={`${props.running} running`} />}
+      {p.pinned && <Star size={13} className="project-card-star" fill="currentColor" />}
+      <MenuButton
+        align="right"
+        trigger={(toggle) => (
+          <button className="project-card-menu" aria-label="Project actions" onClick={toggle}>
+            <MoreVertical size={15} />
+          </button>
+        )}
+        items={[
+          { label: 'Open', icon: FolderKanban, onSelect: () => props.onOpenProject(p.path) },
+          { label: 'New session', icon: Play, onSelect: () => props.onNewSession(p) },
+          { label: p.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => props.onTogglePin(p) },
+          { label: 'Open in Explorer', icon: FolderOpen, onSelect: () => window.mc.openInExplorer(p.path) }
+        ]}
+      />
     </div>
   )
 }

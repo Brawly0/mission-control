@@ -76,6 +76,13 @@
 - [x] Collapsible sidebar (icon rail), light theme and "same as Windows", window zoom
 - [x] Settings in tabs, Home quick actions, Usage folds temp and scratch folders
 
+## ✅ v0.11: Dashboard
+- [x] New look: top bar with search and New menu, regrouped sidebar, Claude Code status card
+- [x] Home dashboard: greeting, clock, stats, action cards, recent activity, project cards with filters, running now, upcoming tasks, weekly usage, plan limits
+- [x] Projects page (cards or list), Notebook (own and project notes), Knowledge (all docs, searchable and editable)
+- [x] Task due dates with reminders; New project (folder, CLAUDE.md, git); Quick chat in a throwaway folder
+- [x] Icon guessing goes by the README title, then the most-mentioned kind
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

@@ -185,3 +185,13 @@ Everything it creates is removed, and your settings are restored.
 Settings are restored afterwards.
 
 `MC_SMOKE_SHOTS=<project folder name, e.g. bot>` screenshots every screen: Home, that project's tabs, Tasks, Agents, Usage, Search, the palette, Settings and the shortcuts list. It then presses real shortcuts and checks each one: `Ctrl+1/2/3/5`, `Ctrl+Shift+F`, `Ctrl+/` and `Ctrl+B`. Last, it switches to the light theme with `Ctrl+Shift+L`, screenshots it, and puts your theme back. Free. Use it for before/after comparisons of UI changes.
+
+`MC_SMOKE_HUB=<empty scratch folder>` checks the v0.11 pieces, for free:
+- Notes: save, pin and delete.
+- Knowledge: the doc list, and a search.
+- New project: creates one with CLAUDE.md and git.
+- Quick chat: the folder must be hidden as scratch.
+- Due dates: a reminder must fire exactly once.
+- Claude Code status and the greeting name.
+
+It removes what it created.

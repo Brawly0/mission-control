@@ -226,10 +226,23 @@ export function updateTask(id: string, patch: Partial<Task>): void {
   if (patch.dependsOn && wouldCreateCycle(id, patch.dependsOn, tasks)) throw new Error('That would make the tasks wait on each other in a loop.')
   const column = patch.column
   delete patch.column
+  if ('dueAt' in patch && patch.dueAt !== t.dueAt) t.remindedAt = undefined
   Object.assign(t, patch, { updatedAt: Date.now() })
   if (column) moveTo(t, column)
   emit()
   if ('queued' in patch || column) void pumpQueue()
+}
+
+/**
+ * Unfinished tasks whose due time has passed and that haven't been reminded yet. Marks them as
+ * reminded, so each reminder shows once (index.ts checks every minute).
+ */
+export function takeDueReminders(now = Date.now()): Task[] {
+  const due = tasks.filter((t) => t.dueAt && t.dueAt <= now && !t.remindedAt && (t.column === 'todo' || t.column === 'running'))
+  if (!due.length) return []
+  for (const t of due) t.remindedAt = now
+  emit()
+  return due
 }
 
 export function deleteTask(id: string): void {

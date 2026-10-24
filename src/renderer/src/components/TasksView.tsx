@@ -21,8 +21,7 @@ import {
   Repeat,
   Square,
   SquareTerminal,
-  Zap
-} from 'lucide-react'
+  Zap, CalendarClock } from 'lucide-react'
 import type { Project, QueueStatus, Task, TaskColumn } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
@@ -30,6 +29,7 @@ import { dependencyState, dependentsOf } from '@shared/deps'
 import { elapsed, formatCost, timeAgo } from '../util'
 import { Avatar, Button, EmptyState } from './ui'
 import { useKeyFor, withKey } from '../shortcuts'
+import { dueLabel } from '../due'
 import { useLook } from '../projectLook'
 
 interface Props {
@@ -105,6 +105,11 @@ function TaskCard({
           {task.mode === 'headless' ? <Zap size={11} /> : <SquareTerminal size={11} />}
           {task.mode === 'headless' ? 'Headless' : 'Interactive'}
         </span>
+        {task.dueAt && task.column !== 'done' && (
+          <span className={`due-chip ${dueLabel(task).tone}`} title={`Due ${new Date(task.dueAt).toLocaleString()}`}>
+            <CalendarClock size={10} /> {dueLabel(task).text}
+          </span>
+        )}
         {task.worktree && (
           <span className="chip chip-accent task-branch" title={task.worktree.path}>
             <GitBranch size={10} /> {task.worktree.branch.replace(/^mc\//, '')}

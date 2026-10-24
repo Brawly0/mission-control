@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, KanbanSquare, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star } from 'lucide-react'
+import type { ClaudeStatus } from '@shared/types'
 import type { BudgetState, GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 import { timeAgo } from '../util'
@@ -25,6 +26,7 @@ interface Props {
   budgets: Record<string, BudgetState>
   /** Icon-only rail instead of the full sidebar. */
   collapsed: boolean
+  onOpenTemplates: () => void
   onToggleCollapsed: () => void
 }
 
@@ -48,6 +50,44 @@ function keyCaps(combo: string): string {
   return combo.replace(/\+/g, ' ').replace('Shift', '⇧')
 }
 
+/** Claude Code installed and logged in? Checked on start and every 5 minutes; click to check now. */
+function ClaudeStatusCard() {
+  const [status, setStatus] = useState<ClaudeStatus | null>(null)
+  const load = (force = false) => window.mc.claudeStatus(force).then(setStatus).catch(() => undefined)
+  useEffect(() => {
+    void load()
+    const timer = setInterval(() => void load(), 300_000)
+    return () => clearInterval(timer)
+  }, [])
+  const ok = !!status?.installed && status.loggedIn
+  const label = !status ? 'Checking…' : !status.installed ? 'Not installed' : status.loggedIn ? 'Connected' : 'Not logged in'
+  const plan = status?.plan ? `${status.plan[0].toUpperCase()}${status.plan.slice(1)} plan` : ''
+  return (
+    <button
+      className={`claude-status ${ok ? 'ok' : status ? 'bad' : ''}`}
+      onClick={() => void load(true)}
+      title={
+        !status?.installed
+          ? 'Install Claude Code, then click to check again'
+          : status.loggedIn
+            ? `Claude Code ${status.version ?? ''} · ${plan || 'logged in'}. Click to check again.`
+            : 'Run "claude auth login" in a terminal, then click to check again'
+      }
+    >
+      <span className="claude-status-ring">
+        <span />
+      </span>
+      <span className="claude-status-text">
+        <span className="strong">Claude Code</span>
+        <span className="claude-status-state">
+          <span className="dot" /> {label}
+          {ok && plan && <span className="muted"> · {plan}</span>}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 function loadCollapsed(): Set<string> {
   try {
     return new Set(JSON.parse(localStorage.getItem('mc.collapsedGroups') ?? '[]'))
@@ -61,6 +101,7 @@ export default function Sidebar(props: Props) {
   const [filter, setFilter] = useState('')
   const [activeTags, setActiveTags] = useState<string[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
+  const [filterOpen, setFilterOpen] = useState(false)
   const keyFor = useKeyFor()
 
   const toggleGroup = (name: string) => {
@@ -123,9 +164,16 @@ export default function Sidebar(props: Props) {
         <button
           className={`project-item ${selected ? 'selected' : ''} ${p.meta.status === 'done' ? 'is-done' : ''}`}
           onClick={() => props.onSelect(p.path)}
-          title={[p.name, p.description, p.path].filter(Boolean).join('\n')}
+          title={[
+            p.name,
+            p.description,
+            `${p.sessionCount} ${p.sessionCount === 1 ? 'chat' : 'chats'}${p.lastActivity ? ` · ${timeAgo(p.lastActivity)}` : ''}${g?.isRepo ? ` · ${g.branch}${g.dirty ? ` (${g.dirty} changed)` : ''}` : ''}`,
+            p.path
+          ]
+            .filter(Boolean)
+            .join('\n')}
         >
-          <Avatar name={p.name} path={p.path} size={30} />
+          <Avatar name={p.name} path={p.path} size={22} />
           <div className="project-item-text">
             <div className="project-name">
               <span className="ellipsis">{p.name}</span>
@@ -140,21 +188,6 @@ export default function Sidebar(props: Props) {
                   </span>
                 )
               })()}
-            </div>
-            <div className="project-meta">
-              {g?.isRepo ? (
-                <span className="meta-branch">
-                  <GitBranch size={11} strokeWidth={2.2} />
-                  {g.branch}
-                  {!!g.dirty && <span className="dirty-dot" title={`${g.dirty} changed files`} />}
-                </span>
-              ) : (
-                <span>
-                  {p.sessionCount} {p.sessionCount === 1 ? 'chat' : 'chats'}
-                </span>
-              )}
-              <span className="meta-sep">·</span>
-              <span>{p.lastActivity ? timeAgo(p.lastActivity) : 'no chats'}</span>
             </div>
           </div>
           <div className="project-item-end">
@@ -186,13 +219,44 @@ export default function Sidebar(props: Props) {
     )
   }
 
-  const navItems = [
-    { view: 'home' as View, icon: House, label: 'Home', shortcut: 'goHome' },
-    { view: 'agents' as View, icon: Bot, label: 'Agents', shortcut: 'goAgents' },
-    { view: 'tasks' as View, icon: KanbanSquare, label: 'Tasks', shortcut: 'goTasks' },
-    { view: 'search' as View, icon: TextSearch, label: 'Search chats', shortcut: 'goSearch' },
-    { view: 'usage' as View, icon: BarChart3, label: 'Usage', shortcut: 'goUsage' }
+  const navItems: { view: View | 'templates'; icon: typeof House; label: string; shortcut: string; badge?: ReactNode }[] = [
+    { view: 'home', icon: House, label: 'Home', shortcut: 'goHome' },
+    { view: 'projects', icon: FolderKanban, label: 'Projects', shortcut: 'goProjects', badge: <span className="count">{projects.filter((p) => !p.worktree).length}</span> },
+    {
+      view: 'agents',
+      icon: Bot,
+      label: 'Agents',
+      shortcut: 'goAgents',
+      badge: (
+        <>
+          {attention > 0 && <span className="count count-attention">{attention}</span>}
+          {live.length > 0 && <span className="count">{live.length}</span>}
+        </>
+      )
+    },
+    {
+      view: 'tasks',
+      icon: KanbanSquare,
+      label: 'Tasks',
+      shortcut: 'goTasks',
+      badge: (
+        <>
+          {props.taskCounts.review > 0 && (
+            <span className="count count-review" title="Waiting for your review">
+              {props.taskCounts.review}
+            </span>
+          )}
+          {props.taskCounts.running > 0 && <span className="count">{props.taskCounts.running}</span>}
+        </>
+      )
+    },
+    { view: 'search', icon: MessagesSquare, label: 'Chats', shortcut: 'goSearch' },
+    { view: 'notebook', icon: NotebookPen, label: 'Notebook', shortcut: 'goNotebook' },
+    { view: 'templates', icon: FileStack, label: 'Templates', shortcut: 'templates' },
+    { view: 'knowledge', icon: BookOpen, label: 'Knowledge', shortcut: 'goKnowledge' },
+    { view: 'usage', icon: BarChart3, label: 'Usage & Insights', shortcut: 'goUsage' }
   ]
+  const go = (v: View | 'templates') => (v === 'templates' ? props.onOpenTemplates() : props.onNavigate(v))
 
   if (props.collapsed) {
     return (
@@ -205,7 +269,7 @@ export default function Sidebar(props: Props) {
         </button>
         <nav className="rail-nav">
           {navItems.map((n) => (
-            <button key={n.view} className={`rail-item ${view === n.view ? 'active' : ''}`} title={withKey(n.label, keyFor(n.shortcut))} onClick={() => props.onNavigate(n.view)}>
+            <button key={n.view} className={`rail-item ${view === n.view ? 'active' : ''}`} title={withKey(n.label, keyFor(n.shortcut))} onClick={() => go(n.view)}>
               <n.icon size={17} strokeWidth={1.9} />
               {n.view === 'agents' && live.length > 0 && <span className={`rail-dot ${attention ? 'attention' : ''}`} />}
               {n.view === 'tasks' && props.taskCounts.review > 0 && <span className="rail-dot review" />}
@@ -244,62 +308,27 @@ export default function Sidebar(props: Props) {
         <IconButton icon={PanelLeftClose} label={withKey('Hide sidebar', keyFor('toggleSidebar'))} size={15} className="brand-collapse" onClick={props.onToggleCollapsed} />
       </div>
 
-      <button className="search-trigger" onClick={props.onOpenPalette}>
-        <Search size={14} />
-        <span>Jump to…</span>
-        {keyFor('palette') && <Kbd>{keyCaps(keyFor('palette'))}</Kbd>}
-      </button>
-
       <nav className="nav">
-        <button className={`nav-item ${view === 'home' ? 'active' : ''}`} onClick={() => props.onNavigate('home')} title={withKey('Home', keyFor('goHome'))}>
-          <House size={16} strokeWidth={1.9} />
-          <span>Home</span>
-          <span className="nav-end nav-kbd">{keyCaps(keyFor('goHome'))}</span>
-        </button>
-        <button className={`nav-item ${view === 'agents' ? 'active' : ''}`} onClick={() => props.onNavigate('agents')} title={withKey('Agents', keyFor('goAgents'))}>
-          <Bot size={16} strokeWidth={1.9} />
-          <span>Agents</span>
-          <span className="nav-end">
-            {attention > 0 && <span className="count count-attention">{attention}</span>}
-            {live.length > 0 && <span className="count">{live.length}</span>}
-          </span>
-        </button>
-        <button className={`nav-item ${view === 'tasks' ? 'active' : ''}`} onClick={() => props.onNavigate('tasks')} title={withKey('Tasks', keyFor('goTasks'))}>
-          <KanbanSquare size={16} strokeWidth={1.9} />
-          <span>Tasks</span>
-          <span className="nav-end">
-            {props.taskCounts.review > 0 && (
-              <span className="count count-review" title="Waiting for your review">
-                {props.taskCounts.review}
-              </span>
-            )}
-            {props.taskCounts.running > 0 && (
-              <span className="count" title="Running">
-                {props.taskCounts.running}
-              </span>
-            )}
-          </span>
-        </button>
-        <button className={`nav-item ${view === 'search' ? 'active' : ''}`} onClick={() => props.onNavigate('search')} title={withKey('Search chats', keyFor('goSearch'))}>
-          <TextSearch size={16} strokeWidth={1.9} />
-          <span>Search chats</span>
-          <span className="nav-end nav-kbd">{keyCaps(keyFor('goSearch'))}</span>
-        </button>
-        <button className={`nav-item ${view === 'usage' ? 'active' : ''}`} onClick={() => props.onNavigate('usage')} title={withKey('Usage', keyFor('goUsage'))}>
-          <BarChart3 size={16} strokeWidth={1.9} />
-          <span>Usage</span>
-          <span className="nav-end nav-kbd">{keyCaps(keyFor('goUsage'))}</span>
-        </button>
+        {navItems.map((n) => (
+          <button key={n.view} className={`nav-item ${view === n.view ? 'active' : ''}`} onClick={() => go(n.view)} title={withKey(n.label, keyFor(n.shortcut))}>
+            <n.icon size={17} strokeWidth={1.9} />
+            <span>{n.label}</span>
+            <span className="nav-end">{n.badge}</span>
+          </button>
+        ))}
       </nav>
 
       <div className="section-head">
         <span>Projects</span>
         <div className="section-actions">
+          <IconButton icon={Search} label="Filter projects" size={14} active={filterOpen} onClick={() => setFilterOpen((o) => !o)} />
           <IconButton icon={RefreshCw} label={withKey('Refresh', keyFor('refresh'))} size={14} onClick={props.onRefresh} className={loading ? 'spinning' : ''} />
           <IconButton icon={FolderPlus} label={withKey('Add a project folder', keyFor('addProject'))} size={14} onClick={props.onAdd} />
         </div>
       </div>
-      <input className="filter" placeholder="Filter projects or tags" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      {(filterOpen || filter) && (
+        <input className="filter" autoFocus placeholder="Filter projects or tags" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && (setFilter(''), setFilterOpen(false))} />
+      )}
       {allTags.length > 0 && (
         <div className="tag-filter">
           {allTags.map((t) => {
@@ -322,7 +351,7 @@ export default function Sidebar(props: Props) {
         {loading && projects.length === 0 && <div className="muted pad">Scanning ~/.claude…</div>}
         {pinned.length > 0 && renderGroup('Pinned', pinned)}
         {groupNames.map((g) => renderGroup(g, groups.get(g)!))}
-        {ungrouped.length > 0 && (groupNames.length > 0 || pinned.length > 0 ? renderGroup('Other', ungrouped) : <ul>{ungrouped.map(renderItem)}</ul>)}
+        {ungrouped.length > 0 && renderGroup(groupNames.length > 0 ? 'Other projects' : 'All projects', ungrouped)}
         {!loading && visible.length === 0 && <div className="muted pad">No projects match.</div>}
       </div>
 
@@ -332,6 +361,7 @@ export default function Sidebar(props: Props) {
           Show worktrees &amp; scratch ({hiddenCount})
         </label>
       )}
+      <ClaudeStatusCard />
     </aside>
   )
 }

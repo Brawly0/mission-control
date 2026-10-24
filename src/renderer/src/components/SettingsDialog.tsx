@@ -185,6 +185,18 @@ export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: 
             </nav>
           <div className="dialog-body settings-pane">
             {tab === 'general' && (<>
+            <label className="field">
+              <span className="field-label">Your name</span>
+              <input
+                className="text-input"
+                placeholder="Your first name, for the greeting on Home"
+                value={settings.userName ?? ''}
+                onChange={(e) => setSettings({ ...settings, userName: e.target.value })}
+                onBlur={() => apply({ userName: settings.userName ?? '' })}
+                onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              />
+              <span className="field-hint">Leave empty to use the first name of your Windows account.</span>
+            </label>
             <div className="field">
               <span className="field-label">Global shortcut to show or hide Mission Control</span>
               <div className="hotkey-row">

@@ -12,6 +12,7 @@ import type {
   Schedule,
   TemplateInput,
   ProjectMeta,
+  Note,
   SavedAgent,
   SearchHit,
   Task,
@@ -23,8 +24,7 @@ import type {
   UsageReport,
   WorktreeInfo
 } from '../shared/types'
-import {
-  createTask,
+import { takeDueReminders, createTask,
   deleteTask,
   followUpTask,
   rerunChecks,
@@ -53,6 +53,7 @@ import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTermin
 import { loadStore, updateStore, type WindowBounds } from './store'
 import { worktreeParent } from '../shared/projectLook'
 import { contextUsage, launchArgs, startupReport } from './spend'
+import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { runSmoke } from './smoke'
 
 let mainWindow: BrowserWindow | null = null
@@ -150,7 +151,7 @@ function sendToWindow(channel: string, ...args: unknown[]): void {
 
 const DOC_NAMES = ['CLAUDE.md', 'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'CHANGELOG.md']
 
-async function listDocs(projectPath: string): Promise<DocFile[]> {
+export async function listDocs(projectPath: string): Promise<DocFile[]> {
   const docs: DocFile[] = []
   for (const name of DOC_NAMES) {
     const p = join(projectPath, name)
@@ -253,7 +254,24 @@ function registerIpc(): void {
 
   ipcMain.handle('docs:list', (_e, projectPath: string) => listDocs(projectPath))
   ipcMain.handle('docs:read', (_e, file: string) => fs.readFile(file, 'utf8'))
-  ipcMain.handle('docs:write', (_e, file: string, content: string) => fs.writeFile(file, content, 'utf8'))
+  ipcMain.handle('docs:write', async (_e, file: string, content: string) => {
+    await fs.writeFile(file, content, 'utf8')
+    invalidateKnowledge()
+  })
+  ipcMain.handle('dialog:folder', async (_e, title?: string) => {
+    const result = await dialog.showOpenDialog(mainWindow!, { title, properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle('projects:create', (_e, opts: { parent: string; name: string; claudeMd: boolean; git: boolean }) => createProject(opts))
+  ipcMain.handle('chat:quickFolder', () => quickChatFolder())
+  ipcMain.handle('notes:list', () => listNotes())
+  ipcMain.handle('notes:save', (_e, note: Partial<Note>) => saveNote(note))
+  ipcMain.handle('notes:delete', (_e, id: string) => deleteNote(id))
+  ipcMain.handle('knowledge:list', () => knowledgeDocs(listDocs))
+  ipcMain.handle('knowledge:search', (_e, q: string) => searchKnowledge(q, listDocs))
+  ipcMain.handle('claude:status', (_e, force?: boolean) => claudeStatus(!!force))
+  ipcMain.handle('user:name', () => userName())
+  ipcMain.handle('folders:common', () => ({ desktop: app.getPath('desktop'), documents: app.getPath('documents'), home: app.getPath('home') }))
 
   ipcMain.handle('open:explorer', (_e, path: string) => shell.openPath(path))
   ipcMain.handle('open:vscode', (_e, path: string) => {
@@ -534,6 +552,18 @@ app.whenReady().then(async () => {
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
   setFolderSource((ids) => queryIndex('sessionFolders', ids))
+  // Due-date reminders, checked every minute.
+  setInterval(() => {
+    for (const t of takeDueReminders().slice(0, 3)) {
+      if (process.env.MC_SMOKE) continue
+      const n = new Notification({ title: `Due now: ${t.title}`, body: t.projectName, icon: join(__dirname, '../../build/icon.png') })
+      n.on('click', () => {
+        showWindow()
+        sendToWindow('navigate', { view: 'tasks', taskId: t.id })
+      })
+      n.show()
+    }
+  }, 60_000)
   let lastIndexRun = 0
   startIndexer((status) => {
     sendToWindow('index:status', status)
@@ -574,7 +604,7 @@ app.whenReady().then(async () => {
   )
   if (process.env.MC_SMOKE && mainWindow) {
     const win = mainWindow
-    win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps }))
+    win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps, listDocs }))
   }
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
