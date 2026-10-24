@@ -70,6 +70,12 @@
 - [x] Startup cost per project: measured first-reply size, CLAUDE.md and memory files, MCP servers
 - [x] Per-project MCP picker: agents and tasks load only the chosen servers (--strict-mcp-config)
 
+## ✅ v0.10: Keyboard and polish
+- [x] Shortcut registry (57 actions), cheat sheet (Ctrl+/), rebinding with conflict handling, keys in tooltips and the palette
+- [x] Terminal-safe rules: plain Ctrl+letter stays with Claude and the shell
+- [x] Collapsible sidebar (icon rail), light theme and "same as Windows", window zoom
+- [x] Settings in tabs, Home quick actions, Usage folds temp and scratch folders
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

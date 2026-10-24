@@ -220,6 +220,7 @@ function registerIpc(): void {
   ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
   ipcMain.handle('sessions:move', (_e, id: string, path: string) => moveSession(id, path))
   ipcMain.handle('spend:context', (_e, ids: string[]) => contextUsage(ids))
+  ipcMain.on('ui:zoom', (e, factor: number) => e.sender.setZoomFactor(Math.min(1.6, Math.max(0.7, Number(factor) || 1))))
   ipcMain.handle('spend:startup', async (_e, path: string, keys: string[]) => {
     const first = await queryIndex<{ tokens: number; model: string }[]>('firstReplies', keys).catch(() => [])
     return startupReport(path, first)

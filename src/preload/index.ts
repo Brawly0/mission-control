@@ -13,6 +13,7 @@ const api: MissionControlApi = {
   listSessions: (key, path) => ipcRenderer.invoke('sessions:list', key, path),
   moveSession: (id, path) => ipcRenderer.invoke('sessions:move', id, path),
   contextUsage: (ids) => ipcRenderer.invoke('spend:context', ids),
+  setZoom: (factor) => ipcRenderer.send('ui:zoom', factor),
   startupReport: (path, keys) => ipcRenderer.invoke('spend:startup', path, keys),
   renameSession: (id, title) => ipcRenderer.invoke('sessions:rename', id, title),
   getSession: (key, id) => ipcRenderer.invoke('sessions:get', key, id),

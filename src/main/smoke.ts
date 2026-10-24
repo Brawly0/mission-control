@@ -364,6 +364,110 @@ async function automationTour(win: BrowserWindow, outFile: string, repo: string)
 }
 
 /**
+ * MC_SMOKE_SHOTS=<project folder name, e.g. bot>: screenshots every screen (Home, that project's tabs,
+ * Tasks, Agents, Search, Usage, Settings, palette, shortcuts) as <MC_SMOKE>-shot-<name>.png. Free.
+ */
+async function shotsTour(win: BrowserWindow, outFile: string, folder: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 900) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-shot-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const key = (keyCode: string, modifiers: ('control' | 'shift' | 'alt')[] = []) => {
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+  }
+  // Key presses and fresh frames need a focused, unthrottled window.
+  win.show()
+  win.focus()
+  win.webContents.focus()
+  win.webContents.setBackgroundThrottling(false)
+  const closeDialogs = () => js(`document.querySelectorAll('.overlay').forEach((o) => o.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))`)
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+  const project = (await listProjects()).find((p) => p.folderName.toLowerCase() === folder.toLowerCase())
+  await js(`window.__mcSmoke.setView('home')`)
+  await shot('home')
+  if (project) {
+    await js(`window.__mcSmoke.selectProject(${JSON.stringify(project.path)}); window.__mcSmoke.setView('project')`)
+    for (const tab of ['Chats', 'Overview', 'Docs']) {
+      await js(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent.includes(${JSON.stringify(tab)}))?.click()`)
+      await shot(`project-${tab.toLowerCase()}`, 1200)
+    }
+  }
+  for (const view of ['tasks', 'agents', 'usage']) {
+    await js(`window.__mcSmoke.setView('${view}')`)
+    await shot(view, 1200)
+  }
+  await js(`window.__mcSmoke.setView('search')`)
+  await js(`(() => {
+    const input = document.querySelector('.search-box input')
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    set.call(input, 'briefing')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  await shot('search', 1200)
+  await js(`window.__mcSmoke.setView('home')`)
+  await js(`window.__mcSmoke.openPalette()`)
+  await shot('palette')
+  await closeDialogs()
+  await js(`window.__mcSmoke.openSettings?.()`)
+  await shot('settings')
+  await closeDialogs()
+  await js(`window.__mcSmoke.openShortcuts?.()`)
+  await shot('shortcuts')
+  await closeDialogs()
+  await js(`window.__mcSmoke.setView('home')`)
+
+  // Real key presses must reach the shortcut handler.
+  const activeNav = () => js(`document.querySelector('.nav-item.active span')?.textContent ?? document.querySelector('.page-title h1')?.textContent ?? '?'`)
+  await sleep(300)
+  for (const [k, mods, expect] of [
+    ['2', ['control'], 'Agents'],
+    ['3', ['control'], 'Tasks'],
+    ['5', ['control'], 'Usage'],
+    ['F', ['control', 'shift'], 'Search chats'],
+    ['1', ['control'], 'Home']
+  ] as const) {
+    key(k, [...mods])
+    await sleep(400)
+    const got = await activeNav()
+    log(`shortcut ${[...mods, k].join('+')}: ${got === expect ? 'ok' : `FAILED (got ${got})`}`)
+  }
+  key('/', ['control'])
+  await sleep(400)
+  log('shortcut Ctrl+/ opens the list:', (await js(`!!document.querySelector('.shortcuts-dialog')`)) ? 'ok' : 'FAILED')
+  await closeDialogs()
+  await sleep(300)
+  key('B', ['control'])
+  await shot('rail')
+  log('shortcut Ctrl+B collapses the sidebar:', (await js(`!!document.querySelector('.sidebar.rail')`)) ? 'ok' : 'FAILED')
+  key('B', ['control'])
+  await sleep(300)
+
+  const themeBefore = loadStore().settings.theme
+  key('L', ['control', 'shift'])
+  await sleep(600)
+  log('shortcut Ctrl+Shift+L switches theme:', await js(`document.documentElement.dataset.theme`))
+  await shot('light-home')
+  if (project) {
+    await js(`window.__mcSmoke.selectProject(${JSON.stringify(project.path)}); window.__mcSmoke.setView('project')`)
+    key('C', ['alt'])
+    await shot('light-chats', 1200)
+    key('O', ['alt'])
+    await shot('light-overview', 1200)
+  }
+  await js(`window.__mcSmoke.setView('usage')`)
+  await shot('light-usage', 1200)
+  await js(`window.__mcSmoke.openSettings?.()`)
+  await shot('light-settings')
+  await closeDialogs()
+  await js(`window.mc.setSettings({ theme: ${JSON.stringify(themeBefore)} })`)
+  await js(`window.__mcSmoke.setView('home')`)
+}
+
+/**
  * MC_SMOKE_SPEND=<empty scratch folder>: v0.9. Reads the size of an existing chat, builds the startup
  * report for the busiest project, limits the scratch folder to one MCP server with Haiku as its default
  * model, and checks that Claude really starts with only that server (read from its init event; the
@@ -747,6 +851,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_CHAIN) await chainTour(win, outFile, process.env.MC_SMOKE_CHAIN)
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
+    if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

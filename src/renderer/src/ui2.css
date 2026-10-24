@@ -1,0 +1,387 @@
+/* ============================================================
+   v0.10: icon rail, shortcuts, settings tabs, light theme
+   ============================================================ */
+
+/* ---------- collapsible sidebar ---------- */
+.app.sidebar-collapsed {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+.brand .brand-collapse {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.brand:hover .brand-collapse,
+.brand .brand-collapse:focus-visible {
+  opacity: 1;
+}
+.sidebar.rail {
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0 10px;
+  overflow: hidden;
+}
+.rail-brand {
+  border: 0;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.rail-nav,
+.rail-projects {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.rail-nav {
+  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.rail-projects {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.rail-projects::-webkit-scrollbar {
+  display: none;
+}
+.rail-item,
+.rail-project {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rail-item:hover,
+.rail-project:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.rail-item.active {
+  background: var(--active);
+  color: var(--accent-text);
+}
+.rail-project.active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.rail-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px var(--bg-sidebar);
+}
+.rail-dot.attention {
+  background: var(--orange);
+}
+.rail-dot.review {
+  background: var(--blue);
+}
+.rail-project .rail-dot {
+  top: 2px;
+  right: 2px;
+}
+
+/* Nav shortcut hints appear on hover, so the sidebar stays calm. */
+.nav-kbd {
+  font: 500 10.5px var(--font);
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+}
+.nav-item:hover .nav-kbd,
+.nav-item:focus-visible .nav-kbd {
+  opacity: 1;
+}
+
+/* ---------- key caps ---------- */
+.key-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.key-combo .kbd {
+  min-width: 20px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-bottom-width: 2px;
+}
+
+/* ---------- shortcuts dialog ---------- */
+.dialog.shortcuts-dialog {
+  width: min(720px, calc(100vw - 40px));
+  max-height: 86vh;
+}
+.shortcuts-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 20px 6px;
+  padding: 0 12px;
+  height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--muted);
+}
+.shortcuts-search:focus-within {
+  border-color: var(--accent);
+}
+.shortcuts-search input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.shortcuts-body {
+  columns: 2 300px;
+  column-gap: 28px;
+}
+.shortcuts-body > p {
+  column-span: all;
+  margin: 2px 0 10px;
+}
+.shortcut-group {
+  break-inside: avoid;
+  margin-bottom: 14px;
+}
+.shortcut-group h3 {
+  font: 600 11px var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--faint);
+  margin: 0 0 4px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+.shortcut-row:hover {
+  background: var(--hover);
+}
+.shortcut-row.recording {
+  background: var(--accent-soft);
+}
+.shortcut-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.shortcut-keys {
+  display: inline-flex;
+  gap: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.shortcut-keys:hover {
+  border-color: var(--border-strong);
+}
+.shortcut-record {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- settings with tabs ---------- */
+.dialog.settings {
+  width: min(760px, calc(100vw - 40px));
+  height: min(620px, 86vh);
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  border-bottom-left-radius: var(--radius-lg);
+}
+.settings-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: 500 13px var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.settings-tabs button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.settings-tabs button.active {
+  background: var(--active);
+  color: var(--accent-text);
+}
+.settings-pane {
+  padding: 18px 22px;
+  overflow-y: auto;
+}
+.zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.zoom-value {
+  min-width: 52px;
+  text-align: center;
+  font: 600 14px var(--font-display);
+}
+.shortcut-highlights {
+  list-style: none;
+  margin: 4px 0 14px;
+  padding: 0;
+}
+.shortcut-highlights li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 13px;
+}
+
+/* ---------- small layout fixes ---------- */
+.select.project-filter {
+  max-width: 240px;
+}
+
+/* ============================================================
+   Light theme. Terminals stay dark (see Settings → Appearance).
+   ============================================================ */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --bg-sidebar: #eef0f4;
+  --surface: #ffffff;
+  --surface-2: #f3f4f7;
+  --surface-3: #e7e9ef;
+  --hover: rgba(15, 23, 42, 0.05);
+  --active: rgba(15, 23, 42, 0.085);
+  --border: #e1e4ea;
+  --border-strong: #cfd4dd;
+  --text: #171a21;
+  --text-2: #3c4250;
+  --muted: #646b7b;
+  --faint: #8d93a1;
+  --accent: #c9623f;
+  --accent-hover: #b5532f;
+  --accent-soft: rgba(201, 98, 63, 0.12);
+  --accent-text: #b4502c;
+  --green: #16a34a;
+  --orange: #ea7a16;
+  --blue: #2563eb;
+  --red: #dc2626;
+  --yellow: #ca8a04;
+  --shadow: 0 10px 30px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+:root[data-theme='light'] .diff-add .sign,
+:root[data-theme='light'] .diff-add .code {
+  color: #166534;
+}
+:root[data-theme='light'] .diff-del .sign,
+:root[data-theme='light'] .diff-del .code {
+  color: #991b1b;
+}
+:root[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: #cdd2db;
+  background-clip: padding-box;
+}
+:root[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: #b5bcc8;
+  background-clip: padding-box;
+}
+:root[data-theme='light'] .overlay {
+  background: rgba(15, 23, 42, 0.28);
+}
+/* Project avatars keep their colors but lighter, so they don't look like dark holes. */
+:root[data-theme='light'] .avatar {
+  filter: saturate(1.1) brightness(1.55);
+}
+
+/* ---------- Home quick actions ---------- */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  /* Only top/bottom: .home > * centers every section with auto side margins. */
+  margin-top: 20px;
+  margin-bottom: -4px;
+}
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  font: 500 13px var(--font);
+  cursor: pointer;
+  min-width: 0;
+}
+.quick-action:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.quick-action > svg {
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+.quick-action .key-combo {
+  margin-left: auto;
+}
+@media (max-width: 1180px) {
+  .quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

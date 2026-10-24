@@ -19,7 +19,12 @@ import {
   RotateCcw,
   Rows2,
   Terminal,
-  X
+  X,
+  Keyboard,
+  PanelLeft,
+  SunMoon,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react'
 import type {
   GitInfo,
@@ -34,6 +39,7 @@ import type {
   Task,
   TaskTemplate,
   UpdateState,
+  AppSettings,
   BudgetState,
   ContextUsage
 } from '@shared/types'
@@ -57,6 +63,9 @@ import { statusFromHook } from './agentStatus'
 import { useToast } from './toast'
 import { errorMessage } from './util'
 import { LookContext, makeLookUp } from './projectLook'
+import { ShortcutContext, allowedIn, bindingIndex, comboFromEvent, effectiveKeys } from './shortcuts'
+import ShortcutsDialog from './components/ShortcutsDialog'
+import { sidebarOrder } from './components/Sidebar'
 import { worktreeParent } from '@shared/projectLook'
 
 function loadNotifyPref(): boolean {
@@ -144,10 +153,43 @@ export default function App() {
   // How big each live chat is (by session id), refreshed every few seconds.
   const [contexts, setContexts] = useState<Record<string, ContextUsage>>({})
   const warnedContext = useRef(new Set<string>())
-  const [warnAt, setWarnAt] = useState(200_000)
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
+  const warnAt = appSettings?.contextWarnTokens ?? 200_000
+  const reloadSettings = useCallback(() => window.mc.getSettings().then(setAppSettings).catch(() => undefined), [])
   useEffect(() => {
-    window.mc.getSettings().then((s) => setWarnAt(s.contextWarnTokens)).catch(() => undefined)
-  }, [settingsOpen])
+    void reloadSettings()
+  }, [settingsOpen, reloadSettings])
+  const saveSettings = useCallback(
+    async (patch: Partial<AppSettings>) => {
+      setAppSettings((cur) => (cur ? { ...cur, ...patch } : cur))
+      await window.mc.setSettings(patch)
+      await reloadSettings()
+    },
+    [reloadSettings]
+  )
+
+  // Theme: "system" follows Windows' light/dark setting.
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const on = () => setSystemDark(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  const theme = appSettings?.theme === 'system' ? (systemDark ? 'dark' : 'light') : (appSettings?.theme ?? 'dark')
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+  useEffect(() => {
+    if (appSettings) window.mc.setZoom(appSettings.uiZoom || 1)
+  }, [appSettings?.uiZoom]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const shortcutKeys = useMemo(() => effectiveKeys(appSettings?.keybindings), [appSettings?.keybindings])
+  const shortcutIndex = useRef(bindingIndex(shortcutKeys))
+  shortcutIndex.current = bindingIndex(shortcutKeys)
+  const keyOf = (id: string) => shortcutKeys.get(id)?.[0] ?? ''
   useEffect(() => {
     const tick = async () => {
       const live = agentsRef.current.filter((a) => a.kind === 'claude' && !a.exited && a.sessionId)
@@ -201,6 +243,7 @@ export default function App() {
       if (ui.view) setView(ui.view)
       if (ui.layout) setLayout(ui.layout)
       if (ui.showWorktrees) setShowWorktrees(true)
+      if (ui.sidebarCollapsed) setSidebarCollapsed(true)
       setUiLoaded(true)
       refreshProjects()
     })
@@ -209,8 +252,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (uiLoaded) window.mc.setUiState({ selectedPath: selectedPath ?? undefined, view, layout, showWorktrees })
-  }, [uiLoaded, selectedPath, view, layout, showWorktrees])
+    if (uiLoaded) window.mc.setUiState({ selectedPath: selectedPath ?? undefined, view, layout, showWorktrees, sidebarCollapsed })
+  }, [uiLoaded, selectedPath, view, layout, showWorktrees, sidebarCollapsed])
 
   // Keep git badges fresh: on an interval and whenever the window regains focus.
   useEffect(() => {
@@ -434,7 +477,7 @@ export default function App() {
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
     if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), startTask, tasks: () => tasksRef.current }
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current }
   }, [launch, refreshProjects, startTask])
 
   const restoreAll = useCallback(async () => {
@@ -543,21 +586,110 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const inTerminal = (e.target as HTMLElement | null)?.closest?.('.terminal-host')
-      // Ctrl+K works everywhere except inside a terminal, where shells use it; Ctrl+Shift+P works everywhere.
-      if ((e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'k' && !inTerminal) || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p')) {
-        e.preventDefault()
-        e.stopPropagation()
-        openPalette()
-      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault()
-        e.stopPropagation()
-        setView('search')
-      }
+      const combo = comboFromEvent(e)
+      const id = combo ? shortcutIndex.current.get(combo) : undefined
+      if (!id) return
+      // Open dialogs handle their own keys; only the palette opens over them.
+      if (document.querySelector('.overlay') && id !== 'palette') return
+      if (!allowedIn(combo, e.target)) return
+      e.preventDefault()
+      e.stopPropagation()
+      runShortcutRef.current(id)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [openPalette])
+
+  /** What each shortcut does. Anything not listed here is handled by the visible view (see useShortcutEvent). */
+  const runShortcutRef = useRef<(id: string) => void>(() => undefined)
+  runShortcutRef.current = (id: string) => {
+    const active = agents.find((a) => a.id === activeAgent) ?? agents[agents.length - 1]
+    const broadcast = (shortcut: string) => window.dispatchEvent(new CustomEvent('mc:shortcut', { detail: shortcut }))
+    const inProject = (shortcut: string) => {
+      if (!selected) return
+      if (view !== 'project') {
+        setView('project')
+        setTimeout(() => broadcast(shortcut), 50)
+      } else broadcast(shortcut)
+    }
+    const cycleProject = (step: number) => {
+      const order = sidebarOrder(projects, showWorktrees)
+      if (!order.length) return
+      const i = order.findIndex((p) => p.path === selectedPath)
+      openProject(order[(i + step + order.length) % order.length].path)
+    }
+    const cycleAgent = (step: number) => {
+      if (!agents.length) return
+      const i = agents.findIndex((a) => a.id === active?.id)
+      focusAgent(agents[(i + step + agents.length) % agents.length].id)
+    }
+    const zoom = (factor: number) => void saveSettings({ uiZoom: Math.round(Math.min(1.6, Math.max(0.7, factor)) * 10) / 10 })
+    const handlers: Record<string, () => void> = {
+      palette: openPalette,
+      shortcuts: () => setShortcutsOpen(true),
+      settings: () => setSettingsOpen(true),
+      refresh: () => void refreshProjects(),
+      addProject: () => void addProject(),
+      notifications: () => {
+        toggleNotify()
+        toast('info', notify ? 'Notifications off' : 'Notifications on')
+      },
+      goHome: () => setView('home'),
+      goAgents: () => setView('agents'),
+      goTasks: () => setView('tasks'),
+      goSearch: () => setView('search'),
+      goUsage: () => setView('usage'),
+      goProject: () => selected && setView('project'),
+      prevProject: () => cycleProject(-1),
+      nextProject: () => cycleProject(1),
+      newSession: () => selected && newInSelected(),
+      newWorktreeSession: () => selected && launchWorktree(selected),
+      continueLast: () =>
+        selected && launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · continued`, args: ['--continue'] }),
+      powershell: () => selected && launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · shell`, kind: 'shell' }),
+      pinProject: () => {
+        if (!selected) return
+        void window.mc.togglePin(selected.path).then(refreshProjects)
+        toast('info', selected.pinned ? `Unpinned ${selected.name}` : `Pinned ${selected.name}`)
+      },
+      openExplorer: () => selected && window.mc.openInExplorer(selected.path),
+      openVSCode: () => selected && window.mc.openInVSCode(selected.path),
+      openTerminal: () => selected && window.mc.openExternalTerminal(selected.path, []),
+      nextAgent: () => cycleAgent(1),
+      prevAgent: () => cycleAgent(-1),
+      closeAgent: () => active && closeAgent(active.id),
+      toggleGrid: () => setLayout((l) => (l === 'tabs' ? 'grid' : 'tabs')),
+      compactAgent: () => {
+        if (!active || active.kind !== 'claude' || active.exited) return
+        window.mc.ptyWrite(active.id, '/compact\r')
+        toast('info', `Compacting ${active.title}`, 'Claude summarizes the chat so far and continues from the summary.')
+      },
+      toggleReview: () => {
+        setView('agents')
+        setTimeout(() => broadcast('toggleReview'), 50)
+      },
+      renameAgent: () => {
+        setView('agents')
+        setTimeout(() => broadcast('renameAgent'), 50)
+      },
+      newTask: () => setComposerOpen(true),
+      templates: () => setTemplatesOpen(true),
+      toggleQueue: () => {
+        const on = !appSettings?.queueEnabled
+        void saveSettings({ queueEnabled: on })
+        toast('info', on ? 'Auto-run queue on' : 'Auto-run queue off')
+      },
+      toggleSidebar: () => setSidebarCollapsed((c) => !c),
+      toggleTheme: () => void saveSettings({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      zoomIn: () => zoom((appSettings?.uiZoom ?? 1) + 0.1),
+      zoomOut: () => zoom((appSettings?.uiZoom ?? 1) - 0.1),
+      zoomReset: () => zoom(1),
+      toggleWorktrees: () => setShowWorktrees((v) => !v)
+    }
+    for (let n = 1; n <= 9; n++) handlers[`agent${n}`] = () => agents[n - 1] && focusAgent(agents[n - 1].id)
+    for (const t of ['tabOverview', 'tabChats', 'tabChanges', 'tabDocs', 'nameIcon', 'chatFilter', 'chatNext', 'chatPrev', 'chatResume', 'chatRename']) handlers[t] = () => inProject(t)
+    ;(handlers[id] ?? (() => broadcast(id)))()
+  }
 
   const commands = useMemo<Command[]>(() => {
     const list: Command[] = [
@@ -568,7 +700,13 @@ export default function App() {
       { id: 'go-tasks', group: 'Go to', title: 'Task board', icon: KanbanSquare, keywords: 'kanban todo', run: () => setView('tasks') },
       { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: () => setComposerOpen(true) },
       { id: 'templates', group: 'Actions', title: 'Task templates and schedules', icon: FileStack, keywords: 'recurring cron repeat', run: () => setTemplatesOpen(true) },
-      { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) }
+      { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) },
+      { id: 'shortcuts', group: 'Actions', title: 'Keyboard shortcuts', icon: Keyboard, keywords: 'keys hotkeys bindings', run: () => setShortcutsOpen(true) },
+      { id: 'toggleSidebar', group: 'View', title: 'Show or hide sidebar', icon: PanelLeft, run: () => runShortcutRef.current('toggleSidebar') },
+      { id: 'toggleTheme', group: 'View', title: 'Light or dark theme', icon: SunMoon, keywords: 'appearance colors', run: () => runShortcutRef.current('toggleTheme') },
+      { id: 'zoomIn', group: 'View', title: 'Zoom in', icon: ZoomIn, keywords: 'bigger text size', run: () => runShortcutRef.current('zoomIn') },
+      { id: 'zoomOut', group: 'View', title: 'Zoom out', icon: ZoomOut, keywords: 'smaller text size', run: () => runShortcutRef.current('zoomOut') },
+      { id: 'zoomReset', group: 'View', title: 'Reset zoom', icon: ZoomIn, run: () => runShortcutRef.current('zoomReset') }
     ]
     if (selected) {
       list.push(
@@ -602,15 +740,25 @@ export default function App() {
     for (const p of projects.filter((x) => showWorktrees || !x.worktree)) {
       list.push({ id: `proj-${p.path}`, group: 'Projects', title: p.name, hint: p.path, icon: FolderOpen, keywords: p.path, run: () => openProject(p.path) })
     }
+    // Show each command's shortcut.
+    const shortcutOf: Record<string, string> = {
+      'go-home': 'goHome', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks',
+      'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
+      'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
+      add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',
+      zoomOut: 'zoomOut', zoomReset: 'zoomReset'
+    }
+    for (const c of list) if (shortcutOf[c.id]) c.hint = keyOf(shortcutOf[c.id]) || c.hint
     for (const s of recentForPalette) {
       list.push({ id: `chat-${s.id}`, group: 'Resume a chat', title: s.title, hint: s.projectName, icon: History, keywords: s.projectName, run: () => resumeRecent(s) })
     }
     return list
-  }, [selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent])
+  }, [selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
+    <ShortcutContext.Provider value={shortcutKeys}>
     <LookContext.Provider value={lookUp}>
-    <div className="app">
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Sidebar
         projects={projects}
         budgets={budgets}
@@ -626,6 +774,8 @@ export default function App() {
         onOpenPalette={openPalette}
         onRefresh={refreshProjects}
         onAdd={addProject}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
         taskCounts={{
           running: tasks.filter((t) => t.column === 'running').length,
           review: tasks.filter((t) => t.column === 'review').length
@@ -657,6 +807,8 @@ export default function App() {
               onOpenProject={openProject}
               onResume={resumeRecent}
               onNewSession={(p) => launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
+              onShortcut={(id) => runShortcutRef.current(id)}
+              currentProject={selected?.name}
             />
           </div>
           <div className={view === 'project' ? 'view-pane' : 'view-pane hidden'}>
@@ -829,8 +981,12 @@ export default function App() {
           }}
         />
       )}
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} onOpenShortcuts={() => setShortcutsOpen(true)} />}
+      {shortcutsOpen && (
+        <ShortcutsDialog overrides={appSettings?.keybindings ?? {}} onChange={(keybindings) => void saveSettings({ keybindings })} onClose={() => setShortcutsOpen(false)} />
+      )}
     </div>
     </LookContext.Provider>
+    </ShortcutContext.Provider>
   )
 }

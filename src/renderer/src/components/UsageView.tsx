@@ -130,6 +130,9 @@ function DailyChart({ days }: { days: (UsageTotals & { day: string })[] }) {
   )
 }
 
+const TEMP = '(temp)'
+const TEMP_PATH = /[\\/](AppData[\\/]Local[\\/]Temp|scratch-workspaces)[\\/]/i
+
 function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; avatar?: string; total: UsageTotals; max: number; onClick?: () => void; sub?: string }) {
   const pct = max > 0 ? Math.max(1.5, (total.cost / max) * 100) : 0
   return (
@@ -214,7 +217,24 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
   }, [report, range, since])
 
   const t = report?.totals
-  const maxProject = Math.max(0, ...(report?.byProject.map((p) => p.cost) ?? []))
+  // Test runs, temp and Claude Desktop scratch folders share one row instead of one each.
+  const projectRows = useMemo(() => {
+    const rows: UsageReport['byProject'] = []
+    let temp: UsageReport['byProject'][number] | null = null
+    for (const r of report?.byProject ?? []) {
+      if (!TEMP_PATH.test(r.projectPath)) {
+        rows.push(r)
+        continue
+      }
+      if (!temp) temp = { ...r, projectKey: '', projectPath: TEMP }
+      else {
+        const t = temp as unknown as Record<string, number>
+        for (const [k, v] of Object.entries(r)) if (typeof v === 'number') t[k] = (t[k] ?? 0) + v
+      }
+    }
+    return temp ? [...rows, temp] : rows
+  }, [report])
+  const maxProject = Math.max(0, ...projectRows.map((p) => p.cost))
   const maxModel = Math.max(0, ...(report?.byModel.map((m) => m.cost) ?? []))
   const maxSession = Math.max(0, ...(report?.topSessions.map((s) => s.cost) ?? []))
 
@@ -310,15 +330,15 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
                 <h2>By project</h2>
                 <span className="muted small">cost · tokens</span>
               </div>
-              {report.byProject.map((p) => (
+              {projectRows.map((p) => (
                 <BarRow
-                  key={p.projectKey}
-                  label={look(p.projectPath)?.name ?? (basename(p.projectPath) || p.projectKey)}
+                  key={p.projectKey || p.projectPath}
+                  label={p.projectPath === TEMP ? 'Temp and scratch folders' : (look(p.projectPath)?.name ?? (basename(p.projectPath) || p.projectKey))}
                   avatar={p.projectPath || p.projectKey}
                   total={p}
                   max={maxProject}
                   sub={`${p.sessions ?? 0} chats`}
-                  onClick={() => onOpenProject(p.projectPath)}
+                  onClick={p.projectPath === TEMP ? undefined : () => onOpenProject(p.projectPath)}
                 />
               ))}
             </section>

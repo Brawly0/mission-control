@@ -29,11 +29,12 @@ src/
     src/agentStatus.ts       hook event -> agent status, and what each status looks like
     src/toast.tsx            in-app messages (useToast)
     src/projectLook.tsx      icon components and LookContext: any project path or name -> name, icon, color
+    src/shortcuts.ts         every keyboard shortcut, key matching, terminal-safe rules, rebinding (ADR 0010)
     src/components/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
       Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, DocsPanel
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
-      SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog
+      SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
     src/organize.css         styles for groups, tags, overview, search and usage
     src/tasks.css            styles for the task board, dialogs, task drawer, meters
 ```

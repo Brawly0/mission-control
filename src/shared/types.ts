@@ -238,6 +238,8 @@ export interface UiState {
   view?: 'home' | 'project' | 'agents' | 'search' | 'usage' | 'tasks'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
+  /** Sidebar shrunk to an icon rail. */
+  sidebarCollapsed?: boolean
 }
 
 export interface RecentSession extends SessionSummary {
@@ -406,6 +408,11 @@ export interface AppSettings {
   chatCostAlertUsd: number
   /** A live chat turns amber (and you get one reminder) at this many tokens of context. */
   contextWarnTokens: number
+  /** Your own key combinations by shortcut id ('' turns one off); missing ids use the defaults. */
+  keybindings: Record<string, string>
+  theme: 'dark' | 'light' | 'system'
+  /** Zoom factor for the whole window, 0.7 to 1.6. */
+  uiZoom: number
 }
 
 /** How big a live chat's context is: every reply re-reads all of it. */
@@ -545,6 +552,8 @@ export interface MissionControlApi {
   reportStatus(summary: { agents: number; attention: number }): void
 
   getSettings(): Promise<AppSettings>
+  /** Sets the window's zoom factor right away (not saved; save uiZoom in settings for that). */
+  setZoom(factor: number): void
   /** Applies settings; resolves with an error message if the hotkey can't be registered. */
   setSettings(patch: Partial<AppSettings>): Promise<string | null>
   /** Main process asks the UI to go somewhere (tray menu, hotkey). */

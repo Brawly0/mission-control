@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -30,6 +30,7 @@ import ChangesPanel from './ChangesPanel'
 import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
 import IdentityDialog from './IdentityDialog'
+import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
 
 interface Props {
@@ -53,6 +54,8 @@ export default function ProjectView({ project, projects, git, visible, groups, f
   const [gitInitOpen, setGitInitOpen] = useState(false)
   const [identityOpen, setIdentityOpen] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null)
+  const filterRef = useRef<HTMLInputElement>(null)
+  const keyFor = useKeyFor()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [usage, setUsage] = useState<Record<string, UsageTotals>>({})
   const [loading, setLoading] = useState(false)
@@ -134,6 +137,38 @@ export default function ProjectView({ project, projects, git, visible, groups, f
   const resume = (s: SessionSummary) =>
     onLaunch({ ...base, cwd: s.cwd || project.path, title: s.title.slice(0, 48), args: ['--resume', s.id] })
 
+  // Keyboard: tabs, the chat list and the name dialog (see shortcuts.ts).
+  useShortcutEvent(
+    ['tabOverview', 'tabChats', 'tabChanges', 'tabDocs', 'nameIcon', 'chatFilter', 'chatNext', 'chatPrev', 'chatResume', 'chatRename'],
+    (id) => {
+      const step = (d: number) => {
+        setTab('chats')
+        const list = visibleSessions
+        if (!list.length) return
+        const i = list.findIndex((x) => x.id === selected?.id)
+        const next = list[Math.min(list.length - 1, Math.max(0, i + d))]
+        setSelected(next)
+        document.querySelector(`[data-session="${next.id}"]`)?.scrollIntoView({ block: 'nearest' })
+      }
+      if (id === 'tabOverview') setTab('overview')
+      else if (id === 'tabChats') setTab('chats')
+      else if (id === 'tabChanges' && git?.isRepo) setTab('changes')
+      else if (id === 'tabDocs') setTab('docs')
+      else if (id === 'nameIcon') setIdentityOpen(true)
+      else if (id === 'chatFilter') {
+        setTab('chats')
+        setTimeout(() => filterRef.current?.focus(), 0)
+      } else if (id === 'chatNext') step(1)
+      else if (id === 'chatPrev') step(-1)
+      else if (id === 'chatResume' && selected) resume(selected)
+      else if (id === 'chatRename' && selected) {
+        setTab('chats')
+        setRenaming({ id: selected.id, draft: selected.title })
+      }
+    },
+    visible
+  )
+
   return (
     <div className="project-view">
       <header className="page-head">
@@ -145,7 +180,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
             <h1>
               {project.name}
               {project.pinned && <Star size={14} className="pin-star" fill="currentColor" />}
-              <IconButton icon={Pencil} label="Change name and icon" size={13} className="rename-btn" onClick={() => setIdentityOpen(true)} />
+              <IconButton icon={Pencil} label={withKey('Change name and icon', keyFor('nameIcon'))} size={13} className="rename-btn" onClick={() => setIdentityOpen(true)} />
             </h1>
             {project.description && <div className="page-subtitle">{project.description}</div>}
             <div className="chips">
@@ -196,7 +231,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
 
         <div className="page-actions">
           <div className="split-btn">
-            <Button variant="primary" icon={Play} onClick={newSession}>
+            <Button variant="primary" icon={Play} onClick={newSession} title={withKey('New Claude session', keyFor('newSession'))}>
               New session
             </Button>
             <MenuButton
@@ -226,12 +261,12 @@ export default function ProjectView({ project, projects, git, visible, groups, f
             />
           </div>
           <div className="icon-group">
-            <IconButton icon={SquareTerminal} label="Open Claude in Windows Terminal" onClick={() => window.mc.openExternalTerminal(project.path, [])} />
-            <IconButton icon={Code2} label="Open in VS Code" onClick={() => window.mc.openInVSCode(project.path)} />
-            <IconButton icon={FolderOpen} label="Open in Explorer" onClick={() => window.mc.openInExplorer(project.path)} />
+            <IconButton icon={SquareTerminal} label={withKey('Open Claude in Windows Terminal', keyFor('openTerminal'))} onClick={() => window.mc.openExternalTerminal(project.path, [])} />
+            <IconButton icon={Code2} label={withKey('Open in VS Code', keyFor('openVSCode'))} onClick={() => window.mc.openInVSCode(project.path)} />
+            <IconButton icon={FolderOpen} label={withKey('Open in Explorer', keyFor('openExplorer'))} onClick={() => window.mc.openInExplorer(project.path)} />
             <IconButton
               icon={Star}
-              label={project.pinned ? 'Unpin' : 'Pin'}
+              label={withKey(project.pinned ? 'Unpin' : 'Pin', keyFor('pinProject'))}
               active={project.pinned}
               onClick={async () => {
                 await window.mc.togglePin(project.path)
@@ -253,17 +288,17 @@ export default function ProjectView({ project, projects, git, visible, groups, f
       </header>
 
       <nav className="page-tabs">
-        <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>
+        <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')} title={withKey('Overview', keyFor('tabOverview'))}>
           <LayoutDashboard size={15} /> Overview
           {project.meta.status && <span className={`tab-count status-${project.meta.status}`}>{project.meta.status}</span>}
         </button>
-        <button className={tab === 'chats' ? 'active' : ''} onClick={() => setTab('chats')}>
+        <button className={tab === 'chats' ? 'active' : ''} onClick={() => setTab('chats')} title={withKey('Chats', keyFor('tabChats'))}>
           <MessagesSquare size={15} /> Chats <span className="tab-count">{sessions.length}</span>
         </button>
         <button className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')} disabled={!git?.isRepo} title={git?.isRepo ? '' : 'Not a git repository'}>
           <GitBranch size={15} /> Changes {!!git?.dirty && <span className="tab-count warn">{git.dirty}</span>}
         </button>
-        <button className={tab === 'docs' ? 'active' : ''} onClick={() => setTab('docs')}>
+        <button className={tab === 'docs' ? 'active' : ''} onClick={() => setTab('docs')} title={withKey('Docs', keyFor('tabDocs'))}>
           <FileText size={15} /> Docs
         </button>
       </nav>
@@ -272,7 +307,22 @@ export default function ProjectView({ project, projects, git, visible, groups, f
         {tab === 'chats' && (
           <div className="chats">
             <section className="session-list">
-              <input className="filter" placeholder="Search chats" value={filter} onChange={(e) => setFilter(e.target.value)} />
+              <input
+                ref={filterRef}
+                className="filter"
+                placeholder={`Search chats${keyFor('chatFilter') ? `  (${keyFor('chatFilter')})` : ''}`}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  // Down from the search box moves into the list; Enter opens the first match.
+                  if ((e.key === 'ArrowDown' || e.key === 'Enter') && visibleSessions[0]) {
+                    e.preventDefault()
+                    setSelected(visibleSessions[0])
+                    ;(e.target as HTMLInputElement).blur()
+                  }
+                  if (e.key === 'Escape') setFilter('')
+                }}
+              />
               <ul className="scroll">
                 {loading && <li className="muted pad">Loading chats…</li>}
                 {!loading && sessions.length === 0 && (
@@ -282,7 +332,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                 )}
                 {!loading && sessions.length > 0 && visibleSessions.length === 0 && <li className="muted pad">No chats match.</li>}
                 {visibleSessions.map((s) => (
-                  <li key={s.id}>
+                  <li key={s.id} data-session={s.id}>
                     <div className={`session-item ${selected?.id === s.id ? 'selected' : ''}`} onClick={() => setSelected(s)}>
                       {renaming?.id === s.id ? (
                         <input

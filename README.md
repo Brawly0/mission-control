@@ -2,6 +2,13 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.10)
+
+- **Shortcuts for everything**: 57 keyboard shortcuts for going places (`Ctrl+1`–`6`), starting sessions and tasks (`Ctrl+N`, `Ctrl+T`), switching agents (`Ctrl+Tab`, `Alt+1`–`9`), project tabs (`Alt+O/C/G/D`), the chat list (`Ctrl+F`, `Alt+J/K`, `Ctrl+Enter`), compacting a chat (`Ctrl+Shift+K`) and the view. Press `Ctrl+/` (or `F1`) for the full list. Click any shortcut there to change it, and conflicts are handled. Inside a terminal, plain `Ctrl+letter` keys stay with Claude and the shell. Tooltips and the command palette show each action's keys.
+- **Collapsible sidebar**: `Ctrl+B` shrinks it to an icon rail with your projects' icons, and dots for running agents and tasks waiting for review.
+- **Light theme and zoom**: Settings → Appearance (Dark, Light or Same as Windows; `Ctrl+Shift+L` switches). Zoom with `Ctrl+=`, `Ctrl+-` and `Ctrl+0`. Terminals stay dark.
+- **Tidier screens**: Settings split into tabs; quick actions with their shortcuts on Home; Usage shows test, temp and scratch folders as one row.
+
 ## Features (v0.9)
 
 - **Chat size on every agent**: a meter shows how big each live chat is. Every reply re-reads the whole chat, so cost per reply grows with it. It turns amber at 200K tokens (change it in Settings) and red when it's very large, with a **Compact** button that sends `/compact`. You also get one reminder per chat.

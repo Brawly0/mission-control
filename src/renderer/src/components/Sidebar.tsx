@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, KanbanSquare, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
+import { BarChart3, Bot, Check, ChevronRight, FolderPlus, GitBranch, House, KanbanSquare, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, TextSearch } from 'lucide-react'
 import type { BudgetState, GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 import { timeAgo } from '../util'
 import { Avatar, IconButton, Kbd } from './ui'
+import { useKeyFor, withKey } from '../shortcuts'
 
 interface Props {
   projects: Project[]
@@ -22,6 +23,29 @@ interface Props {
   taskCounts: { running: number; review: number }
   /** Monthly budget state, keyed by lower-cased project path. */
   budgets: Record<string, BudgetState>
+  /** Icon-only rail instead of the full sidebar. */
+  collapsed: boolean
+  onToggleCollapsed: () => void
+}
+
+/**
+ * Projects in the order the sidebar shows them: pinned, then groups by name, then the rest,
+ * finished ones last in each section. Alt+Up/Down follow the same order.
+ */
+export function sidebarOrder(projects: Project[], showWorktrees: boolean): Project[] {
+  const visible = projects.filter((p) => showWorktrees || !p.worktree)
+  const ordered = [...visible].sort((a, b) => Number(a.meta.status === 'done') - Number(b.meta.status === 'done'))
+  const groupNames = [...new Set(ordered.filter((p) => !p.pinned).map((p) => p.meta.group || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b))
+  return [
+    ...ordered.filter((p) => p.pinned),
+    ...groupNames.flatMap((g) => ordered.filter((p) => !p.pinned && p.meta.group === g)),
+    ...ordered.filter((p) => !p.pinned && !p.meta.group)
+  ]
+}
+
+/** Shows a combination like "Ctrl+Shift+F" as compact key caps text. */
+function keyCaps(combo: string): string {
+  return combo.replace(/\+/g, ' ').replace('Shift', '⇧')
 }
 
 function loadCollapsed(): Set<string> {
@@ -37,6 +61,7 @@ export default function Sidebar(props: Props) {
   const [filter, setFilter] = useState('')
   const [activeTags, setActiveTags] = useState<string[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
+  const keyFor = useKeyFor()
 
   const toggleGroup = (name: string) => {
     setCollapsed((cur) => {
@@ -161,6 +186,49 @@ export default function Sidebar(props: Props) {
     )
   }
 
+  const navItems = [
+    { view: 'home' as View, icon: House, label: 'Home', shortcut: 'goHome' },
+    { view: 'agents' as View, icon: Bot, label: 'Agents', shortcut: 'goAgents' },
+    { view: 'tasks' as View, icon: KanbanSquare, label: 'Tasks', shortcut: 'goTasks' },
+    { view: 'search' as View, icon: TextSearch, label: 'Search chats', shortcut: 'goSearch' },
+    { view: 'usage' as View, icon: BarChart3, label: 'Usage', shortcut: 'goUsage' }
+  ]
+
+  if (props.collapsed) {
+    return (
+      <aside className="sidebar rail">
+        <button className="brand-mark rail-brand" title={withKey('Show sidebar', keyFor('toggleSidebar'))} onClick={props.onToggleCollapsed}>
+          <PanelLeftOpen size={17} />
+        </button>
+        <button className="rail-item" title={withKey('Command palette', keyFor('palette'))} onClick={props.onOpenPalette}>
+          <Search size={17} />
+        </button>
+        <nav className="rail-nav">
+          {navItems.map((n) => (
+            <button key={n.view} className={`rail-item ${view === n.view ? 'active' : ''}`} title={withKey(n.label, keyFor(n.shortcut))} onClick={() => props.onNavigate(n.view)}>
+              <n.icon size={17} strokeWidth={1.9} />
+              {n.view === 'agents' && live.length > 0 && <span className={`rail-dot ${attention ? 'attention' : ''}`} />}
+              {n.view === 'tasks' && props.taskCounts.review > 0 && <span className="rail-dot review" />}
+            </button>
+          ))}
+        </nav>
+        <div className="rail-projects">
+          {sidebarOrder(projects, showWorktrees).map((p) => (
+            <button
+              key={p.path}
+              className={`rail-project ${view === 'project' && p.path === selectedPath ? 'active' : ''}`}
+              title={[p.name, p.description].filter(Boolean).join(' · ')}
+              onClick={() => props.onSelect(p.path)}
+            >
+              <Avatar name={p.name} path={p.path} size={30} />
+              {runningByProject.get(p.path.toLowerCase()) && <span className="rail-dot working" />}
+            </button>
+          ))}
+        </div>
+      </aside>
+    )
+  }
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -173,20 +241,22 @@ export default function Sidebar(props: Props) {
           <div className="brand-name">Mission Control</div>
           <div className="brand-sub">for Claude Code</div>
         </div>
+        <IconButton icon={PanelLeftClose} label={withKey('Hide sidebar', keyFor('toggleSidebar'))} size={15} className="brand-collapse" onClick={props.onToggleCollapsed} />
       </div>
 
       <button className="search-trigger" onClick={props.onOpenPalette}>
         <Search size={14} />
         <span>Jump to…</span>
-        <Kbd>Ctrl K</Kbd>
+        {keyFor('palette') && <Kbd>{keyCaps(keyFor('palette'))}</Kbd>}
       </button>
 
       <nav className="nav">
-        <button className={`nav-item ${view === 'home' ? 'active' : ''}`} onClick={() => props.onNavigate('home')}>
+        <button className={`nav-item ${view === 'home' ? 'active' : ''}`} onClick={() => props.onNavigate('home')} title={withKey('Home', keyFor('goHome'))}>
           <House size={16} strokeWidth={1.9} />
           <span>Home</span>
+          <span className="nav-end nav-kbd">{keyCaps(keyFor('goHome'))}</span>
         </button>
-        <button className={`nav-item ${view === 'agents' ? 'active' : ''}`} onClick={() => props.onNavigate('agents')}>
+        <button className={`nav-item ${view === 'agents' ? 'active' : ''}`} onClick={() => props.onNavigate('agents')} title={withKey('Agents', keyFor('goAgents'))}>
           <Bot size={16} strokeWidth={1.9} />
           <span>Agents</span>
           <span className="nav-end">
@@ -194,7 +264,7 @@ export default function Sidebar(props: Props) {
             {live.length > 0 && <span className="count">{live.length}</span>}
           </span>
         </button>
-        <button className={`nav-item ${view === 'tasks' ? 'active' : ''}`} onClick={() => props.onNavigate('tasks')}>
+        <button className={`nav-item ${view === 'tasks' ? 'active' : ''}`} onClick={() => props.onNavigate('tasks')} title={withKey('Tasks', keyFor('goTasks'))}>
           <KanbanSquare size={16} strokeWidth={1.9} />
           <span>Tasks</span>
           <span className="nav-end">
@@ -210,24 +280,23 @@ export default function Sidebar(props: Props) {
             )}
           </span>
         </button>
-        <button className={`nav-item ${view === 'search' ? 'active' : ''}`} onClick={() => props.onNavigate('search')}>
+        <button className={`nav-item ${view === 'search' ? 'active' : ''}`} onClick={() => props.onNavigate('search')} title={withKey('Search chats', keyFor('goSearch'))}>
           <TextSearch size={16} strokeWidth={1.9} />
           <span>Search chats</span>
-          <span className="nav-end">
-            <Kbd>Ctrl ⇧ F</Kbd>
-          </span>
+          <span className="nav-end nav-kbd">{keyCaps(keyFor('goSearch'))}</span>
         </button>
-        <button className={`nav-item ${view === 'usage' ? 'active' : ''}`} onClick={() => props.onNavigate('usage')}>
+        <button className={`nav-item ${view === 'usage' ? 'active' : ''}`} onClick={() => props.onNavigate('usage')} title={withKey('Usage', keyFor('goUsage'))}>
           <BarChart3 size={16} strokeWidth={1.9} />
           <span>Usage</span>
+          <span className="nav-end nav-kbd">{keyCaps(keyFor('goUsage'))}</span>
         </button>
       </nav>
 
       <div className="section-head">
         <span>Projects</span>
         <div className="section-actions">
-          <IconButton icon={RefreshCw} label="Refresh" size={14} onClick={props.onRefresh} className={loading ? 'spinning' : ''} />
-          <IconButton icon={FolderPlus} label="Add a project folder" size={14} onClick={props.onAdd} />
+          <IconButton icon={RefreshCw} label={withKey('Refresh', keyFor('refresh'))} size={14} onClick={props.onRefresh} className={loading ? 'spinning' : ''} />
+          <IconButton icon={FolderPlus} label={withKey('Add a project folder', keyFor('addProject'))} size={14} onClick={props.onAdd} />
         </div>
       </div>
       <input className="filter" placeholder="Filter projects or tags" value={filter} onChange={(e) => setFilter(e.target.value)} />

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Bot, CircleAlert, CircleCheck, FolderGit2, GitBranch, History, Play, Sparkles } from 'lucide-react'
+import { ArrowRight, Bot, CircleAlert, CircleCheck, FolderGit2, GitBranch, History, Keyboard, ListPlus, Play, Sparkles, TextSearch } from 'lucide-react'
 import type { Project, RecentSession } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed, timeAgo } from '../util'
 import { Avatar, Button, EmptyState } from './ui'
+import { KeyCombo } from './ShortcutsDialog'
+import { useKeyFor } from '../shortcuts'
 
 interface Props {
   agents: Agent[]
@@ -15,6 +17,10 @@ interface Props {
   onOpenProject: (path: string) => void
   onResume: (s: RecentSession) => void
   onNewSession: (p: Project) => void
+  /** Runs a shortcut's action, so the quick actions do exactly what their keys do. */
+  onShortcut: (id: string) => void
+  /** Name of the project New session starts in. */
+  currentProject?: string
 }
 
 function greeting(): string {
@@ -25,8 +31,9 @@ function greeting(): string {
   return 'Good evening'
 }
 
-export default function HomeView({ agents, lastOutput, projects, visible, onOpenAgent, onOpenProject, onResume, onNewSession }: Props) {
+export default function HomeView({ agents, lastOutput, projects, visible, onOpenAgent, onOpenProject, onResume, onNewSession, onShortcut, currentProject }: Props) {
   const [recent, setRecent] = useState<RecentSession[] | null>(null)
+  const keyFor = useKeyFor()
 
   useEffect(() => {
     if (!visible) return
@@ -58,6 +65,21 @@ export default function HomeView({ agents, lastOutput, projects, visible, onOpen
           <p className="muted">{summary}</p>
         </div>
       </header>
+
+      <section className="quick-actions">
+        {[
+          { id: 'newSession', icon: Play, label: currentProject ? `New session in ${currentProject}` : 'New session' },
+          { id: 'newTask', icon: ListPlus, label: 'New task' },
+          { id: 'goSearch', icon: TextSearch, label: 'Search all chats' },
+          { id: 'shortcuts', icon: Keyboard, label: 'All shortcuts' }
+        ].map((a) => (
+          <button key={a.id} className="quick-action" onClick={() => onShortcut(a.id)}>
+            <a.icon size={15} />
+            <span className="ellipsis">{a.label}</span>
+            {keyFor(a.id) && <KeyCombo combo={keyFor(a.id)} />}
+          </button>
+        ))}
+      </section>
 
       <section className="stat-row">
         <div className="stat">

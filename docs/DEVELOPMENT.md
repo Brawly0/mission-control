@@ -183,3 +183,5 @@ Everything it creates is removed, and your settings are restored.
 4. It screenshots the Spending card, and the size meter on a resumed test chat.
 
 Settings are restored afterwards.
+
+`MC_SMOKE_SHOTS=<project folder name, e.g. bot>` screenshots every screen: Home, that project's tabs, Tasks, Agents, Usage, Search, the palette, Settings and the shortcuts list. It then presses real shortcuts and checks each one: `Ctrl+1/2/3/5`, `Ctrl+Shift+F`, `Ctrl+/` and `Ctrl+B`. Last, it switches to the light theme with `Ctrl+Shift+L`, screenshots it, and puts your theme back. Free. Use it for before/after comparisons of UI changes.

@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bot, GitBranch, GitCompareArrows, LayoutGrid, Minimize2, Plus, Rows2, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed } from '../util'
 import TerminalPane from './TerminalPane'
+import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, EmptyState, IconButton, Segmented } from './ui'
 
@@ -47,8 +48,12 @@ function ContextMeter({ usage, warnAt, onCompact, canCompact }: { usage: Context
   )
 }
 
-function TabTitle({ agent, onRename }: { agent: Agent; onRename: (title: string) => void }) {
+function TabTitle({ agent, onRename, editRequest }: { agent: Agent; onRename: (title: string) => void; editRequest?: number }) {
   const [draft, setDraft] = useState<string | null>(null)
+  // A rename shortcut bumps editRequest for the active tab.
+  useEffect(() => {
+    if (editRequest) setDraft(agent.title)
+  }, [editRequest]) // eslint-disable-line react-hooks/exhaustive-deps
   if (draft === null) {
     return (
       <span className="agent-tab-title" onDoubleClick={() => setDraft(agent.title)} title="Double-click to rename">
@@ -82,6 +87,16 @@ function TabTitle({ agent, onRename }: { agent: Agent; onRename: (title: string)
 export default function AgentsView(props: Props) {
   const { agents, activeId, layout, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [renameRequest, setRenameRequest] = useState(0)
+  const keyFor = useKeyFor()
+  useShortcutEvent(
+    ['toggleReview', 'renameAgent'],
+    (id) => {
+      if (id === 'toggleReview') setReviewOpen((o) => !o)
+      else setRenameRequest(Date.now())
+    },
+    visible
+  )
 
   if (agents.length === 0) {
     return (
@@ -103,19 +118,20 @@ export default function AgentsView(props: Props) {
     <div className="agents">
       <div className="agent-bar">
         <div className="agent-tabs">
-          {agents.map((a) => {
+          {agents.map((a, i) => {
             const st = displayStatus(a, lastOutput[a.id])
+            const jump = i < 9 ? keyFor(`agent${i + 1}`) : ''
             return (
               <div
                 key={a.id}
                 className={`agent-tab ${a.id === active.id ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''}`}
                 onClick={() => onSelect(a.id)}
-                title={`${a.cwd}\n${st.label}`}
+                title={`${a.cwd}\n${st.label}${jump ? `\n${jump} switches here` : ''}`}
               >
                 <span className={`dot ${st.cls}`} />
                 {a.kind === 'shell' && <Terminal size={12} className="muted" />}
                 {a.worktree && <GitBranch size={12} className="tone-accent" />}
-                <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} />
+                <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} editRequest={a.id === active.id ? renameRequest : undefined} />
                 <button
                   className="tab-close"
                   onClick={(e) => {
@@ -137,7 +153,7 @@ export default function AgentsView(props: Props) {
             variant={showReview ? 'secondary' : 'ghost'}
             icon={GitCompareArrows}
             disabled={!reviewable(active)}
-            title={reviewable(active) ? 'Review this agent’s changes' : 'Not a git repository'}
+            title={reviewable(active) ? withKey('Review this agent’s changes', keyFor('toggleReview')) : 'Not a git repository'}
             onClick={() => setReviewOpen((o) => !o)}
             className={showReview ? 'is-on' : ''}
           >

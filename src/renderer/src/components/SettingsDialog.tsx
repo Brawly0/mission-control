@@ -1,7 +1,79 @@
 import { useEffect, useState } from 'react'
-import { Download, Keyboard, RefreshCw, X } from 'lucide-react'
+import { Download, Keyboard, ListTodo, Minus, Monitor, Moon, Palette, PiggyBank, Plus, RefreshCw, Settings2, Sun, X } from 'lucide-react'
 import type { AppSettings, UpdateState } from '@shared/types'
-import { Button, IconButton } from './ui'
+import { Button, IconButton, Segmented } from './ui'
+import { SHORTCUTS, effectiveKeys } from '../shortcuts'
+import { KeyCombo } from './ShortcutsDialog'
+
+type Tab = 'general' | 'appearance' | 'tasks' | 'spending' | 'shortcuts' | 'updates'
+const TABS: { id: Tab; label: string; icon: typeof Keyboard }[] = [
+  { id: 'general', label: 'General', icon: Settings2 },
+  { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'tasks', label: 'Tasks', icon: ListTodo },
+  { id: 'spending', label: 'Spending', icon: PiggyBank },
+  { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+  { id: 'updates', label: 'Updates', icon: Download }
+]
+
+function AppearanceSection({ settings, apply }: { settings: AppSettings; apply: (p: Partial<AppSettings>) => void }) {
+  const zoom = settings.uiZoom || 1
+  const setZoom = (z: number) => apply({ uiZoom: Math.round(Math.min(1.6, Math.max(0.7, z)) * 10) / 10 })
+  return (
+    <>
+      <div className="field">
+        <span className="field-label">Theme</span>
+        <Segmented
+          value={settings.theme}
+          options={[
+            { value: 'dark', label: 'Dark', icon: Moon },
+            { value: 'light', label: 'Light', icon: Sun },
+            { value: 'system', label: 'Same as Windows', icon: Monitor }
+          ]}
+          onChange={(theme) => apply({ theme })}
+        />
+        <span className="field-hint">Terminals stay dark in both themes, so Claude’s colors read the same.</span>
+      </div>
+      <div className="field">
+        <span className="field-label">Zoom</span>
+        <div className="zoom-row">
+          <IconButton icon={Minus} label="Zoom out" onClick={() => setZoom(zoom - 0.1)} />
+          <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+          <IconButton icon={Plus} label="Zoom in" onClick={() => setZoom(zoom + 0.1)} />
+          {zoom !== 1 && (
+            <Button size="sm" variant="ghost" onClick={() => setZoom(1)}>
+              Reset
+            </Button>
+          )}
+        </div>
+        <span className="field-hint">Makes everything bigger or smaller, terminals included. Shortcuts: Ctrl+= and Ctrl+-, Ctrl+0 to reset.</span>
+      </div>
+    </>
+  )
+}
+
+function ShortcutsSection({ onOpen, overrides }: { onOpen?: () => void; overrides: Record<string, string> }) {
+  const keys = effectiveKeys(overrides)
+  const highlights = ['palette', 'goHome', 'newSession', 'newTask', 'nextAgent', 'toggleSidebar', 'shortcuts']
+  return (
+    <div className="field">
+      <span className="field-label">Keyboard shortcuts</span>
+      <p className="small muted">
+        There are {SHORTCUTS.length} shortcuts, for going places, starting sessions and tasks, switching agents, and changing the view. You can change any of them.
+      </p>
+      <ul className="shortcut-highlights">
+        {highlights.map((id) => (
+          <li key={id}>
+            <span>{SHORTCUTS.find((s) => s.id === id)?.label}</span>
+            <KeyCombo combo={keys.get(id)?.[0] ?? ''} />
+          </li>
+        ))}
+      </ul>
+      <Button variant="primary" icon={Keyboard} onClick={onOpen}>
+        See and change all shortcuts
+      </Button>
+    </div>
+  )
+}
 
 /** Turns a keydown into an Electron accelerator like "Ctrl+Alt+M". */
 function accelerator(e: React.KeyboardEvent): string | null {
@@ -72,8 +144,9 @@ function UpdatesSection({ autoUpdate, onAutoUpdate }: { autoUpdate: boolean; onA
   )
 }
 
-export default function SettingsDialog({ onClose }: { onClose: () => void }) {
+export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: () => void; onOpenShortcuts?: () => void }) {
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [tab, setTab] = useState<Tab>('general')
   const [recording, setRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -102,7 +175,16 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
         {!settings ? (
           <div className="muted pad">Loading…</div>
         ) : (
-          <div className="dialog-body">
+          <div className="settings-layout">
+            <nav className="settings-tabs">
+              {TABS.map((t) => (
+                <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
+                  <t.icon size={15} /> {t.label}
+                </button>
+              ))}
+            </nav>
+          <div className="dialog-body settings-pane">
+            {tab === 'general' && (<>
             <div className="field">
               <span className="field-label">Global shortcut to show or hide Mission Control</span>
               <div className="hotkey-row">
@@ -138,6 +220,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
                 <span className="field-hint block">Only while agents or tasks are running. Quit from the tray icon's menu.</span>
               </span>
             </label>
+            </>)}
+            {tab === 'tasks' && (<>
             <div className="field">
               <span className="field-label">Auto-run queue</span>
               <label className="inline-field">
@@ -191,6 +275,8 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
               <span className="field-hint">For tasks that don’t pick a model, unless their project has its own default (Overview → Spending). Sonnet or Haiku costs far less for routine work like reviews and small fixes.</span>
             </div>
 
+            </>)}
+            {tab === 'spending' && (<>
             <div className="field">
               <span className="field-label">Expensive chat alert</span>
               <label className="inline-field">
@@ -227,8 +313,12 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
               <span className="field-hint">Every reply re-reads the whole chat, so cost per reply grows with its size. The agent shows a Compact button to shrink it.</span>
             </div>
 
-            <UpdatesSection autoUpdate={settings.autoUpdate} onAutoUpdate={(v) => apply({ autoUpdate: v })} />
+            </>)}
+            {tab === 'appearance' && <AppearanceSection settings={settings} apply={apply} />}
+            {tab === 'shortcuts' && <ShortcutsSection onOpen={onOpenShortcuts} overrides={settings.keybindings ?? {}} />}
+            {tab === 'updates' && <UpdatesSection autoUpdate={settings.autoUpdate} onAutoUpdate={(v) => apply({ autoUpdate: v })} />}
             {saved && <div className="muted small">Saved</div>}
+          </div>
           </div>
         )}
       </div>

@@ -29,6 +29,7 @@ import { displayStatus } from '../agentStatus'
 import { dependencyState, dependentsOf } from '@shared/deps'
 import { elapsed, formatCost, timeAgo } from '../util'
 import { Avatar, Button, EmptyState } from './ui'
+import { useKeyFor, withKey } from '../shortcuts'
 import { useLook } from '../projectLook'
 
 interface Props {
@@ -207,6 +208,7 @@ function TaskCard({
 export default function TasksView(props: Props) {
   const { tasks, agents, projects, projectFilter } = props
   const [dragOver, setDragOver] = useState<TaskColumn | null>(null)
+  const keyFor = useKeyFor()
 
   const visible = useMemo(
     () => tasks.filter((t) => !projectFilter || t.projectPath.toLowerCase() === projectFilter.toLowerCase()),
@@ -272,10 +274,10 @@ export default function TasksView(props: Props) {
               </select>
             </div>
           )}
-          <Button variant="secondary" icon={FileStack} onClick={props.onOpenTemplates}>
+          <Button variant="secondary" icon={FileStack} onClick={props.onOpenTemplates} title={withKey('Templates and schedules', keyFor('templates'))}>
             Templates
           </Button>
-          <select className="select" value={projectFilter} onChange={(e) => props.onProjectFilter(e.target.value)} aria-label="Project">
+          <select className="select project-filter" value={projectFilter} onChange={(e) => props.onProjectFilter(e.target.value)} aria-label="Project">
             <option value="">All projects</option>
             {projectOptions.map((p) => (
               <option key={p.path} value={p.path}>
@@ -283,7 +285,7 @@ export default function TasksView(props: Props) {
               </option>
             ))}
           </select>
-          <Button variant="primary" icon={Plus} onClick={props.onNew}>
+          <Button variant="primary" icon={Plus} onClick={props.onNew} title={withKey('New task', keyFor('newTask'))}>
             New task
           </Button>
         </div>
