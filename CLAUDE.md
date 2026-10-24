@@ -10,3 +10,9 @@ Electron + React + TypeScript desktop app (Windows) that manages Claude Code pro
 - Session JSONL files can be 30+ MB: never read a whole file just to list sessions.
 - Plain CSS with variables in `src/renderer/src/styles.css`; no UI framework.
 - Tick finished items in `docs/ROADMAP.md` and add an ADR in `docs/decisions/` for notable choices.
+
+## Summary instructions
+
+When you compact this conversation, write the summary as a session briefing for whoever picks this up next:
+the goal; what's done and verified (and what isn't); decisions made and why; open problems; the exact next
+steps; gotchas; and the files that matter.
