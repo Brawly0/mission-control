@@ -25,6 +25,7 @@ import { useToast } from '../toast'
 import DocViewer from './DocViewer'
 import VaultGraph from './VaultGraph'
 import { Button, IconButton, Segmented } from './ui'
+import { PlanShare } from '../planRate'
 
 interface Props {
   project: Project
@@ -228,6 +229,7 @@ export default function VaultView({ project, onChanged }: Props) {
           <span className="muted small">
             {task.run?.toolCalls ? `${task.run.toolCalls} steps` : ''}
             {task.run?.costUsd ? ` · ${formatCost(task.run.costUsd)} at API prices` : ''}
+            {task.run?.costUsd ? <PlanShare usd={task.run.costUsd} prefix=" · " long /> : null}
           </span>
         </div>
       )}

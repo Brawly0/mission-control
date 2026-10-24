@@ -140,10 +140,43 @@ export function titleFromPrompt(prompt: string): string {
     .map((l) => l.trim())
     .filter((l) => l && !/^(```|<|>)/.test(l))
   let t = lines[0] ?? ''
-  t = t.replace(/^(?:(?:hi|hey|hello|ok(?:ay)?|so|please|pls)\b[\s,!.]*)+/i, '')
-  t = t.replace(/\s+/g, ' ').trim()
-  if (t.length > 80) t = t.slice(0, 77).replace(/\s+\S*$/, '') + '…'
+  // A chat that starts from a briefing is named after the briefing's file.
+  const brief = /\b(?:briefing|brief|handoff)\b[^"'\n]*?["']?([a-z]:[\\/][^"'\n]+?\.md)\b/i.exec(t) ?? /["']?([a-z]:[\\/][^"'\n]*?(?:brief|handoff)[^"'\n\\/]*\.md)\b/i.exec(t)
+  if (brief) {
+    const name = briefingName(brief[1])
+    if (name) return `From briefing: ${name}`
+  }
+  // Paths become their last part: "fix C:\app\src\login.ts" reads "fix login.ts".
+  t = t.replace(/["']?\b[a-z]:[\\/][^"'\s]*["']?/gi, (p) => p.replace(/["']/g, '').split(/[\\/]/).filter(Boolean).pop() ?? p)
+  for (let i = 0; i < 3; i++) {
+    t = t.replace(/^(?:(?:hi|hey|hello|yo|ok(?:ay)?|so|alright|please|pls|claude|now)\b[\s,!.:-]*)+/i, '')
+    t = t.replace(/^(?:i (?:want|need|would like) (?:you )?to|i want|can you|could you|would you|will you|help me(?: to)?|let'?s|we need to|i have (?:a |some )?questions?(?: about)?|quick question[,:]?)\s+/i, '')
+  }
+  t = t.replace(/\s+/g, ' ').replace(/[\s,;:]+$/, '').trim()
+  if (t.length > 72) t = t.slice(0, 69).replace(/\s+\S*$/, '') + '…'
   return t ? t[0].toUpperCase() + t.slice(1) : ''
+}
+
+/**
+ * Titles that don't say what a chat was about: handoff names ("Next task briefing", "Session
+ * Briefing 2026-10-11"), "continue…", a bare date or a single word. Such chats are offered for
+ * naming by Claude, like chats titled after their first prompt.
+ */
+export function unclearTitle(title: string): boolean {
+  const t = title.trim().toLowerCase()
+  if (!t || t === '(empty session)') return false
+  return (
+    /^(?:session briefing|next task|new session|continue|continued|start here|read (?:the )?(?:session )?briefing|from briefing|briefing|handoff|untitled|quick chat|hi|hello|test)\b/.test(t) ||
+    /^\W*\d{4}-\d{2}-\d{2}\W*$/.test(t) ||
+    !/\s/.test(t)
+  )
+}
+
+/** "C:\app\docs\briefings\2026-10-24-1449-mission-control-v0-12.md" → "Mission control v0 12". */
+export function briefingName(file: string): string {
+  let n = file.split(/[\\/]/).pop()?.replace(/\.md$/i, '') ?? ''
+  n = n.replace(/^\d{4}-\d{2}-\d{2}(?:[-_]\d{4})?[-_]?/, '').replace(/[-_]+/g, ' ').trim()
+  return n ? n[0].toUpperCase() + n.slice(1) : ''
 }
 
 // ---------------------------------------------------------------- which project a chat worked on

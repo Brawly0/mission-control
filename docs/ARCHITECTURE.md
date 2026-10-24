@@ -21,6 +21,9 @@ src/
     briefings.ts   session briefings: saves compaction summaries to docs/briefings/ (ADR 0012)
     hub.ts         notes, Knowledge (docs across projects), Claude Code status, greeting name, quick chats, new projects
     planUsage.ts   plan limits (session / weekly) polled from your Claude account with Claude Code's saved login, read-only (ADR 0013)
+    planCost.ts    saves plan readings, caches the plan-cost rate, records Eco chats (ADR 0016)
+    digest.ts      the daily digest: builds it, and decides when the notification is due (ADR 0016)
+    recap.ts       "what we worked on" from a transcript (streamed, cached), and the one-shot Haiku calls: summarize a chat, name chats (ADR 0017)
     vault.ts       docs vault: reads docs/ + root notes with links, watches them, starts Claude's build/update tasks (ADR 0014)
     skills.ts      Skills page: personal, plugin and project skills read from disk (ADR 0015)
     eco.ts         Eco mode: launch flags (model, effort, autocompact, plugin) and the long-chat coach
@@ -30,11 +33,16 @@ src/
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
     planUsage.ts    parses the plan-usage response; pace forecast; window names, "resets in" text (pure, unit-tested)
+    planCost.ts     calibration (share of a window per API-priced dollar), shares, tokens per 1%, the Eco check (pure, unit-tested)
+    digest.ts       day keys, when the digest is due, its notification text (pure, unit-tested)
+    recap.ts        the recap builder (prompts, files, commits, last reply, active time) and parsing Claude's answers (pure, unit-tested)
     skills.ts       skill uses in transcripts, coach levels and wording (pure, unit-tested)
     vault.ts        frontmatter, [[wikilinks]], link resolution, headings, the vault prompts (pure, unit-tested)
     projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
     src/App.tsx              app state: projects, git info, agents, views, command palette
+    src/inbox.ts             the "Needs you" inbox worked out from live state (pure, unit-tested)
+    src/planRate.tsx         plan-cost context and the PlanShare label ("≈0.4% wk")
     src/terminalBus.ts       routes PTY output to the right terminal pane
     src/agentStatus.ts       hook event -> agent status, and what each status looks like
     src/toast.tsx            in-app messages (useToast)
@@ -118,6 +126,7 @@ When the process exits, the task moves to **Review**, whether it succeeded, fail
 | `msgs` | one row per assistant API message: model, day, token counts, estimated cost |
 | `sessions` | title (custom title, else the first prompt), project, start and update time |
 | `files` | for each `.jsonl`: size, mtime and the byte offset read so far |
+| `plan_readings` | plan-limit readings (window, time, reset, utilization), 90 days; Mission Control's own data, kept across schema changes (ADR 0016) |
 
 - **Incremental:** transcripts are append-only, so only bytes after the stored offset are read. A partly written last line waits for the next pass. If a file shrinks, its session is re-indexed from scratch. A full pass runs at startup and every 60 seconds; a pass with no changes takes about 15 ms.
 - **Usage dedupe:** a streamed reply repeats the same `message.id` on several lines, so each message keeps the largest count seen for each field.

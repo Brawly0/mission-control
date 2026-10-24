@@ -1,0 +1,353 @@
+/* ---------- Agents: maximize, minimize, resizable grid (ADR 0017) ---------- */
+
+/* One agent fills the window: no sidebar, top bar, status bar or agent tabs. */
+.app.agent-maximized {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app.agent-maximized .sidebar,
+.app.agent-maximized .topbar,
+.app.agent-maximized .statusbar,
+.app.agent-maximized .restore-banner,
+.app.agent-maximized .agent-bar {
+  display: none;
+}
+
+.agent-stage-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.agent-stage-wrap > .agent-stage {
+  flex: 1;
+}
+/* The grid's tracks include 6px gutter tracks; the gutters do the spacing. */
+.agent-stage.grid {
+  gap: 0;
+  grid-auto-rows: unset;
+}
+/* Minimized or hidden cells leave the grid but stay mounted (their terminals keep running). */
+.agent-stage.grid .agent-cell.stacked-hidden {
+  position: absolute;
+  inset: 0;
+}
+.grid-gutter {
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+}
+.grid-gutter.col {
+  cursor: col-resize;
+}
+.grid-gutter.row {
+  cursor: row-resize;
+}
+.grid-gutter::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.grid-gutter.col::after {
+  inset: 0 2px;
+}
+.grid-gutter.row::after {
+  inset: 2px 0;
+}
+.grid-gutter:hover::after,
+.grid-gutter:active::after {
+  background: var(--accent);
+}
+.stage-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+.agent-cols .segmented button {
+  min-width: 30px;
+  padding: 0 8px;
+}
+
+/* Minimize / maximize / close in each agent's header. */
+.agent-cell-head {
+  user-select: none;
+}
+.cell-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+.cell-controls button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.cell-controls button:hover {
+  background: var(--active);
+  color: var(--text);
+}
+.cell-controls .cell-close:hover {
+  color: var(--red);
+}
+.agent-stage.tabs .cell-close {
+  display: none;
+}
+
+/* Minimized agents. */
+.agent-tab.minimized {
+  opacity: 0.55;
+  font-style: italic;
+}
+.agent-tab.minimized.attention {
+  opacity: 1;
+}
+.agent-dock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.agent-dock > .muted {
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.dock-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.dock-item:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.dock-item.attention {
+  border-color: rgba(251, 146, 60, 0.6);
+}
+
+/* ---------- "What we worked on" ---------- */
+.recap {
+  margin: 10px 16px 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: 13px;
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow-y: auto;
+}
+.recap-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.recap-head > .muted {
+  flex: 1;
+  min-width: 0;
+}
+.recap-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--text);
+}
+.recap-collapsed {
+  margin: 6px 0 0;
+}
+.recap-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.recap-ai ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.recap-ai p {
+  margin: 6px 0 0;
+}
+.recap-next {
+  color: var(--text-2);
+}
+.recap-prompts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.recap-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.recap-quote {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-2);
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.recap-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.recap-files .chip {
+  height: 22px;
+  font-size: 11.5px;
+}
+.recap-commits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recap-commits li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.recap-reply {
+  margin: 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+.recap-reply.open {
+  display: block;
+}
+.recap-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* On a resumed agent: one line above the terminal until opened. */
+.recap.recap-compact {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface-2);
+  max-height: 40%;
+}
+.recap-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px 0 12px;
+  font-size: 12px;
+  min-width: 0;
+}
+.recap-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.recap-banner-facts {
+  flex-shrink: 0;
+}
+@container (max-width: 520px) {
+  .recap-banner-facts {
+    display: none;
+  }
+}
+.recap.recap-compact .recap-body {
+  margin: 0;
+  padding: 4px 14px 12px;
+}
+
+/* Chat list: clearer names. */
+.session-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session-title > .ellipsis {
+  min-width: 0;
+}
+.session-date {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.session-open {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2);
+}
+.session-last {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.named-by-claude {
+  flex-shrink: 0;
+  color: var(--yellow);
+}
+.session-viewer-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.session-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 8px;
+  flex-wrap: wrap;
+}
+.spinning-icon svg {
+  animation: spin 1s linear infinite;
+}

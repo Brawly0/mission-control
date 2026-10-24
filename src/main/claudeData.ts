@@ -107,17 +107,24 @@ export async function summarizeSession(projectKey: string, file: string): Promis
   const firstPromptEntry = head.find(isHumanPrompt)
   const withCwd = head.find((e) => typeof e?.cwd === 'string')
   const newestFirst = [...tail, ...head].reverse()
-  // A title set with /rename wins over the automatic name Claude Code gives a chat.
+  // A title set with /rename wins over the automatic names Claude Code gives a chat.
   const customTitle = newestFirst.find((e) => e?.type === 'custom-title' && e.customTitle)?.customTitle
+  const aiTitle = newestFirst.find((e) => e?.type === 'ai-title' && e.aiTitle)?.aiTitle
   const agentName = newestFirst.find((e) => e?.type === 'agent-name' && e.agentName)?.agentName
   const firstPrompt = firstPromptEntry ? messageText(firstPromptEntry).trim() : ''
+  const lastPromptEntry = newestFirst.find((e) => e?.type === 'last-prompt' && e.lastPrompt) ?? newestFirst.find(isHumanPrompt)
+  const lastPrompt = String(lastPromptEntry?.lastPrompt ?? (lastPromptEntry ? messageText(lastPromptEntry) : '')).trim()
+  // Claude Code writes its automatic names the same way as a /rename, so both count as Claude Code's.
+  const titleSource: SessionSummary['titleSource'] = customTitle || aiTitle || agentName ? 'claude-code' : 'prompt'
   const startedAt = ts(head.find((e) => e?.timestamp)?.timestamp) || stat.birthtimeMs
 
   const summary: SessionSummary = {
     id: basename(file, '.jsonl'),
     projectKey,
-    title: customTitle || agentName || titleFromPrompt(firstPrompt) || '(empty session)',
+    title: customTitle || aiTitle || agentName || titleFromPrompt(firstPrompt) || '(empty session)',
+    titleSource,
     firstPrompt: firstPrompt.slice(0, 500),
+    lastPrompt: lastPrompt && lastPrompt !== firstPrompt ? lastPrompt.slice(0, 300) : undefined,
     cwd: withCwd?.cwd ?? '',
     gitBranch: withCwd?.gitBranch && withCwd.gitBranch !== 'HEAD' ? withCwd.gitBranch : '',
     worktree: worktreeName(withCwd?.cwd ?? ''),
@@ -144,10 +151,15 @@ function worktreeName(cwd: string): string | undefined {
   return wt ? prettyWorktreeName(wt.name) : undefined
 }
 
-/** Applies the titles you set in Mission Control (kept apart from the cached summaries). */
-function withOwnTitle(s: SessionSummary, titles: Record<string, string>): SessionSummary {
-  const own = titles[s.id]
-  return own ? { ...s, title: own, renamed: true } : s
+/**
+ * Applies the titles kept in Mission Control (apart from the cached summaries): yours first, then a
+ * name Claude gave the chat here (Name chats, Summarize), over Claude Code's name or the first prompt.
+ */
+function withOwnTitle(s: SessionSummary, store: Pick<StoreData, 'chatTitles' | 'chatAiNames'>): SessionSummary {
+  const own = store.chatTitles[s.id]
+  if (own) return { ...s, title: own, renamed: true, titleSource: 'you' }
+  const named = store.chatAiNames?.[s.id]
+  return named ? { ...s, title: named, titleSource: 'claude' } : s
 }
 
 /** Chats from one or more ~/.claude/projects folders (a project and its worktrees), newest first. */
@@ -158,7 +170,7 @@ function withOwnTitle(s: SessionSummary, titles: Record<string, string>): Sessio
  */
 export async function listSessions(projectKey: string | string[], projectPath?: string): Promise<SessionSummary[]> {
   const keys = [...new Set(Array.isArray(projectKey) ? projectKey : [projectKey])].filter(Boolean)
-  const titles = loadStore().chatTitles
+  const titles = loadStore()
   const here = projectPath ? normalizePath(projectPath) : ''
   const lists = await Promise.all(
     keys.map(async (key) => {

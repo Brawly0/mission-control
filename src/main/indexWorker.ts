@@ -5,6 +5,7 @@
  *   - msgs:     one row per assistant API message with its token usage and estimated cost
  *   - sessions: title, project and dates per session
  *   - files:    how far each .jsonl has been read, so appended lines are indexed incrementally
+ *   - plan_readings: plan-limit readings over time (Mission Control's own data, kept across schema changes)
  * Claude Code's files are only read, never written.
  */
 import { parentPort, workerData } from 'node:worker_threads'
@@ -14,10 +15,11 @@ import { basename, join } from 'node:path'
 import { costOf } from './pricing'
 import { titleFromPrompt, windowsPath } from '../shared/projectLook'
 import { skillUsesIn } from '../shared/skills'
+import { CALIBRATION_DAYS, calibrate, modelPrices, type CostPoint, type PlanReading } from '../shared/planCost'
 import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
 
 const { dbPath, projectsDir } = workerData as { dbPath: string; projectsDir: string }
-const SCHEMA_VERSION = 7
+const SCHEMA_VERSION = 8
 const MAX_BODY = 20_000
 
 function openDb(): DatabaseSync {
@@ -51,6 +53,8 @@ function openDb(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS skill_uses_ts ON skill_uses(ts);
     CREATE TABLE IF NOT EXISTS folders(
       session_id TEXT, folder_lc TEXT, folder TEXT, hits INTEGER, PRIMARY KEY(session_id, folder_lc));
+    CREATE TABLE IF NOT EXISTS plan_readings(win TEXT, ts INTEGER, resets_at INTEGER, util REAL, PRIMARY KEY(win, ts));
+    CREATE INDEX IF NOT EXISTS plan_readings_ts ON plan_readings(ts);
     CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
       body, session_id UNINDEXED, role UNINDEXED, ts UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
   `)
@@ -260,7 +264,8 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
         }
         if (ts && (!row.started || ts < row.started)) row.started = ts
         if (e.type === 'custom-title' && typeof e.customTitle === 'string') row.custom_title = e.customTitle
-        // Claude Code's automatic chat name; a title set with /rename replaces it.
+        // Claude Code's automatic chat names; a title set with /rename replaces them.
+        if (e.type === 'ai-title' && typeof e.aiTitle === 'string' && !row.custom_title) row.custom_title = e.aiTitle
         if (e.type === 'agent-name' && typeof e.agentName === 'string' && !row.custom_title) row.custom_title = e.agentName
       }
 
@@ -599,6 +604,74 @@ function sessionUsage(projectKey: string | string[]): Record<string, UsageTotals
   return Object.fromEntries(rows.map((r) => [r.session_id, totals(r)]))
 }
 
+// ---------------------------------------------------------------- plan cost and digest
+
+/** Saves one plan reading (every window in it); readings older than 90 days are dropped. */
+function addPlanReading(at: number, windows: { name: string; utilization: number; resetsAt: number }[]): void {
+  const put = db.prepare('INSERT OR REPLACE INTO plan_readings(win, ts, resets_at, util) VALUES (?, ?, ?, ?)')
+  for (const w of windows) put.run(w.name, at, w.resetsAt, w.utilization)
+  db.prepare('DELETE FROM plan_readings WHERE ts < ?').run(at - 90 * 86_400_000)
+}
+
+/** Removes readings of one window in a time range (the self-test cleans up its sample readings). */
+function dropPlanReadings(win: string, from: number, to: number): void {
+  db.prepare('DELETE FROM plan_readings WHERE win = ? AND ts >= ? AND ts <= ?').run(win, from, to)
+}
+
+function planReadings(since: number): PlanReading[] {
+  return (db.prepare('SELECT win, ts, resets_at, util FROM plan_readings WHERE ts >= ? ORDER BY ts').all(since) as any[]).map((r) => ({
+    win: r.win,
+    ts: r.ts,
+    resetsAt: r.resets_at,
+    util: r.util
+  }))
+}
+
+/** Share of each plan window per API-priced dollar over the last two weeks, and prices per model (shared/planCost.ts). */
+function planCalibration(now: number): unknown {
+  const since = now - CALIBRATION_DAYS * 86_400_000
+  const readings = planReadings(since)
+  const costs = db.prepare('SELECT ts, cost, model, (input + output + cw5 + cw1h + cread) AS tokens FROM msgs WHERE ts >= ?').all(since) as unknown as CostPoint[]
+  const first = db.prepare('SELECT MIN(ts) AS t, COUNT(*) AS n FROM plan_readings').get() as { t: number | null; n: number }
+  return { windows: calibrate(readings, costs, now), models: modelPrices(costs), readings: first.n, firstReading: first.t ?? 0 }
+}
+
+/** Replies and cost since a time in chats started with Eco mode on, against all other chats. */
+function ecoCompare(since: number, ecoIds: string[]): unknown {
+  const group = (rows: any[]) => rows.reduce((t, r) => ({ chats: t.chats + 1, replies: t.replies + r.replies, cost: t.cost + r.cost }), { chats: 0, replies: 0, cost: 0 })
+  const rows = db.prepare('SELECT session_id, COUNT(*) AS replies, SUM(cost) AS cost FROM msgs WHERE ts >= ? GROUP BY session_id').all(since) as any[]
+  const eco = new Set(ecoIds)
+  return { since, eco: group(rows.filter((r) => eco.has(r.session_id))), other: group(rows.filter((r) => !eco.has(r.session_id))) }
+}
+
+/** One stretch of time in review: chats, replies and cost, the busiest projects and chats, and briefings saved. */
+function dayDigest(from: number, to: number): unknown {
+  const t = db.prepare('SELECT COUNT(DISTINCT session_id) AS chats, COUNT(*) AS replies, SUM(cost) AS cost FROM msgs WHERE ts >= ? AND ts < ?').get(from, to) as any
+  const projects = db
+    .prepare(
+      `SELECT s.project_path, SUM(m.cost) AS cost, COUNT(DISTINCT m.session_id) AS chats
+       FROM msgs m JOIN sessions s ON s.session_id = m.session_id
+       WHERE m.ts >= ? AND m.ts < ? GROUP BY s.project_path ORDER BY cost DESC LIMIT 5`
+    )
+    .all(from, to) as any[]
+  const chats = db
+    .prepare(
+      `SELECT m.session_id, s.title, s.project_path, SUM(m.cost) AS cost
+       FROM msgs m JOIN sessions s ON s.session_id = m.session_id
+       WHERE m.ts >= ? AND m.ts < ? GROUP BY m.session_id ORDER BY cost DESC LIMIT 5`
+    )
+    .all(from, to) as any[]
+  const b = db.prepare('SELECT COUNT(*) AS n FROM briefings WHERE ts >= ? AND ts < ?').get(from, to) as { n: number }
+  return {
+    chats: t?.chats ?? 0,
+    replies: t?.replies ?? 0,
+    costUsd: t?.cost ?? 0,
+    topProjects: projects.map((r) => ({ projectPath: r.project_path ?? '', costUsd: r.cost, chats: r.chats })),
+    topChats: chats.map((r) => ({ sessionId: r.session_id, title: r.title ?? '', projectPath: r.project_path ?? '', costUsd: r.cost })),
+    briefings: b.n
+  }
+}
+
 // ---------------------------------------------------------------- messages
 
 const handlers: Record<string, (...args: any[]) => unknown> = {
@@ -611,6 +684,12 @@ const handlers: Record<string, (...args: any[]) => unknown> = {
   skillUsage,
   firstReplies,
   chatsOverCost,
+  addPlanReading,
+  planReadings,
+  dropPlanReadings,
+  planCalibration,
+  ecoCompare,
+  dayDigest,
   status: () => status
 }
 

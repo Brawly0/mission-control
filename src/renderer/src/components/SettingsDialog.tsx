@@ -137,7 +137,7 @@ function UpdatesSection({ autoUpdate, onAutoUpdate }: { autoUpdate: boolean; onA
         <input type="checkbox" checked={autoUpdate} onChange={(e) => onAutoUpdate(e.target.checked)} />
         <span>
           Check for updates automatically
-          <span className="field-hint block">New versions download in the background and install the next time Mission Control restarts.</span>
+          <span className="field-hint block">Checks every 30 minutes and when you come back to the window. New versions download in the background; an Update button in the top bar restarts into them (or they install the next time Mission Control restarts).</span>
         </span>
       </label>
     </div>
@@ -202,6 +202,20 @@ export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab }:
               <span>
                 Save a session briefing whenever a chat runs out of room
                 <span className="field-hint block">Claude Code writes a summary when it compacts a chat. Mission Control saves it to the project’s docs/briefings/ folder, so a new session can start from it (New session → from latest briefing).</span>
+              </span>
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={!!settings.digestTime} onChange={(e) => apply({ digestTime: e.target.checked ? '09:00' : '' })} />
+              <span>
+                Daily digest at{' '}
+                <input
+                  type="time"
+                  className="text-input time-input"
+                  value={settings.digestTime || '09:00'}
+                  disabled={!settings.digestTime}
+                  onChange={(e) => e.target.value && apply({ digestTime: e.target.value })}
+                />
+                <span className="field-hint block">A notification with yesterday in review (chats, share of your week, tasks) and what’s waiting today. If the app isn’t running then, it shows when you next open it. The Inbox always has it.</span>
               </span>
             </label>
             <div className="field">

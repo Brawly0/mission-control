@@ -204,6 +204,16 @@ It removes what it created.
 
 `MC_SMOKE_VAULT=<empty scratch folder>` writes a sample vault there (INDEX, linked notes, a decision, a briefing), shows it as a project for the tour, and checks link resolution, backlinks, the live watcher (a new file appears), the graph, and the empty "Build vault" screen and its dialog (cancelled). It screenshots each as `<MC_SMOKE>-vault-*.png`. Free: nothing is sent to Claude.
 
+`MC_SMOKE_AGENTS=<project folder name, e.g. bot>` checks v0.17 for free:
+- Logs the project's chat names (and where each comes from) and the recap of its newest chat, and screenshots the Chats tab with the recap card.
+- Opens four agents "resumed" from the newest chats. They're PowerShell tabs, so nothing runs in Claude and no chat file is touched.
+- Shows them in the grid and checks the "Last time" banners. Drags a divider with the real mouse, then minimizes one agent and maximizes another.
+- Screenshots each step as `<MC_SMOKE>-agents-*.png` and clears the grid sizes it saved.
+
+Add `MC_SMOKE_AGENTS_AI=1` to also run Summarize and Name chats for real (Haiku, about $0.005). It logs the old and new names, then puts the store back as it was.
+
+`MC_SMOKE_INBOX=1` checks plan cost and the inbox, for free. It writes three days of sample plan readings into the self-test's own index, made from your real chat costs at a known rate (1% of the week per $2.50), and checks the calibration finds that rate again. It adds a finished, a failed and an overdue task, then checks the inbox items, the sidebar badge, dismissing, both digests and the plan shares on Usage and Tasks. It screenshots the Inbox, Usage, Tasks and Settings → General as `<MC_SMOKE>-inbox-*.png`. The tasks and sample readings are removed afterwards.
+
 `MC_SMOKE_PLAN=1` asks your Claude account for your plan limits (one small request, no model use), logs the windows and plan, checks the top-bar meter text and screenshots Home and Usage. Free. (Normal smoke runs don't poll.)
 
 `MC_SMOKE_BRIEF=<empty scratch folder>` lists the session briefings (compaction summaries) in your chats. It writes the newest one as a file into the scratch folder (never into your projects), checks the wrapper lines are gone and that "latest briefing" finds it, and screenshots Knowledge → Session briefings. Free.

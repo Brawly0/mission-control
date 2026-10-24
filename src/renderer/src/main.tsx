@@ -11,6 +11,8 @@ import './ui2.css'
 import './dashboard.css'
 import './vault.css'
 import './skills.css'
+import './inbox.css'
+import './agents.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

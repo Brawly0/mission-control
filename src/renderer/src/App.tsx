@@ -4,12 +4,14 @@ import {
   Bell,
   BookOpen,
   Bot,
+  Download,
   FileStack,
   FolderOpen,
   FolderPlus,
   GitFork,
   History,
   House,
+  Inbox,
   KanbanSquare,
   Keyboard,
   LayoutGrid,
@@ -41,12 +43,14 @@ import type {
   RecentSession,
   SavedAgent,
   SearchHit,
+  SessionSummary,
   Task,
   TaskTemplate,
   UpdateState,
   AppSettings,
   BudgetState,
-  ContextUsage
+  ContextUsage,
+  PlanRate
 } from '@shared/types'
 import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
@@ -76,6 +80,9 @@ import ProjectsView from './components/ProjectsView'
 import NotebookView from './components/NotebookView'
 import KnowledgeView from './components/KnowledgeView'
 import NewProjectDialog from './components/NewProjectDialog'
+import InboxView from './components/InboxView'
+import { inboxCount, inboxItems, visibleInbox, type InboxItem } from './inbox'
+import { PlanRateContext } from './planRate'
 import { sidebarOrder } from './components/Sidebar'
 import { briefingFileName, briefingPrompt, worktreeParent, writeBriefingPrompt } from '@shared/projectLook'
 
@@ -120,6 +127,9 @@ export default function App() {
   const [queue, setQueue] = useState<QueueStatus | null>(null)
   const [update, setUpdate] = useState<UpdateState>({ state: 'idle' })
   const [budgets, setBudgets] = useState<Record<string, BudgetState>>({})
+  const [planRate, setPlanRate] = useState<PlanRate | null>(null)
+  const [inboxDismissed, setInboxDismissed] = useState<string[]>([])
+  const [showDismissed, setShowDismissed] = useState(false)
 
   // Monthly budgets: refresh when the index changes (new spend), when projects change (new budgets), and on warnings.
   const refreshBudgets = useCallback(() => {
@@ -263,6 +273,7 @@ export default function App() {
       if (ui.layout) setLayout(ui.layout)
       if (ui.showWorktrees) setShowWorktrees(true)
       if (ui.sidebarCollapsed) setSidebarCollapsed(true)
+      if (ui.inboxDismissed) setInboxDismissed(ui.inboxDismissed)
       setUiLoaded(true)
       refreshProjects()
     })
@@ -326,6 +337,7 @@ export default function App() {
                 ...a,
                 sessionId: event.sessionId ?? a.sessionId,
                 hookStatus: change?.status ?? a.hookStatus,
+                statusAt: change && change.status !== a.hookStatus ? Date.now() : a.statusAt,
                 statusMessage: change ? change.message : a.statusMessage
               }
         )
@@ -355,6 +367,16 @@ export default function App() {
   const launch = useCallback(
     async (opts: LaunchOptions) => {
       const kind = opts.kind ?? 'claude'
+      const args = opts.args ?? []
+      const resumeAt = args.indexOf('--resume')
+      const resumedFrom = resumeAt >= 0 ? args[resumeAt + 1] : undefined
+      // A chat that's already open as an agent is shown, not started a second time.
+      const open = resumedFrom ? agentsRef.current.find((a) => !a.exited && a.sessionId === resumedFrom) : undefined
+      if (open) {
+        setActiveAgent(open.id)
+        setView('agents')
+        return { id: open.id, pid: 0, sessionId: open.sessionId }
+      }
       try {
         const info = await window.mc.ptySpawn({ cwd: opts.cwd, args: opts.args ?? [], kind, cols: 120, rows: 30 })
         const agent: Agent = {
@@ -367,7 +389,8 @@ export default function App() {
           sessionId: info.sessionId,
           worktree: opts.worktree,
           exited: false,
-          startedAt: Date.now()
+          startedAt: Date.now(),
+          resumedFrom
         }
         setAgents((a) => [...a, agent])
         setActiveAgent(info.id)
@@ -493,12 +516,6 @@ export default function App() {
     [launch, toast]
   )
 
-  // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
-  useEffect(() => {
-    if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current }
-  }, [launch, refreshProjects, startTask])
-
   const restoreAll = useCallback(async () => {
     const saved = pendingRestore ?? []
     setPendingRestore([])
@@ -525,6 +542,12 @@ export default function App() {
       return next
     })
   }, [])
+
+  // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
+  useEffect(() => {
+    if (!window.mc.smoke) return
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), closeAgent, runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current }
+  }, [launch, refreshProjects, startTask, closeAgent])
 
   const renameAgent = useCallback((id: string, title: string) => {
     setAgents((list) => list.map((a) => (a.id === id ? { ...a, title } : a)))
@@ -579,6 +602,10 @@ export default function App() {
   }, [refreshProjects, openProject])
 
   useEffect(() => refreshBudgets(), [projects, indexStatus?.lastRun, refreshBudgets])
+  // What a dollar of usage takes of your plan: refreshed with new chats and new plan readings (cached for 10 minutes in main).
+  useEffect(() => {
+    window.mc.planRate().then(setPlanRate).catch(() => undefined)
+  }, [indexStatus?.lastRun, rateLimit?.at])
   // The index knows which project a chat started from C:\ worked in, so re-list projects when it updates.
   useEffect(() => {
     if (indexStatus?.lastRun) void refreshProjects()
@@ -623,6 +650,54 @@ export default function App() {
       window.removeEventListener('mc:run-shortcut', onRun)
     }
   }, [openPalette])
+
+  /** Resumes several chats at once and shows them side by side. */
+  const openMany = async (project: Project, chats: SessionSummary[]) => {
+    for (const s of chats) {
+      await launch({ cwd: s.cwd || project.path, projectName: project.name, projectPath: project.path, title: s.title.slice(0, 48), args: ['--resume', s.id] })
+    }
+    if (chats.length > 1) setLayout('grid')
+    toast('success', `Opened ${chats.length} ${chats.length === 1 ? 'chat' : 'chats'} from ${project.name}`, 'Minimize, maximize or resize them from each agent’s header.')
+  }
+  const openSessions = useMemo(() => new Set(agents.filter((a) => !a.exited && a.sessionId).map((a) => a.sessionId!)), [agents])
+  // One agent filling the whole window (Maximize); anything that leaves the Agents page restores the layout.
+  const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null)
+  useEffect(() => {
+    if (view !== 'agents' || (maximizedAgent && !agents.some((a) => a.id === maximizedAgent))) setMaximizedAgent(null)
+  }, [view, agents, maximizedAgent])
+
+  // ---------- inbox ----------
+  const allInbox = inboxItems({
+    now: Date.now(),
+    agents,
+    tasks,
+    rateLimit,
+    planAlertPercent: appSettings?.planAlertPercent ?? 80,
+    budgets,
+    projects,
+    update,
+    queue,
+    restoreCount: pendingRestore?.length ?? 0
+  })
+  const inbox = visibleInbox(allInbox, inboxDismissed)
+  const inboxBadge = inboxCount(inbox)
+  const saveDismissed = (keys: string[]) => {
+    // The newest few hundred are plenty: old keys never match again.
+    const next = [...new Set(keys)].slice(-300)
+    setInboxDismissed(next)
+    window.mc.setUiState({ inboxDismissed: next })
+  }
+  const inboxAction = (item: InboxItem) => {
+    const a = item.action
+    if (a.kind === 'agent') focusAgent(a.agentId)
+    else if (a.kind === 'task') {
+      setView('tasks')
+      setOpenTaskId(a.taskId)
+    } else if (a.kind === 'view') setView(a.view)
+    else if (a.kind === 'project') openProject(a.path)
+    else if (a.kind === 'update') window.mc.installUpdate()
+    else if (a.kind === 'restore') void restoreAll()
+  }
 
   /** Eco mode on or off (Settings → Spending has what it changes). */
   const toggleEco = async () => {
@@ -690,6 +765,7 @@ export default function App() {
         toast('info', notify ? 'Notifications off' : 'Notifications on')
       },
       goHome: () => setView('home'),
+      goInbox: () => setView('inbox'),
       goAgents: () => setView('agents'),
       goTasks: () => setView('tasks'),
       goSearch: () => setView('search'),
@@ -772,6 +848,7 @@ export default function App() {
   const commands = useMemo<Command[]>(() => {
     const list: Command[] = [
       { id: 'go-home', group: 'Go to', title: 'Home', icon: House, run: () => setView('home') },
+      { id: 'go-inbox', group: 'Go to', title: 'Inbox (needs you) and daily digest', icon: Inbox, keywords: 'attention waiting review notifications digest', run: () => setView('inbox') },
       { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') },
       { id: 'go-search', group: 'Go to', title: 'Search all chats', hint: 'Ctrl+Shift+F', icon: TextSearch, keywords: 'find full text', run: () => setView('search') },
       { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') },
@@ -787,6 +864,18 @@ export default function App() {
       { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: () => setComposerOpen(true) },
       { id: 'templates', group: 'Actions', title: 'Task templates and schedules', icon: FileStack, keywords: 'recurring cron repeat', run: () => setTemplatesOpen(true) },
       { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) },
+      {
+        id: 'update',
+        group: 'Actions',
+        title: update.state === 'ready' ? `Restart to update to ${update.version}` : update.state === 'available' || update.state === 'downloading' ? `Update to ${update.version}` : 'Check for updates',
+        icon: Download,
+        keywords: 'update upgrade new version release',
+        run: () => {
+          if (update.state === 'ready' || update.state === 'available' || update.state === 'downloading') return window.mc.updateNow()
+          void window.mc.checkForUpdates()
+          toast('info', 'Checking for updates', update.state === 'disabled' ? 'Updates only work in the installed app.' : 'If there is one, an Update button appears in the top bar.')
+        }
+      },
       { id: 'shortcuts', group: 'Actions', title: 'Keyboard shortcuts', icon: Keyboard, keywords: 'keys hotkeys bindings', run: () => setShortcutsOpen(true) },
       { id: 'toggleSidebar', group: 'View', title: 'Show or hide sidebar', icon: PanelLeft, run: () => runShortcutRef.current('toggleSidebar') },
       { id: 'toggleTheme', group: 'View', title: 'Light or dark theme', icon: SunMoon, keywords: 'appearance colors', run: () => runShortcutRef.current('toggleTheme') },
@@ -828,7 +917,7 @@ export default function App() {
     }
     // Show each command's shortcut.
     const shortcutOf: Record<string, string> = {
-      'go-home': 'goHome', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
+      'go-home': 'goHome', 'go-inbox': 'goInbox', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
       'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco',
       'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
       'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
@@ -840,12 +929,13 @@ export default function App() {
       list.push({ id: `chat-${s.id}`, group: 'Resume a chat', title: s.title, hint: s.projectName, icon: History, keywords: s.projectName, run: () => resumeRecent(s) })
     }
     return list
-  }, [selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ShortcutContext.Provider value={shortcutKeys}>
     <LookContext.Provider value={lookUp}>
-    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <PlanRateContext.Provider value={planRate}>
+    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${maximizedAgent ? 'agent-maximized' : ''}`}>
       <Sidebar
         projects={projects}
         budgets={budgets}
@@ -864,6 +954,7 @@ export default function App() {
         onOpenTemplates={() => setTemplatesOpen(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
+        inbox={inboxBadge}
         taskCounts={{
           running: tasks.filter((t) => t.column === 'running').length,
           review: tasks.filter((t) => t.column === 'review').length
@@ -872,6 +963,7 @@ export default function App() {
       <main className="main">
         <TopBar theme={theme} userName={userName} currentProject={selected?.name}
           rateLimit={rateLimit}
+          update={update}
           eco={appSettings?.eco}
           onEcoSettings={() => {
             setSettingsTab('spending')
@@ -920,6 +1012,36 @@ export default function App() {
               currentProject={selected?.name}
             />
           </div>
+          <div className={view === 'inbox' ? 'view-pane' : 'view-pane hidden'}>
+            <InboxView
+              visible={view === 'inbox'}
+              items={showDismissed ? visibleInbox(allInbox, inboxDismissed, true) : inbox}
+              hiddenCount={allInbox.length - inbox.length}
+              showHidden={showDismissed}
+              onToggleHidden={() => setShowDismissed((v) => !v)}
+              onAction={inboxAction}
+              onSecondary={(item) => {
+                if (item.secondary?.action === 'taskDone' && item.action.kind === 'task') {
+                  void window.mc.updateTask(item.action.taskId, { column: 'done', order: Date.now() })
+                  toast('success', 'Marked done', item.title)
+                }
+              }}
+              onDismiss={(key) => saveDismissed([...inboxDismissed, key])}
+              onDismissAll={() => saveDismissed([...inboxDismissed, ...inbox.filter((i) => i.dismissable).map((i) => i.key)])}
+              indexRun={indexStatus?.lastRun ?? 0}
+              digestTime={appSettings?.digestTime ?? ''}
+              onDigestSettings={() => {
+                setSettingsTab('general')
+                setSettingsOpen(true)
+              }}
+              onOpenProject={openProject}
+              onOpenSession={openSession}
+              onOpenTask={(id) => {
+                setView('tasks')
+                setOpenTaskId(id)
+              }}
+            />
+          </div>
           <div className={view === 'project' ? 'view-pane' : 'view-pane hidden'}>
             {selected ? (
               <ProjectView
@@ -932,6 +1054,8 @@ export default function App() {
                 focus={focusSession}
                 budget={budgets[selected.path.toLowerCase().replace(/[\\/]+$/, '')]}
                 onLaunch={launch}
+                onOpenMany={(chats) => void openMany(selected, chats)}
+                openSessions={openSessions}
                 onLaunchWorktree={launchWorktree}
                 onStartFromBriefing={() => void startFromBriefing(selected.path)}
                 onChanged={() => {
@@ -947,6 +1071,8 @@ export default function App() {
               agents={agents}
               activeId={activeAgent}
               layout={layout}
+              maximized={maximizedAgent}
+              onMaximize={setMaximizedAgent}
               visible={view === 'agents'}
               lastOutput={lastOutput}
               git={git}
@@ -1145,6 +1271,7 @@ export default function App() {
         <ShortcutsDialog overrides={appSettings?.keybindings ?? {}} onChange={(keybindings) => void saveSettings({ keybindings })} onClose={() => setShortcutsOpen(false)} />
       )}
     </div>
+    </PlanRateContext.Provider>
     </LookContext.Provider>
     </ShortcutContext.Provider>
   )

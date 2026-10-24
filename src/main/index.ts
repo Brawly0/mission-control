@@ -44,7 +44,7 @@ import { automationHold, takeDueReminders, createTask,
 } from './tasks'
 import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
 import { deleteTemplate, listTemplates, runTemplate, saveTemplate, startScheduler, stopScheduler } from './templates'
-import { checkForUpdates, initUpdater, installUpdate, setAutoCheck, updateStatus } from './updater'
+import { checkForUpdates, checkSoon, initUpdater, installUpdate, setAutoCheck, updateNow, updateStatus } from './updater'
 import { getSession, listProjects, listSessions, normalizePath, recentSessions, renameSession, sessionExists, setProjectMeta, setFolderSource, moveSession, movedChatList } from './claudeData'
 import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
 import { commitAll, createWorktree, getChanges, gitInfoMany, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
@@ -58,6 +58,9 @@ import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBri
 import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { runSmoke } from './smoke'
 import { refreshPlanUsage, startPlanUsage, stopPlanUsage } from './planUsage'
+import { markEcoSession, planRate } from './planCost'
+import { buildDigest, checkDigest } from './digest'
+import { nameChats, sessionRecap, summarizeChat } from './recap'
 import { buildVault, stopVaultWatch, vaultNotes, watchVault } from './vault'
 import { addEcoSkillToProject, listSkills } from './skills'
 import { coachPrompt, ecoPluginDir } from './eco'
@@ -121,7 +124,10 @@ function createWindow(): void {
 
   // Coming back to the window: fresh plan numbers (at most every 20 seconds).
   mainWindow.on('focus', () => {
-    if (!process.env.MC_SMOKE) void refreshPlanUsage()
+    if (!process.env.MC_SMOKE) {
+      void refreshPlanUsage()
+      checkSoon()
+    }
   })
   mainWindow.on('close', (e) => {
     const win = mainWindow
@@ -205,6 +211,7 @@ export function launchTerminal(spec: TerminalSpec): TerminalInfo {
     // The project's default model for new chats, and only the MCP servers it loads.
     args = [...launchArgs(spec.cwd, { newChat: resumeAt < 0 && !args.includes('--continue'), hasModel: args.includes('--model') }), ...args]
     args = ['--settings', hookSettingsFor(id), ...args]
+    markEcoSession(sessionId)
   }
   const info = spawnTerminal(
     { ...spec, args },
@@ -239,6 +246,9 @@ function registerIpc(): void {
     return startupReport(path, first)
   })
   ipcMain.handle('sessions:rename', (_e, id: string, title: string) => renameSession(id, title))
+  ipcMain.handle('sessions:recap', (_e, id: string) => sessionRecap(id))
+  ipcMain.handle('sessions:summarize', (_e, id: string) => summarizeChat(id))
+  ipcMain.handle('sessions:name', (_e, ids: string[]) => nameChats(ids))
   ipcMain.handle('sessions:get', (_e, key: string, id: string) => getSession(key, id))
 
   ipcMain.handle('projects:add', async () => {
@@ -375,10 +385,13 @@ function registerIpc(): void {
     }
     return [...out.values()].sort((a, b) => b.cost - a.cost)
   }
-  // Chat titles you set in Mission Control live in the store, not the index.
+  // Chat titles you set in Mission Control, and names Claude gave chats here, live in the store, not the index.
   const ownTitles = <T extends { sessionId: string; title: string }>(rows: T[]): T[] => {
-    const titles = loadStore().chatTitles
-    return rows.map((r) => (titles[r.sessionId] ? { ...r, title: titles[r.sessionId] } : r))
+    const { chatTitles, chatAiNames } = loadStore()
+    return rows.map((r) => {
+      const t = chatTitles[r.sessionId] || chatAiNames[r.sessionId]
+      return t ? { ...r, title: t } : r
+    })
   }
   ipcMain.handle('index:search', async (_e, query: string, opts?: object) =>
     ownTitles((await queryIndex('search', query, opts ?? {})) as SearchHit[])
@@ -418,6 +431,8 @@ function registerIpc(): void {
   ipcMain.handle('tasks:stop', (_e, id: string) => stopTask(id))
   ipcMain.handle('tasks:setRun', (_e, id: string, patch: Partial<TaskRun>, column?: TaskColumn) => setTaskRun(id, patch, column))
   ipcMain.handle('ratelimit:get', () => getRateLimit())
+  ipcMain.handle('plan:rate', (_e, force?: boolean) => planRate(!!force))
+  ipcMain.handle('digest:get', (_e, which: 'yesterday' | 'today') => buildDigest(which))
   ipcMain.handle('ratelimit:refresh', async () => {
     await refreshPlanUsage(true)
     return getRateLimit()
@@ -458,6 +473,11 @@ function registerIpc(): void {
     quitting = true
     installUpdate()
   })
+  ipcMain.on('update:now', () =>
+    updateNow(() => {
+      quitting = true
+    })
+  )
   ipcMain.on('status:summary', (_e, summary: { agents: number; attention: number }) => {
     uiSummary = summary
     refreshTray()
@@ -557,6 +577,19 @@ function checkPlanLimits(info: RateLimitInfo): void {
   }
 }
 
+/** The daily digest notification, once a day after the time set in Settings; clicking opens the Inbox. */
+async function showDigest(): Promise<void> {
+  if (process.env.MC_SMOKE) return
+  const text = await checkDigest().catch(() => null)
+  if (!text) return
+  const n = new Notification({ title: text.title, body: text.body, icon: join(__dirname, '../../build/icon.png') })
+  n.on('click', () => {
+    showWindow()
+    sendToWindow('navigate', { view: 'inbox' })
+  })
+  n.show()
+}
+
 function notifyTasks(title: string, body: string): void {
   if (process.env.MC_SMOKE) return
   const n = new Notification({ title, body, icon: join(__dirname, '../../build/icon.png') })
@@ -627,10 +660,10 @@ app.whenReady().then(async () => {
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
-  if (!process.env.MC_SMOKE) startPlanUsage(checkPlanLimits)
   setFolderSource((ids) => queryIndex('sessionFolders', ids))
-  // Due-date reminders, checked every minute.
+  // Due-date reminders and the daily digest, checked every minute.
   setInterval(() => {
+    if (!process.env.MC_SMOKE) void showDigest()
     for (const t of takeDueReminders().slice(0, 3)) {
       if (process.env.MC_SMOKE) continue
       const n = new Notification({ title: `Due now: ${t.title}`, body: t.projectName, icon: join(__dirname, '../../build/icon.png') })
@@ -642,6 +675,8 @@ app.whenReady().then(async () => {
     }
   }, 60_000)
   let lastIndexRun = 0
+  // A digest that came due while the app was closed shows shortly after it starts.
+  setTimeout(() => void showDigest(), 30_000)
   startIndexer((status) => {
     sendToWindow('index:status', status)
     if (status.lastRun && status.lastRun !== lastIndexRun) {
@@ -656,6 +691,8 @@ app.whenReady().then(async () => {
       })
     }
   })
+  // The plan poll starts after the indexer: it saves readings there and reads the last hour back.
+  if (!process.env.MC_SMOKE) startPlanUsage(checkPlanLimits)
   if (!process.env.MC_SMOKE) {
     createTray({
       getWindow: () => mainWindow,

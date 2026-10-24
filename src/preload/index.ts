@@ -9,6 +9,8 @@ function on<T>(channel: string, cb: (value: T) => void): () => void {
 }
 
 const api: MissionControlApi = {
+  planRate: (force) => ipcRenderer.invoke('plan:rate', force),
+  getDigest: (which) => ipcRenderer.invoke('digest:get', which),
   listProjects: () => ipcRenderer.invoke('projects:list'),
   listSessions: (key, path) => ipcRenderer.invoke('sessions:list', key, path),
   moveSession: (id, path) => ipcRenderer.invoke('sessions:move', id, path),
@@ -32,6 +34,9 @@ const api: MissionControlApi = {
   commonFolders: () => ipcRenderer.invoke('folders:common'),
   startupReport: (path, keys) => ipcRenderer.invoke('spend:startup', path, keys),
   renameSession: (id, title) => ipcRenderer.invoke('sessions:rename', id, title),
+  sessionRecap: (id) => ipcRenderer.invoke('sessions:recap', id),
+  summarizeChat: (id) => ipcRenderer.invoke('sessions:summarize', id),
+  nameChats: (ids) => ipcRenderer.invoke('sessions:name', ids),
   getSession: (key, id) => ipcRenderer.invoke('sessions:get', key, id),
   addProject: () => ipcRenderer.invoke('projects:add'),
   removeProject: (path) => ipcRenderer.invoke('projects:remove', path),
@@ -130,6 +135,7 @@ const api: MissionControlApi = {
   updateStatus: () => ipcRenderer.invoke('update:status'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.send('update:install'),
+  updateNow: () => ipcRenderer.send('update:now'),
   onUpdateStatus: (cb) => on<UpdateState>('update:status', cb),
   reportStatus: (summary) => ipcRenderer.send('status:summary', summary),
   getSettings: () => ipcRenderer.invoke('settings:get'),

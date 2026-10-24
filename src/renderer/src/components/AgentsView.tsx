@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
-import { Bot, FileText, GitBranch, GitCompareArrows, LayoutGrid, Minimize2, Plus, Rows2, Terminal, X } from 'lucide-react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { Bot, Columns3, FileText, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed } from '../util'
 import TerminalPane from './TerminalPane'
+import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, EmptyState, IconButton, Segmented } from './ui'
@@ -13,6 +14,9 @@ interface Props {
   agents: Agent[]
   activeId: string | null
   layout: AgentLayout
+  /** The agent filling the whole window, if any. */
+  maximized: string | null
+  onMaximize: (id: string | null) => void
   visible: boolean
   lastOutput: Record<string, number>
   git: Record<string, GitInfo>
@@ -28,6 +32,28 @@ interface Props {
   onNew: () => void
   onGitChanged: () => void
 }
+
+type Cols = 'auto' | '1' | '2' | '3' | '4'
+/** Track sizes (fr) per grid shape, e.g. "3x2". */
+type Sizes = Record<string, { cols: number[]; rows: number[] }>
+
+function load<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+function save(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    /* just won't be remembered */
+  }
+}
+
+const even = (n: number) => Array.from({ length: n }, () => 1)
 
 /** How full a chat is. Amber from your warning level, red at 2.5x it or 85% of the window. */
 function ContextMeter({ usage, warnAt, onCompact, canCompact }: { usage: ContextUsage; warnAt: number; onCompact: () => void; canCompact: boolean }) {
@@ -85,15 +111,58 @@ function TabTitle({ agent, onRename, editRequest }: { agent: Agent; onRename: (t
 }
 
 export default function AgentsView(props: Props) {
-  const { agents, activeId, layout, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
+  const { agents, activeId, layout, maximized, onMaximize, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
   const [reviewOpen, setReviewOpen] = useState(false)
   const [renameRequest, setRenameRequest] = useState(0)
+  const [minimized, setMinimized] = useState<Set<string>>(new Set())
+  const [cols, setCols] = useState<Cols>(() => load('mc.agentCols', 'auto'))
+  const [sizes, setSizes] = useState<Sizes>(() => load('mc.agentSizes', {}))
+  const [hiddenRecaps, setHiddenRecaps] = useState<Set<string>>(new Set())
+  const stageRef = useRef<HTMLDivElement>(null)
   const keyFor = useKeyFor()
+
+  // Forget closed agents.
+  useEffect(() => {
+    setMinimized((cur) => {
+      const next = new Set([...cur].filter((id) => agents.some((a) => a.id === id)))
+      return next.size === cur.size ? cur : next
+    })
+  }, [agents])
+
+  const shownAgents = agents.filter((a) => !minimized.has(a.id))
+  const active = agents.find((a) => a.id === activeId) ?? agents[0]
+  // In tabs, a minimized agent isn't shown; the stage shows the nearest one that isn't.
+  const onStage = active && !minimized.has(active.id) ? active : shownAgents[shownAgents.length - 1]
+
+  const restore = (id: string) => setMinimized((cur) => (cur.has(id) ? new Set([...cur].filter((x) => x !== id)) : cur))
+  const select = (id: string) => {
+    restore(id)
+    onSelect(id)
+  }
+  const minimize = (id: string) => {
+    if (maximized === id) onMaximize(null)
+    setMinimized((cur) => new Set([...cur, id]))
+    if (id === active?.id) {
+      const next = shownAgents.filter((a) => a.id !== id).pop()
+      if (next) onSelect(next.id)
+    }
+  }
+  const toggleMax = (id: string) => {
+    restore(id)
+    onSelect(id)
+    onMaximize(maximized === id ? null : id)
+  }
+
   useShortcutEvent(
-    ['toggleReview', 'renameAgent'],
+    ['toggleReview', 'renameAgent', 'maximizeAgent', 'minimizeAgent'],
     (id) => {
       if (id === 'toggleReview') setReviewOpen((o) => !o)
-      else setRenameRequest(Date.now())
+      else if (id === 'renameAgent') setRenameRequest(Date.now())
+      else if (id === 'maximizeAgent' && active) toggleMax(active.id)
+      else if (id === 'minimizeAgent' && active) {
+        if (maximized) onMaximize(null)
+        else minimize(active.id)
+      }
     },
     visible
   )
@@ -101,7 +170,7 @@ export default function AgentsView(props: Props) {
   if (agents.length === 0) {
     return (
       <EmptyState icon={Bot} title="No agents running">
-        <p>Start Claude in a project and it runs here, live. Run several side by side in a grid.</p>
+        <p>Start Claude in a project and it runs here, live. Run several side by side in a grid, or open a project’s chats all at once from its Chats tab.</p>
         <Button variant="primary" icon={Plus} onClick={onNew}>
           New session in current project
         </Button>
@@ -109,10 +178,65 @@ export default function AgentsView(props: Props) {
     )
   }
 
-  const active = agents.find((a) => a.id === activeId) ?? agents[0]
   const reviewable = (a: Agent) => Boolean(a.worktree || git[a.projectPath]?.isRepo)
-  const showReview = reviewOpen && reviewable(active)
-  const cols = Math.ceil(Math.sqrt(agents.length))
+  const showReview = reviewOpen && !!active && reviewable(active) && !maximized
+
+  // Grid shape and track sizes.
+  const grid = layout === 'grid' && !maximized
+  const n = Math.max(1, shownAgents.length)
+  const c = Math.min(n, cols === 'auto' ? Math.ceil(Math.sqrt(n)) : Number(cols))
+  const r = Math.ceil(n / c)
+  const shape = `${c}x${r}`
+  const track = sizes[shape] && sizes[shape].cols.length === c && sizes[shape].rows.length === r ? sizes[shape] : { cols: even(c), rows: even(r) }
+  const customSized = !!sizes[shape]
+  const template = (fr: number[]) => fr.map((f) => `minmax(0, ${f}fr)`).join(' 6px ')
+
+  /** Dragging a gutter moves the line between two columns (or rows); double-click evens them out. */
+  const startDrag = (axis: 'cols' | 'rows', k: number) => (e: ReactPointerEvent<HTMLDivElement>) => {
+    const stage = stageRef.current
+    if (!stage) return
+    e.preventDefault()
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
+    const rect = stage.getBoundingClientRect()
+    const count = axis === 'cols' ? c : r
+    const avail = (axis === 'cols' ? rect.width : rect.height) - 16 - 6 * (count - 1)
+    const start = axis === 'cols' ? e.clientX : e.clientY
+    const base = [...track[axis]]
+    const sum = base.reduce((a, b) => a + b, 0)
+    const min = (sum / count) * 0.2
+    let latest = track
+    const move = (ev: PointerEvent) => {
+      const delta = (((axis === 'cols' ? ev.clientX : ev.clientY) - start) / Math.max(1, avail)) * sum
+      const pair = base[k] + base[k + 1]
+      const a = Math.min(pair - min, Math.max(min, base[k] + delta))
+      const next = [...base]
+      next[k] = a
+      next[k + 1] = pair - a
+      latest = { ...track, [axis]: next }
+      setSizes((cur) => ({ ...cur, [shape]: latest }))
+    }
+    const up = () => {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      setSizes((cur) => {
+        const all = { ...cur, [shape]: latest }
+        save('mc.agentSizes', all)
+        return all
+      })
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+  }
+  const evenOut = () =>
+    setSizes((cur) => {
+      const { [shape]: _gone, ...rest } = cur
+      save('mc.agentSizes', rest)
+      return rest
+    })
+
+  const stageStyle = grid ? { gridTemplateColumns: template(track.cols), gridTemplateRows: template(track.rows) } : undefined
+  const focusId = maximized ?? onStage?.id
 
   return (
     <div className="agents">
@@ -121,17 +245,18 @@ export default function AgentsView(props: Props) {
           {agents.map((a, i) => {
             const st = displayStatus(a, lastOutput[a.id])
             const jump = i < 9 ? keyFor(`agent${i + 1}`) : ''
+            const isMin = minimized.has(a.id)
             return (
               <div
                 key={a.id}
-                className={`agent-tab ${a.id === active.id ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''}`}
-                onClick={() => onSelect(a.id)}
-                title={`${a.cwd}\n${st.label}${jump ? `\n${jump} switches here` : ''}`}
+                className={`agent-tab ${a.id === active?.id && !isMin ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''} ${isMin ? 'minimized' : ''}`}
+                onClick={() => select(a.id)}
+                title={`${a.cwd}\n${st.label}${isMin ? '\nMinimized: click to bring it back' : ''}${jump ? `\n${jump} switches here` : ''}`}
               >
                 <span className={`dot ${st.cls}`} />
                 {a.kind === 'shell' && <Terminal size={12} className="muted" />}
                 {a.worktree && <GitBranch size={12} className="tone-accent" />}
-                <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} editRequest={a.id === active.id ? renameRequest : undefined} />
+                <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} editRequest={a.id === active?.id ? renameRequest : undefined} />
                 <button
                   className="tab-close"
                   onClick={(e) => {
@@ -148,12 +273,33 @@ export default function AgentsView(props: Props) {
           <IconButton icon={Plus} label="New session in current project" size={15} onClick={onNew} />
         </div>
         <div className="agent-bar-end">
+          {layout === 'grid' && (
+            <>
+              {customSized && <IconButton icon={Columns3} label="Even out the sizes (or double-click a divider)" size={14} onClick={evenOut} />}
+              <span className="agent-cols" title="Columns in the grid">
+                <Segmented<Cols>
+                  value={cols}
+                  onChange={(v) => {
+                    setCols(v)
+                    save('mc.agentCols', v)
+                  }}
+                  options={[
+                    { value: 'auto', label: 'Auto' },
+                    { value: '1', label: '1' },
+                    { value: '2', label: '2' },
+                    { value: '3', label: '3' },
+                    { value: '4', label: '4' }
+                  ]}
+                />
+              </span>
+            </>
+          )}
           <Button
             size="sm"
             variant={showReview ? 'secondary' : 'ghost'}
             icon={GitCompareArrows}
-            disabled={!reviewable(active)}
-            title={reviewable(active) ? withKey('Review this agent’s changes', keyFor('toggleReview')) : 'Not a git repository'}
+            disabled={!active || !reviewable(active)}
+            title={active && reviewable(active) ? withKey('Review this agent’s changes', keyFor('toggleReview')) : 'Not a git repository'}
             onClick={() => setReviewOpen((o) => !o)}
             className={showReview ? 'is-on' : ''}
           >
@@ -171,64 +317,121 @@ export default function AgentsView(props: Props) {
       </div>
 
       <div className={`agent-workspace ${showReview ? 'with-review' : ''}`}>
-        <div className={`agent-stage ${layout}`} style={layout === 'grid' ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined}>
-          {agents.map((a) => {
-            const shown = layout === 'grid' || a.id === active.id
-            const st = displayStatus(a, lastOutput[a.id])
-            return (
-              <div
-                key={a.id}
-                className={`agent-cell ${shown ? '' : 'stacked-hidden'} ${a.id === active.id ? 'focused' : ''} status-${st.cls}`}
-                onMouseDown={() => onSelect(a.id)}
-              >
-                <div className="agent-cell-head">
-                  <Avatar name={a.projectName} path={a.projectPath} size={20} />
-                  <span className="strong ellipsis">{layout === 'grid' ? a.title : a.projectName}</span>
-                  {a.worktree ? (
-                    <span className="chip chip-accent" title={a.worktree.path}>
-                      <GitBranch size={11} /> {a.worktree.branch}
-                    </span>
-                  ) : (
-                    git[a.projectPath]?.isRepo && (
-                      <span className="chip">
-                        <GitBranch size={11} /> {git[a.projectPath].branch}
+        <div className="agent-stage-wrap">
+          <div ref={stageRef} className={`agent-stage ${grid ? 'grid' : 'tabs'}`} style={stageStyle}>
+            {agents.map((a) => {
+              const isMin = minimized.has(a.id)
+              const shown = maximized ? a.id === maximized : grid ? !isMin : a.id === onStage?.id
+              const pos = shownAgents.indexOf(a)
+              const row = Math.floor(pos / c)
+              const col = pos % c
+              // The last cell stretches over the empty columns of its row.
+              const place =
+                grid && pos >= 0
+                  ? { gridRow: `${2 * row + 1}`, gridColumn: pos === shownAgents.length - 1 && col < c - 1 ? `${2 * col + 1} / ${2 * c}` : `${2 * col + 1}` }
+                  : undefined
+              const st = displayStatus(a, lastOutput[a.id])
+              const isMax = maximized === a.id
+              return (
+                <div
+                  key={a.id}
+                  className={`agent-cell ${shown ? '' : 'stacked-hidden'} ${a.id === focusId ? 'focused' : ''} status-${st.cls}`}
+                  style={place}
+                  onMouseDown={() => onSelect(a.id)}
+                >
+                  <div className="agent-cell-head" onDoubleClick={(e) => (e.target as HTMLElement).closest('button') || toggleMax(a.id)} title="Double-click to maximize or restore">
+                    <Avatar name={a.projectName} path={a.projectPath} size={20} />
+                    <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
+                    {a.worktree ? (
+                      <span className="chip chip-accent" title={a.worktree.path}>
+                        <GitBranch size={11} /> {a.worktree.branch}
                       </span>
-                    )
+                    ) : (
+                      git[a.projectPath]?.isRepo && (
+                        <span className="chip">
+                          <GitBranch size={11} /> {git[a.projectPath].branch}
+                        </span>
+                      )
+                    )}
+                    <span className={`status-pill status-${st.cls}`}>
+                      <span className={`dot ${st.cls}`} />
+                      <span className="ellipsis">{st.label}</span>
+                    </span>
+                    {a.sessionId && contexts[a.sessionId] && (
+                      <ContextMeter
+                        usage={contexts[a.sessionId]}
+                        warnAt={warnAt}
+                        canCompact={!a.exited && st.cls !== 'working'}
+                        onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
+                      />
+                    )}
+                    {a.kind === 'claude' && !a.exited && (
+                      <button
+                        className="agent-brief"
+                        disabled={st.cls === 'working'}
+                        title={st.cls === 'working' ? 'Wait until Claude finishes' : withKey('Ask Claude to write a session briefing for the next session', keyFor('writeBriefing'))}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSelect(a.id)
+                          window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
+                        }}
+                      >
+                        <FileText size={11} /> Briefing
+                      </button>
+                    )}
+                    <span className="muted small agent-elapsed">{elapsed(a.startedAt)}</span>
+                    <span className="cell-controls">
+                      <button title={withKey('Minimize', keyFor('minimizeAgent'))} onClick={(e) => { e.stopPropagation(); minimize(a.id) }}>
+                        <Minus size={13} />
+                      </button>
+                      <button title={withKey(isMax ? 'Restore' : 'Maximize (fills the window)', keyFor('maximizeAgent'))} onClick={(e) => { e.stopPropagation(); toggleMax(a.id) }}>
+                        {isMax ? <Shrink size={12} /> : <Maximize2 size={12} />}
+                      </button>
+                      <button className="cell-close" title="Close (stops the process)" onClick={(e) => { e.stopPropagation(); onClose(a.id) }}>
+                        <X size={13} />
+                      </button>
+                    </span>
+                  </div>
+                  {a.resumedFrom && !hiddenRecaps.has(a.id) && (
+                    <SessionRecap compact sessionId={a.resumedFrom} onClose={() => setHiddenRecaps((cur) => new Set([...cur, a.id]))} />
                   )}
-                  <span className={`status-pill status-${st.cls}`}>
-                    <span className={`dot ${st.cls}`} />
-                    <span className="ellipsis">{st.label}</span>
-                  </span>
-                  {a.sessionId && contexts[a.sessionId] && (
-                    <ContextMeter
-                      usage={contexts[a.sessionId]}
-                      warnAt={warnAt}
-                      canCompact={!a.exited && st.cls !== 'working'}
-                      onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
-                    />
-                  )}
-                  {a.kind === 'claude' && !a.exited && (
-                    <button
-                      className="agent-brief"
-                      disabled={st.cls === 'working'}
-                      title={st.cls === 'working' ? 'Wait until Claude finishes' : withKey('Ask Claude to write a session briefing for the next session', keyFor('writeBriefing'))}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSelect(a.id)
-                        window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
-                      }}
-                    >
-                      <FileText size={11} /> Briefing
-                    </button>
-                  )}
-                  <span className="muted small agent-elapsed">{elapsed(a.startedAt)}</span>
+                  <TerminalPane id={a.id} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />
                 </div>
-                <TerminalPane id={a.id} visible={visible && shown && a.id === active.id} onExit={(code) => onExit(a.id, code)} />
-              </div>
-            )
-          })}
+              )
+            })}
+            {grid &&
+              track.cols.slice(1).map((_, k) => (
+                <div key={`c${k}`} className="grid-gutter col" style={{ gridColumn: `${2 * k + 2}`, gridRow: '1 / -1' }} onPointerDown={startDrag('cols', k)} onDoubleClick={evenOut} title="Drag to resize · double-click to even out" />
+              ))}
+            {grid &&
+              track.rows.slice(1).map((_, k) => (
+                <div key={`r${k}`} className="grid-gutter row" style={{ gridRow: `${2 * k + 2}`, gridColumn: '1 / -1' }} onPointerDown={startDrag('rows', k)} onDoubleClick={evenOut} title="Drag to resize · double-click to even out" />
+              ))}
+            {shownAgents.length === 0 && !maximized && (
+              <div className="stage-empty muted">All agents are minimized. Click one below to bring it back.</div>
+            )}
+          </div>
+          {minimized.size > 0 && !maximized && (
+            <div className="agent-dock">
+              <span className="muted small">Minimized</span>
+              {agents
+                .filter((a) => minimized.has(a.id))
+                .map((a) => {
+                  const st = displayStatus(a, lastOutput[a.id])
+                  return (
+                    <button key={a.id} className={`dock-item ${st.cls === 'needs-input' ? 'attention' : ''}`} onClick={() => select(a.id)} title={`${a.title}\n${st.label}\nClick to bring it back`}>
+                      <span className={`dot ${st.cls}`} />
+                      <span className="ellipsis">{a.title}</span>
+                    </button>
+                  )
+                })}
+              <Button size="sm" variant="ghost" onClick={() => setMinimized(new Set())}>
+                Restore all
+              </Button>
+            </div>
+          )}
         </div>
-        {showReview && (
+        {showReview && active && (
           <aside className="review-panel">
             <ChangesPanel
               key={active.id}
@@ -248,4 +451,3 @@ export default function AgentsView(props: Props) {
     </div>
   )
 }
-

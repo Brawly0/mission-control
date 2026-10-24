@@ -30,6 +30,7 @@ import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, IconButton } from './ui'
 import { useLook } from '../projectLook'
 import { dueFrom, dueInputs, dueLabel } from '../due'
+import { PlanShare } from '../planRate'
 
 interface Props {
   task: Task
@@ -215,7 +216,10 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
           </div>
           <div>
             <span className="muted small">Cost</span>
-            <span>{run.costUsd !== undefined ? formatCost(run.costUsd) : '–'}</span>
+            <span>
+              {run.costUsd !== undefined ? formatCost(run.costUsd) : '–'}
+              {run.costUsd !== undefined && <PlanShare usd={run.costUsd} prefix=" " className="muted" />}
+            </span>
           </div>
         </div>
       )}

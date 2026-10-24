@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { AppSettings, Note, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
+import type { AiRecap, AppSettings, Note, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
 
 export interface WindowBounds {
   x: number
@@ -43,6 +43,14 @@ export interface StoreData {
   briefingsFrom: number
   /** Saved briefing files by "sessionId:time". */
   briefingsSaved: Record<string, string>
+  /** Names Claude gave chats (Name chats, Summarize), by session id; your own titles win. */
+  chatAiNames: Record<string, string>
+  /** Summaries Claude wrote for chats, by session id. */
+  chatRecaps: Record<string, AiRecap>
+  /** Chats started with Eco mode on, by session id (first such launch), for the Eco check. */
+  ecoSessions: Record<string, number>
+  /** Day ("2026-10-24") the daily digest was last shown. */
+  digestShown: string
 }
 
 const defaults: StoreData = {
@@ -61,6 +69,10 @@ const defaults: StoreData = {
   notes: [],
   briefingsFrom: 0,
   briefingsSaved: {},
+  ecoSessions: {},
+  chatAiNames: {},
+  chatRecaps: {},
+  digestShown: '',
   settings: {
     defaultTaskBudgetUsd: 0,
     defaultTaskModel: '',
@@ -73,6 +85,7 @@ const defaults: StoreData = {
     uiZoom: 1,
     userName: '',
     autoBriefings: true,
+    digestTime: '09:00',
     hotkey: 'Ctrl+Alt+M',
     closeToTray: true,
     queueEnabled: false,

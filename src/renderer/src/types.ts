@@ -19,12 +19,16 @@ export interface Agent {
   exitCode?: number
   startedAt: number
   hookStatus?: HookStatus
+  /** When hookStatus last changed. */
+  statusAt?: number
+  /** The chat this agent resumed, for the "last time" recap above its terminal. */
+  resumedFrom?: string
   /** Last notification text from Claude, e.g. "Claude needs your permission to use Bash". */
   statusMessage?: string
 }
 
 export type AgentLayout = 'tabs' | 'grid'
-export type View = 'home' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills'
+export type View = 'home' | 'inbox' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills'
 
 export interface LaunchOptions {
   cwd: string

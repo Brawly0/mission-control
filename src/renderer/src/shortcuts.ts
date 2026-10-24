@@ -25,6 +25,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'notifications', label: 'Turn notifications on or off', group: 'General', keys: ['Ctrl+Shift+M'] },
 
   { id: 'goHome', label: 'Home', group: 'Go to', keys: ['Ctrl+1'] },
+  { id: 'goInbox', label: 'Inbox and daily digest', group: 'Go to', keys: ['Ctrl+Alt+I'] },
   { id: 'goAgents', label: 'Agents', group: 'Go to', keys: ['Ctrl+2'] },
   { id: 'goTasks', label: 'Task board', group: 'Go to', keys: ['Ctrl+3'] },
   { id: 'goSearch', label: 'Search all chats', group: 'Go to', keys: ['Ctrl+Shift+F', 'Ctrl+4'] },
@@ -64,6 +65,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'prevAgent', label: 'Previous agent', group: 'Agents', keys: ['Ctrl+Shift+Tab'] },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `agent${n}`, label: `Agent ${n}`, group: 'Agents' as const, keys: [`Alt+${n}`] })),
   { id: 'closeAgent', label: 'Close agent', group: 'Agents', keys: ['Ctrl+Shift+W'] },
+  { id: 'maximizeAgent', label: 'Maximize or restore agent (fills the window)', group: 'Agents', keys: ['Ctrl+Shift+Up'] },
+  { id: 'minimizeAgent', label: 'Minimize agent (or restore from maximized)', group: 'Agents', keys: ['Ctrl+Shift+Down'] },
   { id: 'toggleGrid', label: 'Tabs or grid', group: 'Agents', keys: ['Ctrl+Shift+G'] },
   { id: 'toggleReview', label: 'Review panel (diff)', group: 'Agents', keys: ['Ctrl+Shift+D'] },
   { id: 'compactAgent', label: 'Compact agent’s chat', group: 'Agents', keys: ['Ctrl+Shift+K'] },

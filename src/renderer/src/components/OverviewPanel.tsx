@@ -5,6 +5,7 @@ import type { BudgetState, Project, ProjectMeta, ProjectStatus, UsageTotals } fr
 import { formatCost, formatTokens } from '../util'
 import { Button, Segmented } from './ui'
 import SpendingCard from './SpendingCard'
+import { PlanShare } from '../planRate'
 
 interface Props {
   project: Project
@@ -255,7 +256,10 @@ export default function OverviewPanel({ project, groups, usage, budget, isRepo, 
               <div className="usage-hero">
                 <div>
                   <div className="hero-value">{formatCost(totals.cost)}</div>
-                  <div className="muted small">estimated at API prices</div>
+                  <div className="muted small">
+                    estimated at API prices
+                    <PlanShare usd={totals.cost} prefix=" · " long />
+                  </div>
                 </div>
                 <div>
                   <div className="hero-value">{formatTokens(allTokens)}</div>

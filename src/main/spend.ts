@@ -114,7 +114,7 @@ export function launchArgs(cwd: string, opts: { newChat: boolean; hasModel: bool
 
 const sessionFileCache = new Map<string, string>()
 
-async function findSessionFile(sessionId: string): Promise<string | null> {
+export async function findSessionFile(sessionId: string): Promise<string | null> {
   const hit = sessionFileCache.get(sessionId)
   if (hit && existsSync(hit)) return hit
   if (!/^[\w-]+$/.test(sessionId)) return null

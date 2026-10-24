@@ -128,6 +128,13 @@ export interface SessionSummary {
   worktree?: string
   /** True when you renamed this chat in Mission Control. */
   renamed?: boolean
+  /**
+   * Where the title comes from: you (in Mission Control or /rename), Claude Code's automatic title,
+   * a name Claude gave it in Mission Control (Name chats / Summarize), or the first prompt.
+   */
+  titleSource?: 'you' | 'claude-code' | 'claude' | 'prompt'
+  /** The latest thing you asked in it. */
+  lastPrompt?: string
   /** Set when the chat started in another folder (e.g. "C: drive") but is shown under this project. */
   movedFrom?: string
   /** True when you moved it here yourself, false when it was matched automatically. */
@@ -135,6 +142,39 @@ export interface SessionSummary {
   startedAt: number
   updatedAt: number
   sizeBytes: number
+}
+
+/** A summary Claude wrote for a chat (Summarize with Claude), kept in Mission Control's store. */
+export interface AiRecap {
+  title: string
+  bullets: string[]
+  /** What's left to do, if anything. */
+  next?: string
+  at: number
+}
+
+/** "What we worked on" in one chat, read from its transcript for free (ADR 0017). */
+export interface SessionRecap {
+  sessionId: string
+  startedAt: number
+  endedAt: number
+  /** Minutes with activity; breaks over 15 minutes don't count. */
+  activeMinutes: number
+  prompts: number
+  /** The first few and the latest few things you asked. */
+  firstPrompts: { text: string; at: number }[]
+  lastPrompts: { text: string; at: number }[]
+  /** Files Claude edited or created, most edited first (up to 12), relative to the chat's folder. */
+  files: { path: string; edits: number; created: boolean }[]
+  filesTotal: number
+  /** Shell commands run, and commit messages. */
+  commands: number
+  commits: string[]
+  /** Claude's last reply, usually the wrap-up of the latest work. */
+  lastReply: string
+  compactions: number
+  /** Claude's own summary, when you asked for one. */
+  ai?: AiRecap
 }
 
 export interface ChatMessage {
@@ -271,11 +311,13 @@ export interface GitChanges {
 /** UI state remembered between runs. */
 export interface UiState {
   selectedPath?: string
-  view?: 'home' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills'
+  view?: 'home' | 'inbox' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
   /** Sidebar shrunk to an icon rail. */
   sidebarCollapsed?: boolean
+  /** Inbox items you dismissed (their keys change when something new happens). */
+  inboxDismissed?: string[]
 }
 
 export interface RecentSession extends SessionSummary {
@@ -508,6 +550,65 @@ export interface RateLimitInfo {
   error?: string
 }
 
+/** How much of one plan window a dollar of API-priced usage takes, measured from your readings (ADR 0016). */
+export interface WindowRate {
+  /** Share of the window (0–1) per dollar of usage at API prices. */
+  perUsd: number
+  /** The evidence: dollars of local usage and the share of the window it moved, from and to when. */
+  usd: number
+  share: number
+  from: number
+  to: number
+  /** Share that moved while nothing ran on this computer (claude.ai, phone, other computers); left out. */
+  outside: number
+}
+
+/** Chats started with Eco mode on against the rest, over the same period. */
+export interface EcoCompare {
+  since: number
+  eco: { chats: number; replies: number; cost: number }
+  other: { chats: number; replies: number; cost: number }
+}
+
+/** What things cost on your plan: a rate per window, prices per model, and the Eco check. */
+export interface PlanRate {
+  at: number
+  /** By window name (five_hour, seven_day…); missing until there's enough evidence. */
+  windows: Record<string, WindowRate>
+  /** API-priced dollars per million tokens (all kinds, cache included), most used first. */
+  models: { model: string; usdPerMTok: number; tokens: number }[]
+  /** How many saved readings the rate could draw on, and since when they go back. */
+  readings?: number
+  firstReading?: number
+  eco?: EcoCompare
+}
+
+/** A day in review, for the daily digest. */
+export interface Digest {
+  /** The day it covers, local 2026-10-24. */
+  day: string
+  label: 'yesterday' | 'today'
+  from: number
+  to: number
+  chats: number
+  replies: number
+  costUsd: number
+  /** Share of the weekly limit that day's usage took (estimate), when the rate is known. */
+  weekShare?: number
+  topProjects: { projectPath: string; costUsd: number; chats: number }[]
+  topChats: { sessionId: string; title: string; projectPath: string; costUsd: number }[]
+  tasksFinished: number
+  tasksFailed: number
+  briefings: number
+  /** Right now: tasks waiting for review, due today, overdue. */
+  review: number
+  dueToday: { id: string; title: string; dueAt: number }[]
+  overdue: number
+  /** The weekly limit right now, with where it's heading. */
+  week?: { utilization: number; resetsAt: number; pace: string }
+  generatedAt: number
+}
+
 /** Eco mode: what Mission Control changes in the chats and tasks it starts, to use less of your plan. */
 export interface EcoSettings {
   enabled: boolean
@@ -591,6 +692,8 @@ export interface AppSettings {
   userName: string
   /** Save each compaction summary as a session briefing in the project's docs/briefings/. */
   autoBriefings: boolean
+  /** Daily digest notification at this local time ("HH:MM"); '' = off. */
+  digestTime: string
 }
 
 /** How big a live chat's context is: every reply re-reads all of it. */
@@ -645,6 +748,12 @@ export interface MissionControlApi {
   moveSession(sessionId: string, projectPath: string): Promise<void>
   /** Your own title for a chat (stored by Mission Control); empty clears it. */
   renameSession(sessionId: string, title: string): Promise<void>
+  /** "What we worked on" in a chat, from its transcript (free). */
+  sessionRecap(sessionId: string): Promise<SessionRecap>
+  /** Asks Claude (Haiku, a fraction of a cent) for a summary and a clear title; kept for next time. */
+  summarizeChat(sessionId: string): Promise<AiRecap>
+  /** Has Claude (Haiku, one call) give clear names to chats that only have their first prompt as a title; returns how many were named. */
+  nameChats(sessionIds: string[]): Promise<number>
   getSession(projectKey: string, sessionId: string): Promise<SessionDetail>
   addProject(): Promise<string | null>
   /** Asks for a folder in a native dialog; null if cancelled. */
@@ -743,6 +852,8 @@ export interface MissionControlApi {
   updateStatus(): Promise<UpdateState>
   checkForUpdates(): Promise<void>
   installUpdate(): void
+  /** Restarts into a downloaded update now, or downloads one and restarts when it's ready. */
+  updateNow(): void
   onUpdateStatus(cb: (s: UpdateState) => void): () => void
   deleteTask(id: string): Promise<void>
   /**
@@ -762,6 +873,10 @@ export interface MissionControlApi {
   skillUsage(since: number): Promise<SkillUse[]>
   /** Copies the eco:coach skill into a project's .claude/skills, for chats started outside Mission Control. */
   addEcoSkillToProject(projectPath: string): Promise<string>
+  /** What things cost on your plan (share of each window per API-priced dollar), from saved readings. */
+  planRate(force?: boolean): Promise<PlanRate>
+  /** Yesterday or today in review. */
+  getDigest(which: 'yesterday' | 'today'): Promise<Digest>
   /** Asks your Claude account for the latest plan-limit numbers now. */
   refreshRateLimit(): Promise<RateLimitInfo | null>
   /** Live agent counts, shown in the tray tooltip and menu. */

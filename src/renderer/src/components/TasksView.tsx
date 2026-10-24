@@ -31,6 +31,7 @@ import { Avatar, Button, EmptyState } from './ui'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
 import { useLook } from '../projectLook'
+import { PlanShare } from '../planRate'
 
 interface Props {
   tasks: Task[]
@@ -171,7 +172,9 @@ function TaskCard({
 
       <div className="task-foot" onClick={(e) => e.stopPropagation()}>
         <span className="muted small">
-          {run?.costUsd ? `${formatCost(run.costUsd)} · ` : ''}
+          {run?.costUsd ? formatCost(run.costUsd) : ''}
+          {run?.costUsd ? <PlanShare usd={run.costUsd} prefix=" " /> : null}
+          {run?.costUsd ? ' · ' : ''}
           {run?.finishedAt ? `finished ${timeAgo(run.finishedAt)}` : `added ${timeAgo(task.createdAt)}`}
         </span>
         {task.column === 'todo' && task.mode === 'headless' && (

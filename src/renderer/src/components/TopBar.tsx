@@ -1,5 +1,6 @@
-import { ChevronDown, FolderPlus, Leaf, ListPlus, MessageSquareDashed, Moon, NotebookPen, Play, Plus, Search, Settings, Sun } from 'lucide-react'
-import type { EcoSettings, RateLimitInfo } from '@shared/types'
+import { ChevronDown, Download, FolderPlus, Leaf, Loader2, ListPlus, MessageSquareDashed, Moon, NotebookPen, Play, Plus, Search, Settings, Sun } from 'lucide-react'
+import type { EcoSettings, RateLimitInfo, UpdateState } from '@shared/types'
+import { useState } from 'react'
 import { useKeyFor, withKey } from '../shortcuts'
 import { initials } from '../util'
 import { KeyCombo } from './ShortcutsDialog'
@@ -13,13 +14,45 @@ interface Props {
   currentProject?: string
   rateLimit: RateLimitInfo | null
   eco?: EcoSettings
+  update: UpdateState
   /** Opens Settings → Spending, where Eco mode's details are. */
   onEcoSettings: () => void
   onShortcut: (id: string) => void
 }
 
 /** Search, plan limits, the New menu, theme, settings and you, across the top of every page. */
-export default function TopBar({ theme, userName, currentProject, rateLimit, eco, onEcoSettings, onShortcut }: Props) {
+/** Shows when a new version is out: one click downloads it (if needed) and restarts into it. */
+function UpdateButton({ update }: { update: UpdateState }) {
+  const [pressed, setPressed] = useState(false)
+  if (update.state !== 'available' && update.state !== 'downloading' && update.state !== 'ready') return null
+  const busy = pressed && update.state !== 'ready'
+  const label =
+    update.state === 'ready'
+      ? `Restart to update`
+      : pressed
+        ? `Updating${update.state === 'downloading' && update.percent !== undefined ? ` ${update.percent}%` : '…'}`
+        : `Update to ${update.version}`
+  return (
+    <button
+      className={`update-btn ${update.state === 'ready' ? 'ready' : ''}`}
+      disabled={busy}
+      title={
+        update.state === 'ready'
+          ? `Mission Control ${update.version} is downloaded. Click to restart into it; open agents are offered for restore.`
+          : `Mission Control ${update.version} is out. Click to download it and restart as soon as it's ready.`
+      }
+      onClick={() => {
+        setPressed(true)
+        window.mc.updateNow()
+      }}
+    >
+      {busy ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
+      <span>{label}</span>
+    </button>
+  )
+}
+
+export default function TopBar({ theme, userName, currentProject, rateLimit, eco, update, onEcoSettings, onShortcut }: Props) {
   const keyFor = useKeyFor()
   const ecoTip = eco?.enabled
     ? [
@@ -54,6 +87,7 @@ export default function TopBar({ theme, userName, currentProject, rateLimit, eco
         <span>Eco</span>
       </button>
       <PlanMeter info={rateLimit} onOpen={() => onShortcut('goUsage')} />
+      <UpdateButton update={update} />
       <div className="topbar-actions">
         <MenuButton
           align="right"

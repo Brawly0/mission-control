@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { BarChart3, Coins, Info, MessagesSquare, RefreshCw, Sigma, Table2, Zap } from 'lucide-react'
+import { BarChart3, Coins, Info, Leaf, MessagesSquare, RefreshCw, Scale, Sigma, Table2, Zap } from 'lucide-react'
 import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
 import { paceText, resetsIn, windowLabel } from '@shared/planUsage'
+import { ecoVerdict, formatShare, modelFamily, tokensPerPercent } from '@shared/planCost'
+import { PlanShare, usePlanRate } from '../planRate'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
 import { Avatar, EmptyState, IconButton, Segmented } from './ui'
 import { useLook } from '../projectLook'
@@ -147,7 +149,10 @@ function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; av
         <span className="bar-row-fill" style={{ width: `${pct}%` }} />
       </span>
       <span className="bar-row-value">{formatCost(total.cost)}</span>
-      <span className="bar-row-tokens muted">{formatTokens(allTokens(total))}</span>
+      <span className="bar-row-tokens muted">
+        {formatTokens(allTokens(total))}
+        <PlanShare usd={total.cost} prefix=" · " />
+      </span>
     </button>
   )
 }
@@ -205,6 +210,87 @@ function PlanLimits({ info }: { info: RateLimitInfo }) {
           Extra usage {x.enabled ? `on: $${x.usedUsd.toFixed(2)} of $${x.limitUsd.toFixed(2)} used this month` : 'off: when a limit runs out, Claude waits for the reset'}.
         </p>
       )}
+    </section>
+  )
+}
+
+/**
+ * What things cost on your plan (ADR 0016): 1% of each limit in API-priced dollars and in tokens
+ * per model, measured from saved plan readings, and whether Eco mode chats use less per reply.
+ */
+function PlanCost() {
+  const rate = usePlanRate()
+  if (!rate) return null
+  const week = rate.windows.seven_day
+  const session = rate.windows.five_hour
+  const verdict = rate.eco ? ecoVerdict(rate.eco) : null
+  const days = (r: { from: number; to: number }) => Math.max(1, Math.round((r.to - r.from) / 86_400_000))
+  const models = rate.models.filter((m) => m.tokens > 0).slice(0, 3)
+  return (
+    <section className="card usage-card plan-cost">
+      <div className="usage-card-head">
+        <h2>
+          <Scale size={15} /> What things cost on your plan
+        </h2>
+        <span className="muted small">{rate.readings ? `from ${rate.readings.toLocaleString()} plan readings` : ''}</span>
+      </div>
+      {!week && !session ? (
+        <p className="muted small">
+          Mission Control saves your plan readings every few minutes and compares them with what your chats used. After a day or two of normal use it can tell you what each chat,
+          task and project took of your weekly limit
+          {rate.firstReading ? ` (collecting since ${new Date(rate.firstReading).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })})` : ''}.
+        </p>
+      ) : (
+        <>
+          <div className="plan-cost-grid">
+            {week && (
+              <div className="plan-cost-tile">
+                <span className="plan-cost-value">{formatCost(0.01 / week.perUsd)}</span>
+                <span className="muted small">of usage at API prices ≈ 1% of your week</span>
+              </div>
+            )}
+            {session && (
+              <div className="plan-cost-tile">
+                <span className="plan-cost-value">{formatCost(0.01 / session.perUsd)}</span>
+                <span className="muted small">≈ 1% of a 5-hour session</span>
+              </div>
+            )}
+            {week &&
+              models.map((m) => {
+                const tokens = tokensPerPercent(rate, m.model)
+                return tokens ? (
+                  <div key={m.model} className="plan-cost-tile" title={`${m.model}: ${formatCost(m.usdPerMTok)} per million tokens on average, cache reads included`}>
+                    <span className="plan-cost-value">{formatTokens(tokens)}</span>
+                    <span className="muted small">{modelFamily(m.model)} tokens ≈ 1% of your week</span>
+                  </div>
+                ) : null
+              })}
+          </div>
+          <p className="muted small plan-cost-note">
+            Measured over the last {days(week ?? session!)} days{week?.outside ? `. ${formatShare(week.outside)} of your week moved while nothing ran here (claude.ai, phone or another computer) and was left out` : ''}. Shares
+            next to chats, tasks and projects use this rate. Most tokens are cache reads, which is why long chats cost more per reply.
+          </p>
+        </>
+      )}
+      <div className="eco-check">
+        <Leaf size={15} className={verdict && verdict.saving > 0 ? 'tone-green' : 'muted'} />
+        {verdict ? (
+          <span className="small">
+            <strong>Eco check:</strong> chats started with Eco mode use{' '}
+            <strong>{verdict.saving >= 0 ? `${Math.round(verdict.saving * 100)}% less` : `${Math.round(-verdict.saving * 100)}% more`}</strong> per reply ({formatCost(verdict.ecoPerReply)} vs{' '}
+            {formatCost(verdict.otherPerReply)}
+            {week ? `, ≈${formatShare(verdict.ecoPerReply * 100 * week.perUsd)} vs ≈${formatShare(verdict.otherPerReply * 100 * week.perUsd)} of your week per 100 replies` : ''}), over the last 30 days ({rate.eco!.eco.chats} Eco chats,{' '}
+            {rate.eco!.other.chats} others).
+          </span>
+        ) : (
+          <span className="muted small">
+            <strong>Eco check:</strong>{' '}
+            {rate.eco && rate.eco.eco.replies > 0
+              ? `${rate.eco.eco.replies} replies in Eco chats so far; the comparison shows after 30 on each side.`
+              : 'turn on Eco mode for some chats and this compares their cost per reply with your other chats.'}
+          </span>
+        )}
+      </div>
     </section>
   )
 }
@@ -291,6 +377,7 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
       </header>
 
       {rateLimit && rateLimit.windows.length > 0 && <PlanLimits info={rateLimit} />}
+      <PlanCost />
       {error && <div className="error pad">{error}</div>}
       {!report && !error && <div className="muted pad">{status?.indexing ? `Reading your chats… ${status.done}/${status.total}` : 'Loading…'}</div>}
       {report && t && allTokens(t) === 0 && (
@@ -305,7 +392,10 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
             <div className="stat">
               <Coins size={18} className="stat-icon tone-accent" />
               <div className="stat-value">{formatCost(t.cost)}</div>
-              <div className="stat-label">Estimated cost</div>
+              <div className="stat-label">
+                Estimated cost
+                <PlanShare usd={t.cost} prefix=" · " long />
+              </div>
             </div>
             <div className="stat">
               <Sigma size={18} className="stat-icon" />

@@ -21,6 +21,11 @@ import { briefingFileName, briefingMarkdown } from '../shared/projectLook'
 import { claudeStatus, createProject, deleteNote, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { queryIndex } from './indexer'
 import { loadStore, updateStore } from './store'
+import { planRate } from './planCost'
+import { buildDigest } from './digest'
+import { digestText } from '../shared/digest'
+import { nameChats, sessionRecap, summarizeChat } from './recap'
+import { unclearTitle } from '../shared/projectLook'
 
 interface SmokeDeps {
   launchTerminal: (spec: TerminalSpec) => TerminalInfo
@@ -610,6 +615,219 @@ async function skillsTour(win: BrowserWindow, outFile: string): Promise<void> {
 }
 
 /**
+ * MC_SMOKE_AGENTS=<project folder name, e.g. bot>: v0.17. Logs that project's chat names (and where
+ * each comes from) and the recap of its newest chat. Opens four agents "resumed" from its newest
+ * chats (as PowerShell tabs, so no Claude runs and no chat is touched), shows them in the grid,
+ * drags a divider with the real mouse, minimizes one, maximizes one, opens a "last time" banner,
+ * and checks that resuming an open chat again doesn't start a second agent. Screenshots
+ * <MC_SMOKE>-agents-*.png. Free. With MC_SMOKE_AGENTS_AI=1 it also asks Claude (Haiku, about
+ * $0.002) to summarize the newest chat and name the unnamed ones, logs the answers, and puts the
+ * store back as it was.
+ */
+async function agentsTour(win: BrowserWindow, outFile: string, folder: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 1200) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-agents-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+
+  const project = (await listProjects()).find((p) => p.folderName.toLowerCase() === folder.toLowerCase())
+  if (!project) return log('agents tour: no project folder named', folder)
+  const sessions = await listSessions(project.keys, project.path)
+  const bySource: Record<string, number> = {}
+  for (const s of sessions) bySource[s.titleSource ?? '?'] = (bySource[s.titleSource ?? '?'] ?? 0) + 1
+  log('chats:', sessions.length, 'title sources:', JSON.stringify(bySource))
+  for (const s of sessions.slice(0, 12)) log(`  [${s.titleSource}] ${s.title}${s.lastPrompt ? `  | latest: ${s.lastPrompt.slice(0, 70)}` : ''}`)
+  const newest = sessions[0]
+  if (!newest) return
+  const t0 = Date.now()
+  const recap = await sessionRecap(newest.id)
+  log('recap of newest:', `${Date.now() - t0}ms`, JSON.stringify({ prompts: recap.prompts, active: recap.activeMinutes, files: recap.filesTotal, commits: recap.commits, compactions: recap.compactions, first: recap.firstPrompts[0]?.text.slice(0, 80), lastReply: recap.lastReply.slice(0, 120) }))
+
+  if (process.env.MC_SMOKE_AGENTS_AI) {
+    const before = { names: { ...loadStore().chatAiNames }, recaps: { ...loadStore().chatRecaps } }
+    try {
+      log('summarize (Haiku):', JSON.stringify(await summarizeChat(newest.id)))
+      const dup = (t: string) => sessions.filter((x) => x.title === t).length > 1
+      const unnamed = sessions.filter((s) => s.firstPrompt && (s.titleSource === 'prompt' || dup(s.title) || unclearTitle(s.title))).map((s) => s.id)
+      log('name chats (Haiku):', await nameChats(unnamed), 'named of', unnamed.length)
+      const names = loadStore().chatAiNames
+      for (const s of sessions.filter((x) => names[x.id] && unnamed.includes(x.id))) log(`  "${s.title}" -> "${names[s.id]}"`)
+    } catch (e) {
+      log('AI naming failed:', (e as Error).message)
+    } finally {
+      updateStore((s) => {
+        s.chatAiNames = before.names
+        s.chatRecaps = before.recaps
+      })
+    }
+  }
+
+  // The chats tab with the recap card.
+  await js(`window.__mcSmoke.selectProject(${JSON.stringify(project.path)}); window.__mcSmoke.setView('project')`)
+  await sleep(800)
+  await js(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent.includes('Chats'))?.click()`)
+  await shot('chats', 2500)
+  log('recap card:', await js(`document.querySelector('.recap')?.textContent?.slice(0, 300) ?? 'missing'`))
+  log('session tools:', await js(`[...document.querySelectorAll('.session-tools button')].map(b => b.textContent).join(' | ')`))
+
+  // Four agents "resumed" from the newest chats (PowerShell, so nothing runs in Claude).
+  for (const s of sessions.slice(0, 4)) {
+    await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(project.path)}, projectName: ${JSON.stringify(project.name)}, projectPath: ${JSON.stringify(project.path)}, title: ${JSON.stringify(s.title.slice(0, 48))}, kind: 'shell', args: ['--resume', ${JSON.stringify(s.id)}] })`)
+  }
+  const count = await js(`window.__mcSmoke.agents().length`)
+  // Resuming one that's open shows it instead of starting another (shell agents have no session id, so this checks claude chats only by design).
+  log('agents open:', count)
+  await js(`window.__mcSmoke.setView('agents')`)
+  if (!(await js(`!!document.querySelector('.agent-stage.grid')`))) await js(`window.__mcSmoke.runShortcut('toggleGrid')`)
+  await shot('grid', 1500)
+  log('grid:', await js(`(() => { const s = document.querySelector('.agent-stage.grid'); return s ? getComputedStyle(s).gridTemplateColumns + ' / ' + getComputedStyle(s).gridTemplateRows : 'missing' })()`))
+  log('banners:', await js(`document.querySelectorAll('.recap-compact').length`), '| first:', await js(`document.querySelector('.recap-banner-text')?.textContent?.slice(0, 120) ?? 'none'`))
+
+  // Drag the column divider 160px to the right with the real mouse.
+  // A quarter of the way down: the middle is where the row divider crosses it.
+  const g = await js(`(() => { const r = document.querySelector('.grid-gutter.col')?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 4) } : null })()`)
+  if (g) {
+    const z = win.webContents.getZoomFactor()
+    const at = (x: number) => ({ x: Math.round(x * z), y: Math.round(g.y * z) })
+    win.webContents.sendInputEvent({ type: 'mouseDown', ...at(g.x), button: 'left', clickCount: 1 })
+    for (let dx = 20; dx <= 160; dx += 20) {
+      win.webContents.sendInputEvent({ type: 'mouseMove', ...at(g.x + dx), button: 'left', modifiers: ['leftbuttondown'] })
+      await sleep(30)
+    }
+    win.webContents.sendInputEvent({ type: 'mouseUp', ...at(g.x + 160), button: 'left', clickCount: 1 })
+    await sleep(400)
+    log('after drag:', await js(`getComputedStyle(document.querySelector('.agent-stage.grid')).gridTemplateColumns`))
+  }
+  // Open the first banner.
+  await js(`document.querySelector('.recap-banner button[aria-label], .recap-banner .icon-btn')?.click()`)
+  await shot('resized-banner', 1200)
+
+  // Minimize the second agent, then maximize the first.
+  await js(`document.querySelectorAll('.agent-cell:not(.stacked-hidden) .cell-controls button')[3]?.click()`)
+  await sleep(500)
+  log('after minimize: dock items', await js(`document.querySelectorAll('.dock-item').length`), '| grid cells', await js(`document.querySelectorAll('.agent-stage.grid .agent-cell:not(.stacked-hidden)').length`))
+  await shot('minimized', 1000)
+  await js(`document.querySelectorAll('.agent-cell:not(.stacked-hidden) .cell-controls button')[1]?.click()`)
+  await sleep(600)
+  log('maximized:', await js(`document.querySelector('.app')?.className`), '| sidebar shown:', await js(`getComputedStyle(document.querySelector('.sidebar')).display !== 'none'`))
+  await shot('maximized', 1000)
+  await js(`document.querySelector('.agent-cell.focused .cell-controls button:nth-child(2)')?.click()`)
+  await sleep(500)
+  log('restored:', await js(`!document.querySelector('.app.agent-maximized')`))
+  await js(`[...document.querySelectorAll('.agent-dock button')].find(b => b.textContent.includes('Restore all'))?.click()`)
+  // Close the four test shells, so quitting has no more terminals to stop than before.
+  await js(`window.__mcSmoke.agents().filter(a => a.resumedFrom).forEach(a => window.__mcSmoke.closeAgent(a.id))`)
+  await sleep(500)
+  // The installed app shares this storage: leave no test sizes behind.
+  await js(`['mc.agentSizes', 'mc.agentCols', 'mc.recapBanner', 'mc.recapOpen'].forEach((k) => localStorage.removeItem(k))`)
+}
+
+/**
+ * MC_SMOKE_INBOX=1: v0.16, free. Plan cost: writes sample plan readings for the last three days into
+ * the self-test's own index, made from your real chat costs at a known rate (1% of the week per $2.50),
+ * and checks the calibration finds that rate back. Inbox: adds a finished task, a failed one and an
+ * overdue one, checks the items and the digest, and screenshots the Inbox, Usage, Tasks and
+ * Settings → General as <MC_SMOKE>-inbox-*.png. Everything it adds is removed afterwards.
+ */
+async function inboxTour(win: BrowserWindow, outFile: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 1200) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-inbox-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+
+  const H = 3_600_000
+  const PER_USD = 0.004
+  const now = Date.now()
+  const start = now - 72 * H
+  const resetsAt = now + 4 * 24 * H
+  const made: string[] = []
+  try {
+    // Sample readings every 3 hours: the week moves exactly by cost × rate.
+    let util = 0.05
+    await queryIndex('addPlanReading', start, [{ name: 'seven_day', utilization: util, resetsAt }])
+    for (let t = start + 3 * H; t <= now - 10 * 60_000; t += 3 * H) {
+      const slot = await queryIndex<{ costUsd: number }>('dayDigest', t - 3 * H, t)
+      util += slot.costUsd * PER_USD
+      await queryIndex('addPlanReading', t, [{ name: 'seven_day', utilization: util, resetsAt }])
+    }
+    const rate = await planRate(true)
+    const w = rate.windows.seven_day
+    log('calibration: expected perUsd', PER_USD, 'got', w ? w.perUsd.toFixed(5) : 'none', w ? `(usd ${w.usd.toFixed(2)}, share ${w.share.toFixed(3)}, outside ${w.outside})` : '')
+    log('models:', rate.models.slice(0, 3).map((m) => `${m.model} ${m.usdPerMTok.toFixed(2)}/MTok`).join(', '), 'eco:', JSON.stringify(rate.eco ?? null))
+    // The UI asks for the rate when the index or plan numbers change; nudge it now.
+    win.webContents.send('index:status', { ...(await js('window.mc.indexStatus()')), lastRun: Date.now() })
+
+    // Inbox scenarios.
+    const project = (await listProjects()).find((p) => !p.worktree)
+    const base = { projectPath: project?.path ?? process.cwd(), projectName: project?.name ?? 'smoke', mode: 'headless' as const, permission: 'plan' as const, useWorktree: false, prompt: 'smoke' }
+    const ok = await createTask({ ...base, title: 'Smoke: finished task' })
+    const bad = await createTask({ ...base, title: 'Smoke: failed task' })
+    const late = await createTask({ ...base, title: 'Smoke: overdue task', dueAt: now - 2 * H, dueHasTime: true })
+    made.push(ok.id, bad.id, late.id)
+    for (const t of listTasks()) {
+      if (t.id === late.id) t.remindedAt = now
+      if (t.id !== ok.id && t.id !== bad.id) continue
+      t.column = 'review'
+      t.run = {
+        startedAt: now - H,
+        finishedAt: now - (t.id === ok.id ? 5 : 15) * 60_000,
+        toolCalls: 4,
+        events: [],
+        costUsd: t.id === ok.id ? 1.8 : 0.4,
+        error: t.id === bad.id ? 'Reached the budget of $0.40' : undefined
+      }
+    }
+    flushTasks()
+    // Push the board to the UI through the normal path.
+    await js(`window.mc.updateTask(${JSON.stringify(late.id)}, { order: ${now} })`)
+    await js(`window.__mcSmoke.setView('inbox')`)
+    await shot('page', 2500)
+    log('inbox items:', await js(`[...document.querySelectorAll('.inbox-item')].map(e => e.querySelector('.inbox-title')?.textContent).join(' | ')`))
+    log('sidebar badge:', await js(`[...document.querySelectorAll('.nav-item')].find(b => b.textContent.includes('Inbox'))?.querySelector('.count')?.textContent ?? 'none'`))
+    log('digest card:', await js(`document.querySelector('.digest-stats')?.textContent ?? 'missing'`))
+    for (const which of ['yesterday', 'today'] as const) {
+      const d = await buildDigest(which)
+      log(`digest ${which}:`, JSON.stringify({ chats: d.chats, replies: d.replies, cost: d.costUsd.toFixed(2), weekShare: d.weekShare, review: d.review, overdue: d.overdue, top: d.topProjects[0]?.projectPath }))
+      log(`digest ${which} text:`, digestText(d).body)
+    }
+    // Dismiss the finished task; it should go, and "Show dismissed (1)" appear.
+    const before = await js(`document.querySelectorAll('.inbox-item').length`)
+    await js(`[...document.querySelectorAll('.inbox-item')].find(e => e.textContent.includes('Smoke: finished'))?.querySelector('.inbox-actions button[aria-label]')?.click()`)
+    await sleep(500)
+    log('dismiss:', before, '->', await js(`document.querySelectorAll('.inbox-item').length`), '| header buttons:', await js(`[...document.querySelectorAll('.inbox-head-actions button')].map(b => b.textContent).join(', ')`))
+
+    await js(`window.__mcSmoke.setView('usage')`)
+    await shot('usage', 2500)
+    log('plan cost card:', await js(`document.querySelector('.plan-cost')?.textContent?.slice(0, 500) ?? 'missing'`))
+    log('usage shares shown:', await js(`document.querySelectorAll('.plan-share').length`))
+    await js(`window.__mcSmoke.setView('tasks')`)
+    await shot('tasks', 1500)
+    log('task card share:', await js(`[...document.querySelectorAll('.task-card')].find(c => c.textContent.includes('Smoke: finished'))?.querySelector('.plan-share')?.textContent ?? 'none'`))
+    await js(`window.__mcSmoke.openSettings()`)
+    await shot('settings', 900)
+    await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+  } finally {
+    for (const id of made) await deleteTask(id)
+    await queryIndex('dropPlanReadings', 'seven_day', start, now)
+    await planRate(true).catch(() => undefined)
+  }
+}
+
+/**
  * MC_SMOKE_PLAN=1: asks your Claude account for the plan limits (one small request, no model use),
  * logs them and screenshots Home's top bar and the Usage page as <MC_SMOKE>-plan-*.png. Free.
  */
@@ -1129,6 +1347,8 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
     if (process.env.MC_SMOKE_PLAN) await planTour(win, outFile)
     if (process.env.MC_SMOKE_SKILLS) await skillsTour(win, outFile)
+    if (process.env.MC_SMOKE_INBOX) await inboxTour(win, outFile)
+    if (process.env.MC_SMOKE_AGENTS) await agentsTour(win, outFile, process.env.MC_SMOKE_AGENTS)
     if (process.env.MC_SMOKE_VAULT) await vaultTour(win, outFile, process.env.MC_SMOKE_VAULT)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
     if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)

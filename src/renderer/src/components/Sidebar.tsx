@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
+import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
 import type { ClaudeStatus } from '@shared/types'
 import type { BudgetState, GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
@@ -22,6 +22,8 @@ interface Props {
   onRefresh: () => void
   onAdd: () => void
   taskCounts: { running: number; review: number }
+  /** Inbox items waiting on you (not counting "good to know" ones). */
+  inbox: { total: number; urgent: number }
   /** Monthly budget state, keyed by lower-cased project path. */
   budgets: Record<string, BudgetState>
   /** Icon-only rail instead of the full sidebar. */
@@ -221,6 +223,17 @@ export default function Sidebar(props: Props) {
 
   const navItems: { view: View | 'templates'; icon: typeof House; label: string; shortcut: string; badge?: ReactNode }[] = [
     { view: 'home', icon: House, label: 'Home', shortcut: 'goHome' },
+    {
+      view: 'inbox',
+      icon: Inbox,
+      label: 'Inbox',
+      shortcut: 'goInbox',
+      badge: props.inbox.total > 0 && (
+        <span className={`count ${props.inbox.urgent ? 'count-attention' : 'count-review'}`} title={`${props.inbox.total} waiting on you${props.inbox.urgent ? `, ${props.inbox.urgent} urgent` : ''}`}>
+          {props.inbox.total}
+        </span>
+      )
+    },
     { view: 'projects', icon: FolderKanban, label: 'Projects', shortcut: 'goProjects', badge: <span className="count">{projects.filter((p) => !p.worktree).length}</span> },
     {
       view: 'agents',
@@ -274,6 +287,7 @@ export default function Sidebar(props: Props) {
               <n.icon size={17} strokeWidth={1.9} />
               {n.view === 'agents' && live.length > 0 && <span className={`rail-dot ${attention ? 'attention' : ''}`} />}
               {n.view === 'tasks' && props.taskCounts.review > 0 && <span className="rail-dot review" />}
+              {n.view === 'inbox' && props.inbox.total > 0 && <span className={`rail-dot ${props.inbox.urgent ? 'attention' : 'review'}`} />}
             </button>
           ))}
         </nav>

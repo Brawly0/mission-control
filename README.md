@@ -2,6 +2,21 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.17)
+
+- **One-click updates**: when a new version is out, an **Update** button appears in the top bar. One click downloads it and restarts into it. Mission Control checks every 30 minutes and whenever you come back to the window.
+- **Agent layout controls**: minimize an agent to the dock (`Ctrl+Shift+Down`), maximize it to fill the whole window (`Ctrl+Shift+Up` or double-click its header), and drag the dividers in the grid to resize columns and rows (double-click to even out). Pick Auto or 1–4 columns.
+- **Open as agents**: from a project's Chats tab, resume its 2, 4 or 8 latest chats (or all of them) side by side in one click. A chat that's already open is shown instead of started twice.
+- **What we worked on**: clicking a chat shows a recap at the top: active time, what you asked first and last, files changed, commits and Claude's last reply. Resumed agents get a one-line "Last time: …" banner. **Summarize with Claude** writes a short summary and a clear title for a fraction of a cent.
+- **Clearer chat names**: better automatic titles (no "ok can you…", briefing chats named after the briefing), Claude Code's newer titles, dates on chats that share a name, and **Name chats**: one cheap Haiku call gives clear names to chats whose names say little, like "Next task briefing". Your own names always win.
+
+## Features (v0.16)
+
+- **Plan cost per chat**: next to each chat, task, project and vault build, what it took of your weekly limit (≈0.4% wk). Mission Control saves your plan readings and compares them with what your chats used, so after a day or two it knows what 1% of your week is worth. The Usage page shows that in dollars and in tokens per model, and moves made outside this computer (claude.ai, phone) are left out.
+- **Eco check**: the Usage page compares cost per reply in chats started with Eco mode against your other chats, so you can see whether it saves anything.
+- **Inbox** (`Ctrl+Alt+I`): one list of everything waiting on you. That covers agents asking for permission or done with their turn, finished and failed tasks, overdue and due-today tasks, plan limits, budgets, a held queue and updates. Items clear themselves once dealt with; dismiss the rest. The sidebar counts them.
+- **Daily digest**: yesterday (or today so far) in review on the Inbox page: chats, share of your week, busiest projects and chats, tasks finished, briefings, and what's waiting now. It also comes as a notification every morning at a time you choose (Settings → General).
+
 ## Features (v0.15)
 
 - **Eco mode** (the leaf in the top bar, `Ctrl+Alt+L`): chats and tasks Mission Control starts use less of your plan. They default to Sonnet (Opus is one `/model opus` away), compact at 150k tokens instead of running up to the full window, and get the **eco:coach** skill. Fine-tune it in Settings → Spending. Most usage on long chats is Claude re-reading the chat on every reply, so compacting sooner is the biggest saving.

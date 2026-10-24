@@ -12,6 +12,7 @@ import {
   projectRootOf,
   readmeInfo,
   titleFromPrompt,
+  unclearTitle,
   windowsPath,
   worktreeParent
 } from './projectLook'
@@ -191,8 +192,25 @@ describe('names', () => {
     expect(encodeProjectKey('C:\\Users\\bsbra\\Desktop\\WBP')).toBe('C--Users-bsbra-Desktop-WBP')
   })
   it('turns a first prompt into a short title', () => {
-    expect(titleFromPrompt('ok so can you fix the login page\nmore details')).toBe('Can you fix the login page')
+    expect(titleFromPrompt('ok so can you fix the login page\nmore details')).toBe('Fix the login page')
+    expect(titleFromPrompt('ok i want you to work on something i want to be able to see my token limit')).toBe('Work on something i want to be able to see my token limit')
+    expect(titleFromPrompt('i have a question i use claude code alot')).toBe('I use claude code alot')
+    expect(titleFromPrompt('look at "C:\\Users\\me\\COURT\\notes\\plan.txt" and study it')).toBe('Look at plan.txt and study it')
     expect(titleFromPrompt('<command-name>/x</command-name>\nhello')).toBe('')
     expect(titleFromPrompt('a'.repeat(200)).length).toBeLessThanOrEqual(80)
+  })
+
+  it('spots titles that say nothing about the chat', () => {
+    expect(unclearTitle('Next task briefing')).toBe(true)
+    expect(unclearTitle('Session Briefing 2026-10-11')).toBe(true)
+    expect(unclearTitle('From briefing: Mission control v0 12')).toBe(true)
+    expect(unclearTitle('x')).toBe(true)
+    expect(unclearTitle('Trading watch status update')).toBe(false)
+    expect(unclearTitle('(empty session)')).toBe(false)
+  })
+
+  it('names chats that start from a briefing after the briefing', () => {
+    expect(titleFromPrompt('Read the session briefing at "C:\\Users\\me\\hub\\docs\\briefings\\2026-10-24-1449-mission-control-v0-12.md". It\'s the handoff')).toBe('From briefing: Mission control v0 12')
+    expect(titleFromPrompt('look at this "C:\\Users\\me\\COURT\\docs\\SESSION_BRIEF_2026-08-24.md" study the folder')).toBe('From briefing: SESSION BRIEF 2026 08 24')
   })
 })

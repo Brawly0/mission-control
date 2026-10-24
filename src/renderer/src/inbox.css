@@ -1,0 +1,346 @@
+/* ---------- Inbox page ---------- */
+.inbox-view {
+  height: 100%;
+  padding: 26px 30px 48px;
+}
+.inbox-view > * {
+  max-width: 1240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.inbox-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.inbox-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px;
+  font: 600 24px var(--font-display);
+}
+.inbox-head h1 svg {
+  color: var(--accent-text);
+}
+.inbox-head p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.inbox-head-actions {
+  display: flex;
+  gap: 8px;
+}
+.inbox-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .inbox-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.inbox-section + .inbox-section {
+  margin-top: 20px;
+}
+.inbox-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inbox-section-head.sev-urgent {
+  color: var(--orange);
+}
+.inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inbox-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  transition: border-color 0.12s;
+}
+.inbox-item:hover {
+  border-color: var(--border-strong);
+}
+.inbox-item.sev-urgent {
+  border-left: 3px solid var(--orange);
+}
+.inbox-item.sev-info {
+  background: var(--surface-2);
+}
+.inbox-item.is-hidden {
+  opacity: 0.55;
+}
+.inbox-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.inbox-icon.kind-agent {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.inbox-icon.kind-failed,
+.inbox-icon.kind-budget {
+  color: var(--red);
+  background: rgba(248, 113, 113, 0.12);
+}
+.inbox-icon.kind-review {
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.1);
+}
+.inbox-icon.kind-due,
+.inbox-icon.kind-limit,
+.inbox-icon.kind-queue {
+  color: var(--orange);
+  background: rgba(251, 146, 60, 0.12);
+}
+.inbox-icon.kind-update,
+.inbox-icon.kind-restore,
+.inbox-icon.kind-login {
+  color: var(--blue);
+  background: rgba(96, 165, 250, 0.12);
+}
+.inbox-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inbox-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
+}
+.inbox-when {
+  flex-shrink: 0;
+  font-weight: 400;
+}
+.inbox-detail {
+  color: var(--text-2);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.inbox-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+.inbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inbox-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 56px 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+.inbox-empty svg {
+  color: var(--green);
+}
+.inbox-empty h2 {
+  margin: 4px 0 0;
+  font: 600 18px var(--font-display);
+}
+.inbox-empty p {
+  margin: 0;
+  max-width: 380px;
+}
+
+/* Daily digest */
+.digest-card {
+  padding: 16px 18px 12px;
+  position: sticky;
+  top: 0;
+}
+.digest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.digest-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+}
+.digest-head h2 svg {
+  color: var(--yellow);
+}
+.digest-day {
+  margin: 6px 0 12px;
+}
+.digest-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.digest-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.digest-value {
+  font: 600 20px var(--font-display);
+}
+.digest-bad {
+  color: var(--red);
+}
+.digest-list {
+  margin-top: 14px;
+}
+.digest-list h3 {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.digest-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.digest-row:hover {
+  background: var(--hover);
+}
+.digest-week {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 4px 0 6px;
+}
+.digest-pace {
+  line-height: 1.35;
+}
+.digest-now {
+  margin: 4px 0;
+}
+.digest-foot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.digest-foot:hover {
+  color: var(--text);
+}
+.time-input {
+  width: auto;
+  padding: 2px 6px;
+  margin: 0 4px;
+  color-scheme: inherit;
+}
+
+/* ---------- Plan cost ---------- */
+.plan-share {
+  white-space: nowrap;
+}
+.plan-cost .usage-card-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.plan-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+.plan-cost-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.plan-cost-value {
+  font: 600 19px var(--font-display);
+}
+.plan-cost-note {
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+.eco-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  line-height: 1.45;
+}
+.eco-check svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}

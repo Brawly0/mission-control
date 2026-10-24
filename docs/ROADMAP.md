@@ -107,10 +107,23 @@
 - [x] Eco mode (top bar, Ctrl+Alt+L): Sonnet by default, compact at 150k, optional lower effort, the eco:coach skill
 - [x] Long-chat coach: the hook server tells Claude once at 60% and 85% of the compaction size (and when the session limit is nearly used up) to suggest compacting or a fresh chat
 
+## ✅ v0.16: Plan cost and the inbox
+- [x] Plan readings saved (90 days) and read back after a restart
+- [x] Plan cost: share of the weekly (and session) limit per chat, task, project and vault build, calibrated from your readings against logged usage; 1% of the week in dollars and tokens per model
+- [x] Eco check: cost per reply in Eco chats against the rest
+- [x] "Needs you" inbox: agents, reviews, failures, due dates, limits, budgets, queue, updates; dismiss until something new happens; sidebar badge
+- [x] Daily digest on the Inbox page and as a morning notification (time in Settings → General)
+
+## ✅ v0.17: Agent layout, recaps and chat names
+- [x] Minimize agents to a dock, maximize one to fill the window, resize grid columns and rows by dragging, choose the column count
+- [x] Open a project's latest (or all) chats as agents in one click; resuming an open chat shows it
+- [x] "What we worked on" recap in the chat viewer and as a "Last time" banner on resumed agents; optional summary by Claude
+- [x] Clearer chat names: better first-prompt titles, Claude Code's ai-title, dates on duplicates, Name chats with Claude
+- [x] One-click updates: an Update button in the top bar downloads and restarts; checks every 30 minutes and when the window gets focus
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent
-- [ ] One "Needs you" inbox and a daily digest
 - [ ] Code signing so Windows SmartScreen stops warning
 - [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches
 

@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { RateLimitInfo } from '../shared/types'
-import { forecast, parsePlanUsage } from '../shared/planUsage'
+import { forecast, parsePlanUsage, WINDOW_MS } from '../shared/planUsage'
+import { recordPlanReading, savedPlanReadings } from './planCost'
 import { getRateLimit, setRateLimit } from './tasks'
 
 /**
@@ -24,6 +25,17 @@ let backoff = 0
 let inFlight: Promise<void> | null = null
 /** Recent readings per window, [time, utilization], for the pace forecast. Cleared when a window resets. */
 const samples = new Map<string, { resetsAt: number; points: [number, number][] }>()
+
+/** Refills the forecast's history from saved readings, so a restart doesn't forget the last hour. */
+async function seedSamples(): Promise<void> {
+  const rows = await savedPlanReadings(Date.now() - WINDOW_MS.five_hour)
+  for (const r of rows) {
+    let s = samples.get(r.win)
+    if (!s || Math.abs(s.resetsAt - r.resetsAt) > 60_000) samples.set(r.win, (s = { resetsAt: r.resetsAt, points: [] }))
+    s.points.push([r.ts, r.util])
+    if (s.points.length > 120) s.points.shift()
+  }
+}
 
 /** Adds this reading to the window's history and attaches where each window is heading. */
 function withForecast(info: RateLimitInfo): RateLimitInfo {
@@ -81,6 +93,7 @@ async function fetchOnce(): Promise<void> {
     backoff = 0
     const info = withForecast(parsePlanUsage(await res.json(), Date.now(), login.plan))
     setRateLimit({ ...info, error: undefined })
+    recordPlanReading(info)
     onFresh?.(info)
   } catch (err) {
     fail(`Usage check failed: ${(err as Error).message}`)
@@ -102,12 +115,17 @@ let onFresh: ((info: RateLimitInfo) => void) | undefined
 /** Polls every few minutes (slower while rate-limited); `fresh` sees each successful reading. */
 export function startPlanUsage(fresh?: (info: RateLimitInfo) => void): void {
   onFresh = fresh
-  const tick = (): void => {
+  let seeded = false
+  const tick = async (): Promise<void> => {
+    if (!seeded) {
+      seeded = true
+      await seedSamples().catch(() => undefined)
+    }
     void refreshPlanUsage(true).finally(() => {
       timer = setTimeout(tick, Math.max(EVERY_MS, backoff))
     })
   }
-  tick()
+  void tick()
 }
 
 export function stopPlanUsage(): void {

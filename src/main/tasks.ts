@@ -10,6 +10,7 @@ import { agentEnv, whichSync } from './pty'
 import { loadStore, updateStore } from './store'
 import { addEvent, applyStreamEvent } from './streamParser'
 import { defaultModelFor, launchArgs } from './spend'
+import { markEcoSession } from './planCost'
 
 /**
  * The task board's data and the headless runner.
@@ -365,7 +366,8 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
     // Only the MCP servers this project loads (when you limited them).
     ...launchArgs(cwd, { newChat: false, hasModel: true })
   ]
-  if (budget && !t.budgetUsd) addEvent(run, 'info', `Default budget $${budget} applies`)
+  if (budget && !t.budgetUsd) addEvent(run, 'info', `Default budget ${budget} applies`)
+  markEcoSession(session.resume ?? session.sessionId)
 
   const child = spawn(file, args, { cwd, env: agentEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   procs.set(t.id, child)

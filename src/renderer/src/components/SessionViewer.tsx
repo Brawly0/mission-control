@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
-import { Copy, Play } from 'lucide-react'
+import { Copy, Play, Sparkles } from 'lucide-react'
 import type { SessionDetail, SessionSummary } from '@shared/types'
 import { useToast } from '../toast'
 import { Button, IconButton } from './ui'
+import SessionRecap from './SessionRecap'
 
 interface Props {
   session: SessionSummary
   onResume: () => void
   /** Extra buttons for the header, e.g. Move to project. */
   actions?: ReactNode
+  /** Claude gave the chat a new title (Summarize). */
+  onTitleChanged?: () => void
 }
 
-export default function SessionViewer({ session, onResume, actions }: Props) {
+export default function SessionViewer({ session, onResume, actions, onTitleChanged }: Props) {
   const toast = useToast()
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -40,7 +43,14 @@ export default function SessionViewer({ session, onResume, actions }: Props) {
     <div className="session-viewer">
       <div className="session-viewer-head">
         <div className="session-viewer-title">
-          <div className="ellipsis strong">{session.title}</div>
+          <div className="ellipsis strong session-viewer-name">
+            {session.title}
+            {session.titleSource === 'claude' && (
+              <span title="Named by Claude. Rename it to use your own." className="named-by-claude">
+                <Sparkles size={12} />
+              </span>
+            )}
+          </div>
           <div className="muted small">
             Started {new Date(session.startedAt).toLocaleString()}
             {detail && ` · ${detail.messages.length} messages`}
@@ -61,6 +71,7 @@ export default function SessionViewer({ session, onResume, actions }: Props) {
           Resume
         </Button>
       </div>
+      <SessionRecap key={session.id} sessionId={session.id} version={session.updatedAt} onTitle={onTitleChanged} />
       <div className="messages scroll" ref={scrollRef}>
         {error && <div className="error">{error}</div>}
         {!detail && !error && <div className="muted pad">Reading chat…</div>}
