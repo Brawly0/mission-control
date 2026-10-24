@@ -3,7 +3,18 @@ import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { ChatMessage, Project, ProjectMeta, RecentSession, SessionDetail, SessionSummary } from '../shared/types'
-import { PROJECT_HUES, encodeProjectKey, folderLabel, guessIcon, prettyWorktreeName, readmeInfo, titleFromPrompt, worktreeParent } from '../shared/projectLook'
+import {
+  PROJECT_HUES,
+  encodeProjectKey,
+  folderLabel,
+  guessIcon,
+  pickProject,
+  prettyWorktreeName,
+  projectRootOf,
+  readmeInfo,
+  titleFromPrompt,
+  worktreeParent
+} from '../shared/projectLook'
 import { loadStore, updateStore, type StoreData } from './store'
 
 /**
@@ -140,9 +151,15 @@ function withOwnTitle(s: SessionSummary, titles: Record<string, string>): Sessio
 }
 
 /** Chats from one or more ~/.claude/projects folders (a project and its worktrees), newest first. */
-export async function listSessions(projectKey: string | string[]): Promise<SessionSummary[]> {
+/**
+ * Chats from one or more ~/.claude/projects folders (a project and its worktrees), newest first.
+ * With `projectPath`, chats matched to another project are left out and chats matched to this one
+ * (for example started from C:\ but spent in this folder) are added.
+ */
+export async function listSessions(projectKey: string | string[], projectPath?: string): Promise<SessionSummary[]> {
   const keys = [...new Set(Array.isArray(projectKey) ? projectKey : [projectKey])].filter(Boolean)
   const titles = loadStore().chatTitles
+  const here = projectPath ? normalizePath(projectPath) : ''
   const lists = await Promise.all(
     keys.map(async (key) => {
       const files = await sessionFiles(key)
@@ -150,7 +167,59 @@ export async function listSessions(projectKey: string | string[]): Promise<Sessi
       return results.flatMap((r) => (r.status === 'fulfilled' ? [withOwnTitle(r.value, titles)] : []))
     })
   )
-  return lists.flat().sort((a, b) => b.updatedAt - a.updatedAt)
+  let list = lists.flat()
+  if (here) {
+    list = list.filter((x) => {
+      const moved = movedChats.get(x.id)
+      return !moved || normalizePath(moved.path) === here
+    })
+    const incoming = [...movedChats.entries()].filter(([, m]) => normalizePath(m.path) === here && !keys.includes(m.key))
+    const extra = await Promise.allSettled(incoming.map(([id, m]) => summarizeSession(m.key, join(claudeProjectsDir, m.key, `${id}.jsonl`))))
+    list.push(...extra.flatMap((r) => (r.status === 'fulfilled' ? [withOwnTitle(r.value, titles)] : [])))
+    list = list.map((x) => {
+      const moved = movedChats.get(x.id)
+      return moved ? { ...x, movedFrom: folderLabel(moved.from), movedByYou: moved.byYou } : x
+    })
+  }
+  return list.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** Files or folders that make a folder a project, for telling "Desktop\Projects" (a container) from a project. */
+const MARKERS = ['.git', 'package.json', 'README.md', 'README.txt', 'CLAUDE.md', 'pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod', 'pom.xml']
+const markerCache = new Map<string, boolean>()
+function hasMarker(dir: string): boolean {
+  const key = dir.toLowerCase()
+  let v = markerCache.get(key)
+  if (v === undefined) {
+    v = MARKERS.some((m) => existsSync(join(dir, m)))
+    markerCache.set(key, v)
+  }
+  return v
+}
+
+/** The folders each chat worked in, from the chat index (wired up in index.ts; empty until the index has run). */
+let folderSource: (sessionIds: string[]) => Promise<Record<string, { folder: string; hits: number }[]>> = async () => ({})
+export function setFolderSource(fn: typeof folderSource): void {
+  folderSource = fn
+}
+
+/** Folders each chat worked in, as last read from the index, with the chat file time they belong to. */
+const folderCache = new Map<string, { mtime: number; folders: { folder: string; hits: number }[] }>()
+
+/** Chats shown under a different project than the folder they started in, by session id. Rebuilt by listProjects. */
+let movedChats = new Map<string, { path: string; key: string; from: string; byYou: boolean }>()
+
+/** Chats currently shown under another project than where they started. */
+export function movedChatList(): { id: string; path: string }[] {
+  return [...movedChats.entries()].map(([id, m]) => ({ id, path: m.path }))
+}
+
+/** Files a chat under another project (`path`), or back to automatic matching (empty). */
+export function moveSession(sessionId: string, path: string): void {
+  updateStore((s) => {
+    if (path) s.chatProjects[sessionId] = path
+    else delete s.chatProjects[sessionId]
+  })
 }
 
 export function renameSession(sessionId: string, title: string): void {
@@ -220,7 +289,14 @@ export async function listProjects(): Promise<Project[]> {
     await Promise.all(
       keys.map(async (key) => {
         const files = await sessionFiles(key)
-        if (files.length === 0) return null
+        if (files.length === 0) {
+          // Claude Code was opened here (it keeps memory for the folder) but no chat was saved.
+          // Only a folder that is a project itself: "WBP\backend" is part of WBP, not a project of its own.
+          const path = decodeKey(key)
+          const root = projectRootOf(path, homedir(), hasMarker)
+          const isProject = !!root && normalizePath(root) === normalizePath(path)
+          return existsSync(path) && isProject ? { key, path, sessionCount: 0, lastActivity: 0, chats: [] } : null
+        }
         const stats = await Promise.all(files.map((f) => fs.stat(f).then((s) => ({ f, s }))))
         stats.sort((a, b) => b.s.mtimeMs - a.s.mtimeMs)
         let path = ''
@@ -229,7 +305,8 @@ export async function listProjects(): Promise<Project[]> {
         } catch {
           /* fall through to decoded key */
         }
-        return { key, path: path || decodeKey(key), sessionCount: files.length, lastActivity: stats[0].s.mtimeMs }
+        const chats = stats.map((x) => ({ id: basename(x.f, '.jsonl'), mtime: x.s.mtimeMs }))
+        return { key, path: path || decodeKey(key), sessionCount: files.length, lastActivity: stats[0].s.mtimeMs, chats }
       })
     )
   ).filter((x) => x !== null)
@@ -264,6 +341,7 @@ export async function listProjects(): Promise<Project[]> {
     p.lastActivity = Math.max(p.lastActivity, f.lastActivity)
     byPath.set(norm, p)
   }
+  await matchStrayChats(found, byPath, store, blank)
   // A project whose chats all ran in worktrees has no folder of its own yet; use the name Claude Code would give it.
   for (const p of byPath.values()) if (!p.key) p.key = encodeProjectKey(p.path)
 
@@ -275,6 +353,57 @@ export async function listProjects(): Promise<Project[]> {
   const list = [...byPath.values()].filter((p) => p.manual || existsSync(p.path) || p.sessionCount > 0)
   await Promise.all(list.map(async (p) => Object.assign(p, await describe(p.path, p.meta))))
   return list.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
+}
+
+/**
+ * Chats started in a parent folder (C:\, home, Desktop) usually spend their time in one project.
+ * Those are shown under that project, which is created if it has no chats of its own (like a project
+ * you only ever reached with "cd"). Your own choices (Move to project) win over the automatic match.
+ */
+async function matchStrayChats(
+  found: { key: string; path: string; chats: { id: string; mtime: number }[] }[],
+  byPath: Map<string, Project>,
+  store: StoreData,
+  blank: (path: string, manual: boolean) => Project
+): Promise<void> {
+  const next = new Map<string, { path: string; key: string; from: string; byYou: boolean }>()
+  const home = homedir()
+  const rootOf = (folder: string) => projectRootOf(folder, home, hasMarker)
+  const strays = found.filter((f) => {
+    const root = rootOf(f.path)
+    return !worktreeParent(f.path) && (!root || normalizePath(root) !== normalizePath(f.path))
+  })
+  // Ask the index only about chats that changed since last time. While it's busy (a full rebuild
+  // can take minutes) don't wait: list projects now, and the next refresh picks the matches up.
+  const chats = strays.flatMap((f) => f.chats)
+  const stale = chats.filter((c) => folderCache.get(c.id)?.mtime !== c.mtime)
+  if (stale.length) {
+    try {
+      const timeout = new Promise<null>((r) => setTimeout(() => r(null), 1500))
+      const fresh = await Promise.race([folderSource(stale.map((c) => c.id)), timeout])
+      if (fresh) for (const c of stale) if (fresh[c.id]?.length) folderCache.set(c.id, { mtime: c.mtime, folders: fresh[c.id] })
+    } catch {
+      /* index not ready yet: only your own moves and earlier matches apply */
+    }
+  }
+  const folders = Object.fromEntries(chats.map((c) => [c.id, folderCache.get(c.id)?.folders ?? []]))
+  const own = store.chatProjects
+  for (const f of found) {
+    for (const c of f.chats) {
+      const mine = own[c.id]
+      const target = mine ?? (strays.includes(f) ? pickProject(folders[c.id] ?? [], f.path, rootOf) : null)
+      if (!target || normalizePath(target) === normalizePath(f.path) || !existsSync(target)) continue
+      next.set(c.id, { path: target, key: f.key, from: f.path, byYou: !!mine })
+      const fromProject = byPath.get(normalizePath(worktreeParent(f.path)?.parent ?? f.path))
+      if (fromProject) fromProject.sessionCount--
+      const norm = normalizePath(target)
+      const to = byPath.get(norm) ?? blank(target, false)
+      to.sessionCount++
+      to.lastActivity = Math.max(to.lastActivity, c.mtime)
+      byPath.set(norm, to)
+    }
+  }
+  movedChats = next
 }
 
 function metaFor(store: StoreData, path: string): ProjectMeta {
@@ -301,12 +430,12 @@ export function setProjectMeta(path: string, patch: Partial<ProjectMeta>): void 
 
 /** The most recently updated sessions across all projects, for the Home view. */
 export async function recentSessions(limit: number): Promise<RecentSession[]> {
-  const projects = (await listProjects()).filter((p) => p.keys.length && !p.worktree)
+  const projects = (await listProjects()).filter((p) => p.sessionCount > 0 && !p.worktree)
   // Only the most active projects can contain the newest sessions.
   const candidates = projects.sort((a, b) => b.lastActivity - a.lastActivity).slice(0, limit)
   const lists = await Promise.all(
     candidates.map(async (p) =>
-      (await listSessions(p.keys)).slice(0, limit).map((s) => ({ ...s, projectName: p.name, projectPath: p.path }))
+      (await listSessions(p.keys, p.path)).slice(0, limit).map((s) => ({ ...s, projectName: p.name, projectPath: p.path }))
     )
   )
   return lists

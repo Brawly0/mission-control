@@ -60,6 +60,8 @@
 - [x] Icons guessed from the folder name and README, shown everywhere a project appears
 - [x] Chats from a project's Claude Code worktrees listed under the project, labeled with the worktree
 - [x] Rename chats in the app; Claude Code's automatic chat names used when there's no /rename title
+- [x] Chats started from a parent folder (C:\, Desktop) matched to the project they worked in; Move to project corrects it
+- [x] Folders Claude Code was opened in are listed even without saved chats
 
 ## Next ideas
 - [ ] Code signing so Windows SmartScreen stops warning

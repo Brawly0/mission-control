@@ -8,7 +8,7 @@ import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
 import { checkForUpdates, initUpdater, updateStatus } from './updater'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
-import { listProjects, listSessions, normalizePath, renameSession, setProjectMeta } from './claudeData'
+import { listProjects, listSessions, movedChatList, normalizePath, renameSession, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { killTerminalsIn } from './pty'
 import { loadStore, updateStore } from './store'
@@ -373,23 +373,26 @@ async function namesTour(win: BrowserWindow, outFile: string, folder: string): P
     log('screenshot:', file)
   }
   const js = (code: string) => win.webContents.executeJavaScript(code)
+  // Chats started from C:\ are matched to projects from the index, so wait for it.
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
   const projects = await listProjects()
   for (const p of projects.filter((x) => !x.worktree)) {
     log(`project: ${p.folderName} -> "${p.name}" [${p.icon}] ${p.sessionCount} chats from ${p.keys.length} folders`)
   }
   log('hidden (temp/scratch):', projects.filter((x) => x.worktree).length)
+  for (const m of movedChatList()) log('matched chat:', m.id, '->', m.path)
   const target = projects.find((p) => p.folderName.toLowerCase() === folder.toLowerCase())
   if (!target) return log('names: no project named', folder)
-  const sessions = await listSessions(target.keys)
+  const sessions = await listSessions(target.keys, target.path)
   log(`names: ${target.name} has ${sessions.length} chats:`, sessions.map((s) => `"${s.title}"${s.worktree ? ` (worktree: ${s.worktree})` : ''}`).join(', '))
 
   if (sessions[0]) {
     const before = loadStore().chatTitles[sessions[0].id]
     renameSession(sessions[0].id, 'Smoke renamed chat')
-    const renamed = (await listSessions(target.keys)).find((s) => s.id === sessions[0].id)
+    const renamed = (await listSessions(target.keys, target.path)).find((s) => s.id === sessions[0].id)
     log('names: rename shows', JSON.stringify(renamed?.title), 'renamed flag', renamed?.renamed)
     renameSession(sessions[0].id, before ?? '')
-    log('names: rename undone', (await listSessions(target.keys)).find((s) => s.id === sessions[0].id)?.title === sessions[0].title)
+    log('names: rename undone', (await listSessions(target.keys, target.path)).find((s) => s.id === sessions[0].id)?.title === sessions[0].title)
   }
 
   await js(`window.__mcSmoke.setView('home')`)

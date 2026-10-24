@@ -134,3 +134,72 @@ export function titleFromPrompt(prompt: string): string {
   if (t.length > 80) t = t.slice(0, 77).replace(/\s+\S*$/, '') + '…'
   return t ? t[0].toUpperCase() + t.slice(1) : ''
 }
+
+// ---------------------------------------------------------------- which project a chat worked on
+
+/** "/c/Users/me", "C:/Users/me/" and "C:\Users\me" all become "C:\Users\me". '' for anything that isn't an absolute Windows path. */
+export function windowsPath(raw: string): string {
+  let p = raw.trim()
+  const bash = /^\/([a-z])(\/|$)(.*)$/i.exec(p)
+  if (bash) p = `${bash[1].toUpperCase()}:\\${bash[3]}`
+  if (!/^[a-z]:[\\/]/i.test(p) && !/^[a-z]:$/i.test(p)) return ''
+  p = p.replace(/\//g, '\\').replace(/\\{2,}/g, '\\')
+  p = p[0].toUpperCase() + p.slice(1)
+  return p.length > 3 ? p.replace(/\\+$/, '') : p.replace(/^([A-Z]):\\?$/, '$1:\\')
+}
+
+/** Folders that hold projects rather than being one, when they have no project files of their own. */
+const CONTAINER_NAMES = /^(desktop|documents|downloads|onedrive.*|projects?|repos|source|code|dev|github|workspaces?|work)$/i
+/** Folders whose files never make a chat "about" a project: Claude's own data, temp, Windows. */
+const SKIP = /^[a-z]:\\(windows|program files|program files \(x86\)|programdata)(\\|$)|\\appdata(\\|$)|\\\.claude(\\|$)|\\\$recycle\.bin(\\|$)/i
+
+/**
+ * The project folder a path belongs to: the first folder on the way down from the drive that isn't
+ * a container (drive root, home, Desktop, Projects…). `hasMarker` says whether a folder has project
+ * files (.git, package.json, README…); a container name with them counts as a project.
+ */
+export function projectRootOf(path: string, home: string, hasMarker: (dir: string) => boolean): string | null {
+  const p = windowsPath(path)
+  if (!p || SKIP.test(p)) return null
+  const parts = p.replace(/\\$/, '').split('\\')
+  const homeLc = windowsPath(home).toLowerCase()
+  let cur = parts[0]
+  for (let i = 1; i < parts.length; i++) {
+    cur = `${cur}\\${parts[i]}`
+    const lc = cur.toLowerCase()
+    if (homeLc.startsWith(lc + '\\') || lc === homeLc) continue
+    if (CONTAINER_NAMES.test(parts[i]) && !hasMarker(cur)) continue
+    return cur
+  }
+  return null
+}
+
+/** True when `child` is strictly inside `parent`. */
+export function isInside(child: string, parent: string): boolean {
+  const c = child.toLowerCase().replace(/\\+$/, '')
+  const p = parent.toLowerCase().replace(/\\+$/, '')
+  return c.startsWith(p.endsWith('\\') ? p : p + '\\') && c !== p
+}
+
+/**
+ * For a chat started in a parent folder (like C:\ or Desktop), or in a scratch or temp folder, the
+ * project it mostly worked in: the root with the most hits, if it has at least 5 and at least 60% of
+ * all of them. Otherwise null.
+ */
+export function pickProject(folders: { folder: string; hits: number }[], cwd: string, rootOf: (folder: string) => string | null): string | null {
+  // A chat started in Claude Desktop's scratch space or a temp folder can belong to any project.
+  const anywhere = SKIP.test(windowsPath(cwd))
+  const byRoot = new Map<string, { root: string; hits: number }>()
+  let total = 0
+  for (const f of folders) {
+    const root = rootOf(f.folder)
+    if (!root) continue
+    total += f.hits
+    if (!anywhere && !isInside(root, cwd)) continue
+    const cur = byRoot.get(root.toLowerCase())
+    if (cur) cur.hits += f.hits
+    else byRoot.set(root.toLowerCase(), { root, hits: f.hits })
+  }
+  const best = [...byRoot.values()].sort((a, b) => b.hits - a.hits)[0]
+  return best && best.hits >= 5 && best.hits >= total * 0.6 ? best.root : null
+}

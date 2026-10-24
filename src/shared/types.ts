@@ -122,6 +122,10 @@ export interface SessionSummary {
   worktree?: string
   /** True when you renamed this chat in Mission Control. */
   renamed?: boolean
+  /** Set when the chat started in another folder (e.g. "C: drive") but is shown under this project. */
+  movedFrom?: string
+  /** True when you moved it here yourself, false when it was matched automatically. */
+  movedByYou?: boolean
   startedAt: number
   updatedAt: number
   sizeBytes: number
@@ -406,7 +410,9 @@ export interface QueueStatus {
 export interface MissionControlApi {
   listProjects(): Promise<Project[]>
   /** Pass a project's `keys` to include chats from its worktrees. */
-  listSessions(projectKey: string | string[]): Promise<SessionSummary[]>
+  listSessions(projectKey: string | string[], projectPath?: string): Promise<SessionSummary[]>
+  /** Shows a chat under another project; an empty path goes back to automatic matching. */
+  moveSession(sessionId: string, projectPath: string): Promise<void>
   /** Your own title for a chat (stored by Mission Control); empty clears it. */
   renameSession(sessionId: string, title: string): Promise<void>
   getSession(projectKey: string, sessionId: string): Promise<SessionDetail>

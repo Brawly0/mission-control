@@ -9,55 +9,105 @@
  */
 import { parentPort, workerData } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { costOf } from './pricing'
-import { titleFromPrompt } from '../shared/projectLook'
+import { titleFromPrompt, windowsPath } from '../shared/projectLook'
 import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
 
 const { dbPath, projectsDir } = workerData as { dbPath: string; projectsDir: string }
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 const MAX_BODY = 20_000
 
-const db = new DatabaseSync(dbPath)
-db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
-db.exec('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
-const version = (db.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value?: string } | undefined)?.value
-if (Number(version) !== SCHEMA_VERSION) {
-  db.exec('DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS msgs; DROP TABLE IF EXISTS fts;')
+function openDb(): DatabaseSync {
+  const d = new DatabaseSync(dbPath)
+  d.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
+  // A damaged file (e.g. a crash or another copy of the app writing at the same time) is rebuilt from scratch.
+  const check = (d.prepare('PRAGMA quick_check(1)').get() as Record<string, string> | undefined) ?? {}
+  if (Object.values(check)[0] !== 'ok') {
+    d.close()
+    throw new Error('database disk image is malformed')
+  }
+  d.exec('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
+  const version = (d.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value?: string } | undefined)?.value
+  if (Number(version) !== SCHEMA_VERSION) {
+    d.exec('DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS msgs; DROP TABLE IF EXISTS fts; DROP TABLE IF EXISTS folders;')
+  }
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, session_id TEXT, size INTEGER, mtime REAL, offset INTEGER);
+    CREATE TABLE IF NOT EXISTS sessions(
+      session_id TEXT PRIMARY KEY, project_key TEXT, project_path TEXT, title TEXT, custom_title TEXT,
+      first_prompt TEXT, started INTEGER, updated INTEGER);
+    CREATE TABLE IF NOT EXISTS msgs(
+      session_id TEXT, msg_id TEXT, model TEXT, day TEXT, ts INTEGER,
+      input INTEGER, output INTEGER, cw5 INTEGER, cw1h INTEGER, cread INTEGER, cost REAL,
+      PRIMARY KEY(session_id, msg_id));
+    CREATE INDEX IF NOT EXISTS msgs_ts ON msgs(ts);
+    CREATE TABLE IF NOT EXISTS folders(
+      session_id TEXT, folder_lc TEXT, folder TEXT, hits INTEGER, PRIMARY KEY(session_id, folder_lc));
+    CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
+      body, session_id UNINDEXED, role UNINDEXED, ts UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
+  `)
+  d.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema', ?)").run(String(SCHEMA_VERSION))
+  return d
 }
-db.exec(`
-  CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, session_id TEXT, size INTEGER, mtime REAL, offset INTEGER);
-  CREATE TABLE IF NOT EXISTS sessions(
-    session_id TEXT PRIMARY KEY, project_key TEXT, project_path TEXT, title TEXT, custom_title TEXT,
-    first_prompt TEXT, started INTEGER, updated INTEGER);
-  CREATE TABLE IF NOT EXISTS msgs(
-    session_id TEXT, msg_id TEXT, model TEXT, day TEXT, ts INTEGER,
-    input INTEGER, output INTEGER, cw5 INTEGER, cw1h INTEGER, cread INTEGER, cost REAL,
-    PRIMARY KEY(session_id, msg_id));
-  CREATE INDEX IF NOT EXISTS msgs_ts ON msgs(ts);
-  CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
-    body, session_id UNINDEXED, role UNINDEXED, ts UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
-`)
-db.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema', ?)").run(String(SCHEMA_VERSION))
 
-const q = {
-  getFile: db.prepare('SELECT size, mtime, offset FROM files WHERE path = ?'),
-  putFile: db.prepare('INSERT OR REPLACE INTO files(path, session_id, size, mtime, offset) VALUES (?, ?, ?, ?, ?)'),
-  getSession: db.prepare('SELECT * FROM sessions WHERE session_id = ?'),
-  putSession: db.prepare(
-    `INSERT OR REPLACE INTO sessions(session_id, project_key, project_path, title, custom_title, first_prompt, started, updated)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ),
-  getMsg: db.prepare('SELECT input, output, cw5, cw1h, cread FROM msgs WHERE session_id = ? AND msg_id = ?'),
-  putMsg: db.prepare(
-    `INSERT OR REPLACE INTO msgs(session_id, msg_id, model, day, ts, input, output, cw5, cw1h, cread, cost)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ),
-  addFts: db.prepare('INSERT INTO fts(body, session_id, role, ts) VALUES (?, ?, ?, ?)'),
-  dropFts: db.prepare('DELETE FROM fts WHERE session_id = ?'),
-  dropMsgs: db.prepare('DELETE FROM msgs WHERE session_id = ?'),
-  dropFiles: db.prepare('DELETE FROM files WHERE session_id = ?')
+function statements(d: DatabaseSync) {
+  return {
+    getFile: d.prepare('SELECT size, mtime, offset FROM files WHERE path = ?'),
+    putFile: d.prepare('INSERT OR REPLACE INTO files(path, session_id, size, mtime, offset) VALUES (?, ?, ?, ?, ?)'),
+    getSession: d.prepare('SELECT * FROM sessions WHERE session_id = ?'),
+    putSession: d.prepare(
+      `INSERT OR REPLACE INTO sessions(session_id, project_key, project_path, title, custom_title, first_prompt, started, updated)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ),
+    getMsg: d.prepare('SELECT input, output, cw5, cw1h, cread FROM msgs WHERE session_id = ? AND msg_id = ?'),
+    putMsg: d.prepare(
+      `INSERT OR REPLACE INTO msgs(session_id, msg_id, model, day, ts, input, output, cw5, cw1h, cread, cost)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ),
+    addFts: d.prepare('INSERT INTO fts(body, session_id, role, ts) VALUES (?, ?, ?, ?)'),
+    dropFts: d.prepare('DELETE FROM fts WHERE session_id = ?'),
+    dropMsgs: d.prepare('DELETE FROM msgs WHERE session_id = ?'),
+    dropFiles: d.prepare('DELETE FROM files WHERE session_id = ?'),
+    dropFolders: d.prepare('DELETE FROM folders WHERE session_id = ?'),
+    addFolder: d.prepare(
+      `INSERT INTO folders(session_id, folder_lc, folder, hits) VALUES (?, ?, ?, ?)
+       ON CONFLICT(session_id, folder_lc) DO UPDATE SET hits = hits + excluded.hits`
+    )
+  }
+}
+
+/** True for SQLite errors that mean the file itself is broken, not just one bad query. */
+function isCorrupt(err: unknown): boolean {
+  return /malformed|not a database|corrupt|SQLITE_CORRUPT|SQLITE_NOTADB/i.test((err as Error)?.message ?? '')
+}
+
+/** Deletes the index file and starts an empty one; everything is re-read from Claude Code's files. */
+function resetDb(): void {
+  try {
+    db?.close()
+  } catch {
+    /* already closed or broken */
+  }
+  for (const suffix of ['', '-wal', '-shm']) {
+    try {
+      if (existsSync(dbPath + suffix)) unlinkSync(dbPath + suffix)
+    } catch {
+      /* in use; opening below will report it */
+    }
+  }
+  db = openDb()
+  q = statements(db)
+}
+
+let db: DatabaseSync
+let q: ReturnType<typeof statements>
+try {
+  db = openDb()
+  q = statements(db)
+} catch {
+  resetDb()
 }
 
 // ---------------------------------------------------------------- parsing
@@ -137,6 +187,7 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
       q.dropFts.run(sessionId)
       q.dropMsgs.run(sessionId)
       q.dropFiles.run(sessionId)
+      q.dropFolders.run(sessionId)
     }
   }
 
@@ -152,6 +203,19 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
     updated: 0
   }
 
+  // Which folders this chat worked in: its working folder on every line, plus files its tools touched.
+  const folders = new Map<string, { folder: string; hits: number }>()
+  const hit = (raw: unknown, isFile: boolean) => {
+    if (typeof raw !== 'string') return
+    let p = windowsPath(raw)
+    if (!p) return
+    if (isFile) p = p.replace(/\\[^\\]*$/, '') || p
+    const key = p.toLowerCase()
+    const cur = folders.get(key)
+    if (cur) cur.hits++
+    else folders.set(key, { folder: p, hits: 1 })
+  }
+
   db.exec('BEGIN')
   try {
     const newOffset = readLines(file, offset, (line) => {
@@ -164,6 +228,14 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
       const ts = typeof e.timestamp === 'string' ? Date.parse(e.timestamp) || 0 : 0
       if (main) {
         if (!row.project_path && typeof e.cwd === 'string') row.project_path = e.cwd
+        if (!e.isSidechain) hit(e.cwd, false)
+        if (e.type === 'assistant' && Array.isArray(e.message?.content)) {
+          for (const b of e.message.content) {
+            if (b?.type !== 'tool_use' || !b.input) continue
+            hit(b.input.file_path ?? b.input.notebook_path, true)
+            hit(b.input.path, false)
+          }
+        }
         if (ts && (!row.started || ts < row.started)) row.started = ts
         if (e.type === 'custom-title' && typeof e.customTitle === 'string') row.custom_title = e.customTitle
         // Claude Code's automatic chat name; a title set with /rename replaces it.
@@ -211,6 +283,7 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
       row.updated = Math.max(row.updated, st.mtimeMs)
       q.putSession.run(row.session_id, row.project_key, row.project_path, row.title, row.custom_title, row.first_prompt, row.started, row.updated)
     }
+    for (const [key, v] of folders) q.addFolder.run(sessionId, key, v.folder, v.hits)
     q.putFile.run(file, sessionId, st.size, st.mtimeMs, newOffset)
     db.exec('COMMIT')
   } catch (err) {
@@ -289,6 +362,13 @@ async function run() {
     try {
       indexFile(j.file, j.key, j.session, j.main)
     } catch (err) {
+      if (isCorrupt(err)) {
+        // Start over on a fresh file; the next run re-reads every chat.
+        resetDb()
+        postStatus({ indexing: false, error: undefined, lastRun: 0, ...counts() })
+        setImmediate(() => void run().catch(() => undefined))
+        return
+      }
       status.error = `${basename(j.file)}: ${(err as Error).message}`
     }
     if (Date.now() - lastPost > 300) {
@@ -398,6 +478,27 @@ function usageReport(since: number): UsageReport {
   }
 }
 
+/** Usage totals per chat since a time, for moving a chat's usage to the project it's shown under. */
+function sessionTotals(since: number, sessionIds: string[]): unknown[] {
+  if (!sessionIds.length) return []
+  const rows = db
+    .prepare(
+      `SELECT m.session_id, s.project_key, s.project_path, ${sums('m.')}
+       FROM msgs m JOIN sessions s ON s.session_id = m.session_id
+       WHERE m.ts >= ? AND m.session_id IN (${sessionIds.map(() => '?').join(', ')}) GROUP BY m.session_id`
+    )
+    .all(since, ...sessionIds) as any[]
+  return rows.map((r) => ({ sessionId: r.session_id, projectKey: r.project_key, projectPath: r.project_path, ...totals(r) }))
+}
+
+/** Folders each chat worked in, with how often, for matching chats started from C: to a project. */
+function sessionFolders(sessionIds: string[]): Record<string, { folder: string; hits: number }[]> {
+  const out: Record<string, { folder: string; hits: number }[]> = {}
+  const get = db.prepare('SELECT folder, hits FROM folders WHERE session_id = ? ORDER BY hits DESC LIMIT 200')
+  for (const id of sessionIds) out[id] = get.all(id) as { folder: string; hits: number }[]
+  return out
+}
+
 function sessionUsage(projectKey: string | string[]): Record<string, UsageTotals> {
   const params: string[] = []
   const filter = keyFilter(projectKey, params)
@@ -417,6 +518,8 @@ const handlers: Record<string, (...args: any[]) => unknown> = {
   search,
   usageReport,
   sessionUsage,
+  sessionFolders,
+  sessionTotals,
   status: () => status
 }
 
@@ -431,6 +534,10 @@ parentPort!.on('message', (msg: { type: string; id?: number; op?: string; args?:
       parentPort!.postMessage({ type: 'result', id: msg.id, result })
     } catch (err) {
       parentPort!.postMessage({ type: 'result', id: msg.id, error: (err as Error).message })
+      if (isCorrupt(err) && !status.indexing) {
+        resetDb()
+        run().catch((e) => postStatus({ indexing: false, error: (e as Error).message }))
+      }
     }
   }
 })

@@ -31,6 +31,8 @@ export interface StoreData {
   budgetWarned: Record<string, string>
   /** Chat titles you set in Mission Control, by session id. */
   chatTitles: Record<string, string>
+  /** Project folder you filed a chat under (Move to project), by session id. */
+  chatProjects: Record<string, string>
 }
 
 const defaults: StoreData = {
@@ -43,6 +45,7 @@ const defaults: StoreData = {
   templates: [],
   budgetWarned: {},
   chatTitles: {},
+  chatProjects: {},
   settings: {
     defaultTaskBudgetUsd: 0,
     hotkey: 'Ctrl+Alt+M',

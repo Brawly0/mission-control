@@ -44,7 +44,7 @@ import {
 import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
 import { deleteTemplate, listTemplates, runTemplate, saveTemplate, startScheduler, stopScheduler } from './templates'
 import { checkForUpdates, initUpdater, installUpdate, setAutoCheck, updateStatus } from './updater'
-import { getSession, listProjects, listSessions, normalizePath, recentSessions, renameSession, sessionExists, setProjectMeta } from './claudeData'
+import { getSession, listProjects, listSessions, normalizePath, recentSessions, renameSession, sessionExists, setProjectMeta, setFolderSource, moveSession, movedChatList } from './claudeData'
 import { indexStatus, queryIndex, reindex, startIndexer, stopIndexer } from './indexer'
 import { commitAll, createWorktree, getChanges, gitInfoMany, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { allBudgets, checkBudgetWarnings } from './budget'
@@ -214,7 +214,8 @@ export const hookTaps = new Set<(e: HookEvent) => void>()
 
 function registerIpc(): void {
   ipcMain.handle('projects:list', () => listProjects())
-  ipcMain.handle('sessions:list', (_e, key: string | string[]) => listSessions(key))
+  ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
+  ipcMain.handle('sessions:move', (_e, id: string, path: string) => moveSession(id, path))
   ipcMain.handle('sessions:rename', (_e, id: string, title: string) => renameSession(id, title))
   ipcMain.handle('sessions:get', (_e, key: string, id: string) => getSession(key, id))
 
@@ -333,7 +334,26 @@ function registerIpc(): void {
   )
   ipcMain.handle('index:usage', async (_e, since: number) => {
     const report = (await queryIndex('usageReport', since)) as UsageReport
-    return { ...report, byProject: foldWorktrees(report.byProject), topSessions: ownTitles(report.topSessions) }
+    // Chats shown under another project (started from C:\, or moved by you) count toward that project.
+    const moved = movedChatList()
+    let byProject = report.byProject
+    if (moved.length) {
+      const totals = (await queryIndex('sessionTotals', since, moved.map((m) => m.id))) as (UsageReport['byProject'][number] & { sessionId: string })[]
+      const target = new Map(moved.map((m) => [m.id, m.path]))
+      const shift = (row: UsageReport['byProject'][number], t: Record<string, unknown>, sign: number) => {
+        const r = row as unknown as Record<string, unknown>
+        for (const [k, v] of Object.entries(t)) if (typeof v === 'number' && typeof r[k] === 'number') r[k] = (r[k] as number) + sign * v
+      }
+      byProject = byProject.map((r) => ({ ...r }))
+      for (const t of totals) {
+        const from = byProject.find((r) => r.projectKey === t.projectKey)
+        const { sessionId, projectKey: _k, projectPath: _p, ...nums } = t
+        if (from) shift(from, nums, -1)
+        byProject.push({ ...(nums as UsageReport['byProject'][number]), projectKey: '', projectPath: target.get(sessionId) ?? '', sessions: 1 })
+      }
+      byProject = byProject.filter((r) => r.cost > 0.0001 || (r.sessions ?? 0) > 0)
+    }
+    return { ...report, byProject: foldWorktrees(byProject), topSessions: ownTitles(report.topSessions) }
   })
   ipcMain.handle('index:sessionUsage', (_e, key: string | string[]) => queryIndex('sessionUsage', key))
   ipcMain.handle('index:status', () => indexStatus())
@@ -474,6 +494,7 @@ app.whenReady().then(async () => {
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
+  setFolderSource((ids) => queryIndex('sessionFolders', ids))
   startIndexer((status) => sendToWindow('index:status', status))
   if (!process.env.MC_SMOKE) {
     createTray({

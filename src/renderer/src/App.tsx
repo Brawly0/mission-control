@@ -487,6 +487,11 @@ export default function App() {
   }, [refreshProjects, openProject])
 
   useEffect(() => refreshBudgets(), [projects, indexStatus?.lastRun, refreshBudgets])
+  // The index knows which project a chat started from C:\ worked in, so re-list projects when it updates.
+  useEffect(() => {
+    if (indexStatus?.lastRun) void refreshProjects()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexStatus?.lastRun])
 
   const selected = projects.find((p) => p.path === selectedPath) ?? null
   const openTask = tasks.find((t) => t.id === openTaskId) ?? null
@@ -629,6 +634,7 @@ export default function App() {
               <ProjectView
                 key={selected.path}
                 project={selected}
+                projects={projects}
                 git={git[selected.path]}
                 visible={view === 'project'}
                 groups={groups}

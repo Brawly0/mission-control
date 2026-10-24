@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { encodeProjectKey, folderLabel, guessIcon, prettyWorktreeName, readmeInfo, titleFromPrompt, worktreeParent } from './projectLook'
+import {
+  encodeProjectKey,
+  folderLabel,
+  guessIcon,
+  isInside,
+  pickProject,
+  prettyWorktreeName,
+  projectRootOf,
+  readmeInfo,
+  titleFromPrompt,
+  windowsPath,
+  worktreeParent
+} from './projectLook'
 
 describe('readmeInfo', () => {
   it('reads the heading and first paragraph', () => {
@@ -60,6 +72,71 @@ describe('worktrees', () => {
   it('makes worktree names readable', () => {
     expect(prettyWorktreeName('semester-schedule-planning-2b8af2')).toBe('semester schedule planning')
     expect(prettyWorktreeName('agent-3414')).toBe('agent')
+  })
+})
+
+describe('matching chats started from a parent folder', () => {
+  const home = 'C:\\Users\\me'
+  const projects = new Set(['c:\\users\\me\\desktop\\projects\\api'])
+  const hasMarker = (dir: string) => projects.has(dir.toLowerCase())
+  const rootOf = (f: string) => projectRootOf(f, home, hasMarker)
+
+  it('normalizes Git Bash and forward-slash paths', () => {
+    expect(windowsPath('/c/Users/me/Desktop/app/')).toBe('C:\\Users\\me\\Desktop\\app')
+    expect(windowsPath('c:/Users/me')).toBe('C:\\Users\\me')
+    expect(windowsPath('C:\\')).toBe('C:\\')
+    expect(windowsPath('src/main.ts')).toBe('')
+  })
+
+  it('finds the project folder below containers', () => {
+    expect(rootOf('C:\\Users\\me\\Desktop\\claude-hub\\src\\main')).toBe('C:\\Users\\me\\Desktop\\claude-hub')
+    expect(rootOf('C:\\Users\\me\\Desktop\\Projects\\api\\src')).toBe('C:\\Users\\me\\Desktop\\Projects\\api')
+    expect(rootOf('C:\\Users\\me\\Zomboid\\Saves')).toBe('C:\\Users\\me\\Zomboid')
+    expect(rootOf('C:\\Users\\me\\Desktop')).toBeNull()
+    expect(rootOf('C:\\')).toBeNull()
+  })
+
+  it("ignores Claude's own files, temp and Windows", () => {
+    expect(rootOf('C:\\Users\\me\\.claude\\projects\\x')).toBeNull()
+    expect(rootOf('C:\\Users\\me\\AppData\\Local\\Temp\\scratch')).toBeNull()
+    expect(rootOf('C:\\Windows\\System32')).toBeNull()
+  })
+
+  it('picks the project a C:\\ chat mostly worked in', () => {
+    const folders = [
+      { folder: 'C:\\', hits: 160 },
+      { folder: 'C:\\Users\\me\\Desktop\\claude-hub', hits: 2200 },
+      { folder: '/c/Users/me/Desktop/claude-hub/src', hits: 600 },
+      { folder: 'C:\\Users\\me\\.claude\\projects\\bot', hits: 220 },
+      { folder: 'C:\\Users\\me\\Desktop\\WBP', hits: 40 }
+    ]
+    expect(pickProject(folders, 'C:\\', rootOf)).toBe('C:\\Users\\me\\Desktop\\claude-hub')
+  })
+
+  it('leaves a chat alone when no project clearly wins', () => {
+    const split = [
+      { folder: 'C:\\Users\\me\\Desktop\\a', hits: 10 },
+      { folder: 'C:\\Users\\me\\Desktop\\b', hits: 12 }
+    ]
+    expect(pickProject(split, 'C:\\', rootOf)).toBeNull()
+    expect(pickProject([{ folder: 'C:\\Users\\me\\Desktop\\a', hits: 3 }], 'C:\\', rootOf)).toBeNull()
+    expect(pickProject([], 'C:\\', rootOf)).toBeNull()
+  })
+
+  it('moves chats out of scratch and temp folders to any project', () => {
+    const folders = [
+      { folder: 'C:\\Users\\me\\Desktop\\bot\\WBPauto\\backend', hits: 480 },
+      { folder: 'C:\\Users\\me\\AppData\\Roaming\\Claude\\scratch-workspaces\\x', hits: 56 }
+    ]
+    expect(pickProject(folders, 'C:\\Users\\me\\AppData\\Roaming\\Claude\\scratch-workspaces\\x', rootOf)).toBe('C:\\Users\\me\\Desktop\\bot')
+  })
+
+  it('only moves chats out of a parent folder, never sideways', () => {
+    const folders = [{ folder: 'C:\\Users\\me\\Desktop\\bot', hits: 50 }]
+    expect(pickProject(folders, 'C:\\Users\\me\\Desktop\\WBP', rootOf)).toBeNull()
+    expect(isInside('C:\\a\\b', 'C:\\a')).toBe(true)
+    expect(isInside('C:\\a', 'C:\\a')).toBe(false)
+    expect(isInside('C:\\ab', 'C:\\a')).toBe(false)
   })
 })
 

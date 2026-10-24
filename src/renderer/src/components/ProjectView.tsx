@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Code2,
   FileText,
+  FolderInput,
   FolderOpen,
   GitBranch,
   GitFork,
@@ -33,6 +34,8 @@ import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
 
 interface Props {
   project: Project
+  /** Every project, for Move to project. */
+  projects: Project[]
   git?: GitInfo
   visible: boolean
   groups: string[]
@@ -46,7 +49,7 @@ interface Props {
 
 type Tab = 'overview' | 'chats' | 'changes' | 'docs'
 
-export default function ProjectView({ project, git, visible, groups, focus, budget, onLaunch, onLaunchWorktree, onChanged }: Props) {
+export default function ProjectView({ project, projects, git, visible, groups, focus, budget, onLaunch, onLaunchWorktree, onChanged }: Props) {
   const [gitInitOpen, setGitInitOpen] = useState(false)
   const [identityOpen, setIdentityOpen] = useState(false)
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null)
@@ -55,27 +58,32 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<SessionSummary | null>(null)
-  const [tab, setTab] = useState<Tab>(project.keys.length ? 'chats' : 'overview')
-  // The project's own chats plus those from its worktrees.
-  const keysId = project.keys.join('|')
+  const hasChats = project.keys.length > 0 || project.sessionCount > 0
+  const [tab, setTab] = useState<Tab>(hasChats ? 'chats' : 'overview')
+  // The project's own chats, those from its worktrees, and chats started elsewhere that worked here.
+  const listId = `${project.keys.join('|')}#${project.sessionCount}`
+
+  const loadSessions = async () => {
+    const list = await window.mc.listSessions(project.keys, project.path)
+    setSessions(list)
+    setSelected((cur) => (cur ? list.find((x) => x.id === cur.id) ?? list[0] ?? null : list[0] ?? null))
+    // Costs come per ~/.claude folder; keep only this project's chats.
+    const keys = [...new Set(list.map((x) => x.projectKey))]
+    const ids = new Set(list.map((x) => x.id))
+    const u: Record<string, UsageTotals> = keys.length ? await window.mc.sessionUsage(keys).catch(() => ({})) : {}
+    setUsage(Object.fromEntries(Object.entries(u).filter(([id]) => ids.has(id))))
+  }
 
   useEffect(() => {
-    if (!project.keys.length) {
+    if (!hasChats) {
       setSessions([])
       setUsage({})
       return
     }
     setLoading(true)
-    window.mc
-      .listSessions(project.keys)
-      .then((list) => {
-        setSessions(list)
-        setSelected((cur) => cur ?? list[0] ?? null)
-      })
-      .finally(() => setLoading(false))
-    window.mc.sessionUsage(project.keys).then(setUsage).catch(() => setUsage({}))
+    loadSessions().finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keysId])
+  }, [listId])
 
   useEffect(() => {
     if (!focus) return
@@ -101,10 +109,27 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
     const { id, draft } = renaming
     setRenaming(null)
     await window.mc.renameSession(id, draft)
-    const list = await window.mc.listSessions(project.keys)
-    setSessions(list)
-    setSelected((cur) => (cur ? list.find((x) => x.id === cur.id) ?? cur : cur))
+    await loadSessions()
   }
+
+  const moveTo = async (s: SessionSummary, path: string) => {
+    await window.mc.moveSession(s.id, path)
+    onChanged()
+    await loadSessions()
+  }
+  const moveMenu = (s: SessionSummary) => (
+    <MenuButton
+      align="right"
+      trigger={(toggle) => <IconButton icon={FolderInput} label="Move to another project" size={14} onClick={toggle} />}
+      items={[
+        ...(s.movedByYou ? [{ label: 'Automatic', hint: 'Let Mission Control decide', icon: RotateCcw, onSelect: () => moveTo(s, '') }] : []),
+        ...projects
+          .filter((p) => !p.worktree && p.path !== project.path)
+          .slice(0, 30)
+          .map((p) => ({ label: p.name, hint: p.folderName === p.name ? shortPath(p.path) : p.folderName, icon: FolderInput, onSelect: () => moveTo(s, p.path) }))
+      ]}
+    />
+  )
 
   const resume = (s: SessionSummary) =>
     onLaunch({ ...base, cwd: s.cwd || project.path, title: s.title.slice(0, 48), args: ['--resume', s.id] })
@@ -282,6 +307,14 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
                         <span>{timeAgo(s.updatedAt)}</span>
                         <span className="meta-sep">·</span>
                         {usage[s.id] ? <span title="Estimated at API prices">{formatCost(usage[s.id].cost)}</span> : <span>{formatBytes(s.sizeBytes)}</span>}
+                        {s.movedFrom && (
+                          <>
+                            <span className="meta-sep">·</span>
+                            <span className="session-worktree" title={s.movedByYou ? 'You moved this chat here' : `Started in ${s.movedFrom}, but worked in this project`}>
+                              <FolderInput size={10} /> from {s.movedFrom}
+                            </span>
+                          </>
+                        )}
                         {s.worktree ? (
                           <>
                             <span className="meta-sep">·</span>
@@ -325,7 +358,7 @@ export default function ProjectView({ project, git, visible, groups, focus, budg
             </section>
             <section className="chat-pane">
               {selected ? (
-                <SessionViewer session={selected} onResume={() => resume(selected)} />
+                <SessionViewer session={selected} onResume={() => resume(selected)} actions={moveMenu(selected)} />
               ) : (
                 <EmptyState icon={MessagesSquare} title="Pick a chat">
                   Its full conversation shows here.

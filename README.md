@@ -4,6 +4,7 @@ A Windows desktop hub for **Claude Code**: see all your projects and past chats,
 
 ## Features (v0.8)
 
+- **Better project detection**: a chat you started in a parent folder (like `C:\` or your Desktop) and then spent in one project shows up under that project, marked "from C: drive". A project you only ever reached that way still gets its own entry. Folders Claude Code was opened in show up even before they have a saved chat. If a match is wrong, use **Move to project** on the chat.
 - **Readable names and icons**: projects are named from their README's title (e.g. "WBP · Journal & Intel", "Case Closed") with a one-line description, and get an icon that fits (game, journal, trading, bot, course…). Click a project's icon to set your own name, icon and color.
 - **Worktree chats in their project**: chats Claude Code ran in a project's worktrees (`.claudeworktrees…`) show up under that project, each labeled with its worktree, instead of as hidden projects of their own.
 - **Rename chats**: double-click a chat's title (or the pencil) to give it your own name. Leave it empty to get the automatic title back.

@@ -17,7 +17,8 @@ let timer: NodeJS.Timeout | null = null
 
 export function startIndexer(onStatus: (s: IndexStatus) => void): void {
   worker = new Worker(workerPath, {
-    workerData: { dbPath: join(app.getPath('userData'), 'index.db'), projectsDir: claudeProjectsDir }
+    // Self-tests keep their own index, so they never write to the file a running installed copy uses.
+    workerData: { dbPath: join(app.getPath('userData'), process.env.MC_SMOKE ? 'index-smoke.db' : 'index.db'), projectsDir: claudeProjectsDir }
   })
   worker.on('message', (msg: any) => {
     if (msg.type === 'status') {

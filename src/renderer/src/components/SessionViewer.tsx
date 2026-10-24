@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import { Copy, Play } from 'lucide-react'
 import type { SessionDetail, SessionSummary } from '@shared/types'
@@ -8,9 +8,11 @@ import { Button, IconButton } from './ui'
 interface Props {
   session: SessionSummary
   onResume: () => void
+  /** Extra buttons for the header, e.g. Move to project. */
+  actions?: ReactNode
 }
 
-export default function SessionViewer({ session, onResume }: Props) {
+export default function SessionViewer({ session, onResume, actions }: Props) {
   const toast = useToast()
   const [detail, setDetail] = useState<SessionDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -42,8 +44,10 @@ export default function SessionViewer({ session, onResume }: Props) {
           <div className="muted small">
             Started {new Date(session.startedAt).toLocaleString()}
             {detail && ` · ${detail.messages.length} messages`}
+            {session.movedFrom && ` · started in ${session.movedFrom}`}
           </div>
         </div>
+        {actions}
         <IconButton
           icon={Copy}
           label="Copy session id"
