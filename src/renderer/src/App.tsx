@@ -34,7 +34,8 @@ import type {
   Task,
   TaskTemplate,
   UpdateState,
-  BudgetState
+  BudgetState,
+  ContextUsage
 } from '@shared/types'
 import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
@@ -122,6 +123,7 @@ export default function App() {
     const offNav = window.mc.onNavigate((target) => {
       setView(target.view as View)
       if (target.newTask) setComposerOpen(true)
+      if (target.chat) openSessionRef.current(target.chat.projectPath, target.chat.sessionId)
     })
     return () => {
       offTasks()
@@ -139,6 +141,31 @@ export default function App() {
 
   // Hook events and timers run outside React's render cycle; refs give them current values.
   const agentsRef = useRef(agents)
+  // How big each live chat is (by session id), refreshed every few seconds.
+  const [contexts, setContexts] = useState<Record<string, ContextUsage>>({})
+  const warnedContext = useRef(new Set<string>())
+  const [warnAt, setWarnAt] = useState(200_000)
+  useEffect(() => {
+    window.mc.getSettings().then((s) => setWarnAt(s.contextWarnTokens)).catch(() => undefined)
+  }, [settingsOpen])
+  useEffect(() => {
+    const tick = async () => {
+      const live = agentsRef.current.filter((a) => a.kind === 'claude' && !a.exited && a.sessionId)
+      if (!live.length) return setContexts((c) => (Object.keys(c).length ? {} : c))
+      const next = await window.mc.contextUsage(live.map((a) => a.sessionId!)).catch(() => null)
+      if (!next) return
+      setContexts(next)
+      for (const a of live) {
+        const u = next[a.sessionId!]
+        if (!u || u.tokens < warnAt || warnedContext.current.has(a.sessionId!)) continue
+        warnedContext.current.add(a.sessionId!)
+        toast('info', `${a.title} is getting large`, `${Math.round(u.tokens / 1000)}K tokens: each reply re-reads all of it (about $${u.perTurnUsd.toFixed(2)}). Press Compact on the agent to shrink it.`)
+      }
+    }
+    void tick()
+    const timer = setInterval(tick, 8000)
+    return () => clearInterval(timer)
+  }, [warnAt, toast])
   agentsRef.current = agents
   const uiRef = useRef({ view, activeAgent, notify })
   uiRef.current = { view, activeAgent, notify }
@@ -476,6 +503,9 @@ export default function App() {
     [openProject]
   )
 
+  const openSessionRef = useRef(openSession)
+  openSessionRef.current = openSession
+
   const groups = useMemo(() => [...new Set(projects.map((p) => p.meta.group).filter((g): g is string => !!g))].sort(), [projects])
 
   const addProject = useCallback(async () => {
@@ -658,6 +688,8 @@ export default function App() {
               visible={view === 'agents'}
               lastOutput={lastOutput}
               git={git}
+              contexts={contexts}
+              warnAt={warnAt}
               onSelect={setActiveAgent}
               onClose={closeAgent}
               onRename={renameAgent}

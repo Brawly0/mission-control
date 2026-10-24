@@ -1,8 +1,8 @@
 import { app, type BrowserWindow } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
-import { automationHold, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
+import { automationHold, claudeCommand, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
 import { invalidateBudgets, projectBudget } from './budget'
 import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
@@ -10,7 +10,9 @@ import { checkForUpdates, initUpdater, updateStatus } from './updater'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { listProjects, listSessions, movedChatList, normalizePath, renameSession, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
-import { killTerminalsIn } from './pty'
+import { agentEnv, killTerminal, killTerminalsIn } from './pty'
+import { contextUsage, launchArgs, startupReport } from './spend'
+import { queryIndex } from './indexer'
 import { loadStore, updateStore } from './store'
 
 interface SmokeDeps {
@@ -362,6 +364,106 @@ async function automationTour(win: BrowserWindow, outFile: string, repo: string)
 }
 
 /**
+ * MC_SMOKE_SPEND=<empty scratch folder>: v0.9. Reads the size of an existing chat, builds the startup
+ * report for the busiest project, limits the scratch folder to one MCP server with Haiku as its default
+ * model, and checks that Claude really starts with only that server (read from its init event; the
+ * process is stopped before any request is sent, so it costs nothing). Screenshots the Spending card
+ * and an agent's size meter. Restores everything.
+ */
+async function spendTour(win: BrowserWindow, outFile: string, folder: string): Promise<void> {
+  const shot = async (name: string) => {
+    await sleep(900)
+    const file = outFile.replace(/\.png$/, `-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+
+  const projects = (await listProjects()).filter((p) => !p.worktree && p.sessionCount > 0).sort((a, b) => b.sessionCount - a.sessionCount)
+  const busiest = projects[0]
+  const chats = await listSessions(busiest.keys, busiest.path)
+  const usage = await contextUsage(chats.slice(0, 3).map((c) => c.id))
+  for (const c of chats.slice(0, 3)) {
+    const u = usage[c.id]
+    log(`spend: "${c.title}" is ${u ? `${u.tokens} tokens (${u.model}, window ${u.window}), $${u.perTurnUsd.toFixed(3)} per reply` : 'no reply yet'}`)
+  }
+  const first = await queryIndex<{ tokens: number; model: string }[]>('firstReplies', busiest.keys)
+  const report = await startupReport(busiest.path, first)
+  log(`spend: ${busiest.name} new chats start at ${report.measured?.medianTokens} tokens (${report.measured?.samples} chats, $${report.measured?.firstTurnUsd.toFixed(2)} to start)`)
+  log('spend: files', report.files.map((f) => `${f.label}=${f.tokens}`).join(', '))
+  log('spend: servers', report.servers.map((s) => `${s.name}(${s.scope})`).join(', '))
+  const midnight = new Date()
+  midnight.setHours(0, 0, 0, 0)
+  const pricey = await queryIndex<{ title: string; cost: number }[]>('chatsOverCost', midnight.getTime(), 1)
+  log('spend: chats over $1 today:', pricey.map((c) => `"${c.title}" $${c.cost.toFixed(2)}`).join(', ') || 'none')
+
+  // Limit the scratch folder to one server and Haiku, then see what Claude actually loads.
+  mkdirSync(folder, { recursive: true })
+  const keep = report.servers.find((s) => s.name === 'fetch')?.name ?? report.servers[0]?.name
+  const before = loadStore().projectMeta[normalizePath(folder)]
+  setProjectMeta(folder, { mcpAllow: keep ? [keep] : [], defaultModel: 'haiku' })
+  const args = launchArgs(folder, { newChat: true, hasModel: false })
+  log('spend: launch args', JSON.stringify(args.map((a) => (a.endsWith('.json') ? basename(a) : a))))
+  const configFile = args.find((a) => a.startsWith('--mcp-config='))!.slice('--mcp-config='.length)
+  log('spend: config holds', Object.keys(JSON.parse(readFileSync(configFile, 'utf8')).mcpServers).join(', '))
+  const { file, prefix } = claudeCommand()
+  const init = await new Promise<string>((resolve) => {
+    const child = spawn(file, [...prefix, '-p', '--output-format', 'stream-json', '--verbose', ...args, 'Reply with the word ok'], {
+      cwd: folder,
+      env: agentEnv(),
+      windowsHide: true
+    })
+    let buf = ''
+    let settled = false
+    const done = (v: string) => {
+      if (settled) return
+      settled = true
+      try {
+        execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+      } catch {
+        /* already exited */
+      }
+      resolve(v)
+    }
+    child.on('exit', (code) => setTimeout(() => done(`exited with code ${code} before its init event`), 500))
+    child.stdout.on('data', (d) => {
+      buf += String(d)
+      const line = buf.split('\n').find((l) => l.includes('"subtype":"init"'))
+      if (line) {
+        const e = JSON.parse(line)
+        done(`model=${e.model} mcp=${(e.mcp_servers ?? []).map((s: { name: string; status: string }) => `${s.name}:${s.status}`).join(',')}`)
+      }
+    })
+    setTimeout(() => done('no init event within 60 s'), 60_000)
+  })
+  log('spend: claude started with', init)
+  updateStore((s) => {
+    if (before) s.projectMeta[normalizePath(folder)] = before
+    else delete s.projectMeta[normalizePath(folder)]
+  })
+
+  // The Spending card on the busiest project, and a size meter on a resumed chat.
+  await js(`window.__mcSmoke.selectProject(${JSON.stringify(busiest.path)}); window.__mcSmoke.setView('project')`)
+  await sleep(600)
+  await js(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent.includes('Overview'))?.click()`)
+  await sleep(1200)
+  await js(`document.querySelector('.spending-card')?.scrollIntoView()`)
+  await shot('spend-card')
+  // Resume one of the smoke tests' own old chats (never one of yours) to see the meter.
+  const testProject = (await listProjects()).find((p) => /scratchpad[\\/]hooktest/i.test(p.path))
+  const big = testProject ? (await listSessions(testProject.keys))[0] : undefined
+  if (!big) return log('spend: no test chat to resume for the meter')
+  await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(big.cwd)}, projectName: 'size check', projectPath: ${JSON.stringify(big.cwd)}, title: 'size check', args: ['--resume', ${JSON.stringify(big.id)}] })`)
+  await js(`window.__mcSmoke.setView('agents')`)
+  await sleep(12_000)
+  await shot('spend-agent')
+  log('spend: meter shows', await js(`document.querySelector('.ctx-meter')?.textContent ?? 'no meter'`))
+  const agentId: string = await js(`window.__mcSmoke.agents().find(a => a.title === 'size check')?.id`)
+  if (agentId) killTerminal(agentId)
+}
+
+/**
  * MC_SMOKE_NAMES=<project folder name, e.g. WBP>: logs every project's name, icon and chat count, then
  * screenshots that project's chats and its Name and icon dialog. Renames one chat and puts it back. Free.
  */
@@ -644,6 +746,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_UPDATE) await updateCheck()
     if (process.env.MC_SMOKE_CHAIN) await chainTour(win, outFile, process.env.MC_SMOKE_CHAIN)
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
+    if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
 
     // Close the window while an agent is still printing, like a user clicking X with agents running.
     // Any main-process exception is logged instead of shown as a dialog, so the test can report it.

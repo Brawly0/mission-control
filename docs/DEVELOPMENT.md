@@ -175,3 +175,11 @@ Installed copies update from the public repo [Brawly0/mission-control-releases](
 Everything it creates is removed, and your settings are restored.
 
 `MC_SMOKE_NAMES=<project folder name, e.g. WBP>` logs every project's name, icon and chat count, lists that project's chats (with worktree labels), renames one chat and puts it back, and screenshots the chats and the Name and icon dialog. Free.
+
+`MC_SMOKE_SPEND=<empty scratch folder>` checks v0.9 against your real data, for free:
+1. It reads the size of the busiest project's latest chats and builds its startup report.
+2. It lists chats over $1 today.
+3. It limits the scratch folder to one MCP server with Haiku as its default model, then starts Claude there and reads its init event. Only that server and Haiku must appear. The process is stopped before any request goes out.
+4. It screenshots the Spending card, and the size meter on a resumed test chat.
+
+Settings are restored afterwards.

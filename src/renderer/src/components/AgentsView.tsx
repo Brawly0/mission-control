@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Bot, GitBranch, GitCompareArrows, LayoutGrid, Plus, Rows2, Terminal, X } from 'lucide-react'
-import type { GitInfo } from '@shared/types'
+import { Bot, GitBranch, GitCompareArrows, LayoutGrid, Minimize2, Plus, Rows2, Terminal, X } from 'lucide-react'
+import type { ContextUsage, GitInfo } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed } from '../util'
@@ -15,6 +15,10 @@ interface Props {
   visible: boolean
   lastOutput: Record<string, number>
   git: Record<string, GitInfo>
+  /** Live chat sizes by session id. */
+  contexts: Record<string, ContextUsage>
+  /** Tokens at which a chat is marked as large (Settings). */
+  warnAt: number
   onSelect: (id: string) => void
   onClose: (id: string) => void
   onRename: (id: string, title: string) => void
@@ -22,6 +26,25 @@ interface Props {
   onLayout: (layout: AgentLayout) => void
   onNew: () => void
   onGitChanged: () => void
+}
+
+/** How full a chat is. Amber from your warning level, red at 2.5x it or 85% of the window. */
+function ContextMeter({ usage, warnAt, onCompact, canCompact }: { usage: ContextUsage; warnAt: number; onCompact: () => void; canCompact: boolean }) {
+  const level = usage.tokens >= Math.min(warnAt * 2.5, usage.window * 0.85) ? 'high' : usage.tokens >= warnAt ? 'warn' : 'ok'
+  const pct = Math.min(100, (usage.tokens / usage.window) * 100)
+  return (
+    <span className={`ctx-meter ctx-${level}`} title={`${usage.tokens.toLocaleString()} of ${usage.window.toLocaleString()} tokens. Each reply re-reads all of it: about $${usage.perTurnUsd.toFixed(3)} per reply at API prices.`}>
+      <span className="ctx-bar">
+        <span style={{ width: `${Math.max(2, pct)}%` }} />
+      </span>
+      {Math.round(usage.tokens / 1000)}K
+      {level !== 'ok' && (
+        <button className="ctx-compact" disabled={!canCompact} title={canCompact ? 'Send /compact: Claude summarizes the chat so far and continues from the summary' : 'Wait until Claude finishes'} onClick={(e) => { e.stopPropagation(); onCompact() }}>
+          <Minimize2 size={11} /> Compact
+        </button>
+      )}
+    </span>
+  )
 }
 
 function TabTitle({ agent, onRename }: { agent: Agent; onRename: (title: string) => void }) {
@@ -57,7 +80,7 @@ function TabTitle({ agent, onRename }: { agent: Agent; onRename: (title: string)
 }
 
 export default function AgentsView(props: Props) {
-  const { agents, activeId, layout, visible, lastOutput, git, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
+  const { agents, activeId, layout, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
   const [reviewOpen, setReviewOpen] = useState(false)
 
   if (agents.length === 0) {
@@ -160,6 +183,14 @@ export default function AgentsView(props: Props) {
                     <span className={`dot ${st.cls}`} />
                     <span className="ellipsis">{st.label}</span>
                   </span>
+                  {a.sessionId && contexts[a.sessionId] && (
+                    <ContextMeter
+                      usage={contexts[a.sessionId]}
+                      warnAt={warnAt}
+                      canCompact={!a.exited && st.cls !== 'working'}
+                      onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
+                    />
+                  )}
                   <span className="muted small agent-elapsed">{elapsed(a.startedAt)}</span>
                 </div>
                 <TerminalPane id={a.id} visible={visible && shown && a.id === active.id} onExit={(code) => onExit(a.id, code)} />

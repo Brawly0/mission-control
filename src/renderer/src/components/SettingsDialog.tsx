@@ -173,6 +173,60 @@ export default function SettingsDialog({ onClose }: { onClose: () => void }) {
               <span className="field-hint">Estimated at API prices, per run (follow-ups get their own allowance). 0 means no default limit. Monthly budgets per project are in each project’s Overview tab.</span>
             </div>
 
+            <div className="field">
+              <span className="field-label">Default model for tasks</span>
+              <select
+                className="select"
+                value={settings.defaultTaskModel}
+                onChange={(e) => {
+                  setSettings({ ...settings, defaultTaskModel: e.target.value })
+                  apply({ defaultTaskModel: e.target.value })
+                }}
+              >
+                <option value="">Claude’s default</option>
+                <option value="opus">Opus</option>
+                <option value="sonnet">Sonnet</option>
+                <option value="haiku">Haiku</option>
+              </select>
+              <span className="field-hint">For tasks that don’t pick a model, unless their project has its own default (Overview → Spending). Sonnet or Haiku costs far less for routine work like reviews and small fixes.</span>
+            </div>
+
+            <div className="field">
+              <span className="field-label">Expensive chat alert</span>
+              <label className="inline-field">
+                Notify me when one chat has cost more than $
+                <input
+                  className="text-input num-input"
+                  type="number"
+                  min={0}
+                  step={5}
+                  value={settings.chatCostAlertUsd}
+                  onChange={(e) => setSettings({ ...settings, chatCostAlertUsd: Math.max(0, Number(e.target.value) || 0) })}
+                  onBlur={() => apply({ chatCostAlertUsd: settings.chatCostAlertUsd })}
+                />
+                today
+              </label>
+              <span className="field-hint">Once per chat per day, estimated at API prices. 0 turns it off.</span>
+            </div>
+
+            <div className="field">
+              <span className="field-label">Large chat warning</span>
+              <label className="inline-field">
+                Mark a live chat amber at
+                <input
+                  className="text-input num-input"
+                  type="number"
+                  min={20}
+                  step={50}
+                  value={Math.round(settings.contextWarnTokens / 1000)}
+                  onChange={(e) => setSettings({ ...settings, contextWarnTokens: Math.max(20, Number(e.target.value) || 0) * 1000 })}
+                  onBlur={() => apply({ contextWarnTokens: settings.contextWarnTokens })}
+                />
+                K tokens
+              </label>
+              <span className="field-hint">Every reply re-reads the whole chat, so cost per reply grows with its size. The agent shows a Compact button to shrink it.</span>
+            </div>
+
             <UpdatesSection autoUpdate={settings.autoUpdate} onAutoUpdate={(v) => apply({ autoUpdate: v })} />
             {saved && <div className="muted small">Saved</div>}
           </div>

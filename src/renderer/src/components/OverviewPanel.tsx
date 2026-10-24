@@ -4,6 +4,7 @@ import { Check, Circle, Coins, Eye, GitBranch, Pause, Pencil, Plus, Workflow, X 
 import type { BudgetState, Project, ProjectMeta, ProjectStatus, UsageTotals } from '@shared/types'
 import { formatCost, formatTokens } from '../util'
 import { Button, Segmented } from './ui'
+import SpendingCard from './SpendingCard'
 
 interface Props {
   project: Project
@@ -243,6 +244,7 @@ export default function OverviewPanel({ project, groups, usage, budget, isRepo, 
       </div>
 
       <AutomationCard project={project} budget={budget} isRepo={isRepo} onTurnOnGit={onTurnOnGit} onChanged={onChanged} />
+      <SpendingCard project={project} onChanged={onChanged} />
 
       <section className="card overview-card notes-card">
         <h3>

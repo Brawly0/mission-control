@@ -1,0 +1,102 @@
+/* ---------- live chat size on agents ---------- */
+.ctx-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11px var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ctx-bar {
+  width: 42px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.ctx-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+.ctx-warn {
+  color: var(--orange);
+}
+.ctx-warn .ctx-bar > span {
+  background: var(--orange);
+}
+.ctx-high {
+  color: var(--red);
+}
+.ctx-high .ctx-bar > span {
+  background: var(--red);
+}
+.ctx-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: 600 11px var(--font);
+  cursor: pointer;
+}
+.ctx-compact:hover:not(:disabled) {
+  background: var(--hover);
+}
+.ctx-compact:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- Spending card ---------- */
+.startup-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.startup-hero .hero-value {
+  flex-shrink: 0;
+}
+.startup-files,
+.mcp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.startup-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.warn-text {
+  color: var(--orange);
+}
+.mcp-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 12px;
+}
+.mcp-list label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.mcp-list input {
+  accent-color: var(--accent);
+}
+.field-label svg {
+  vertical-align: -2px;
+}

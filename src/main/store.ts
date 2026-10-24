@@ -33,6 +33,8 @@ export interface StoreData {
   chatTitles: Record<string, string>
   /** Project folder you filed a chat under (Move to project), by session id. */
   chatProjects: Record<string, string>
+  /** Chats already reported as expensive today: { day: "2026-10-24", ids }. */
+  costAlerted: { day: string; ids: string[] }
 }
 
 const defaults: StoreData = {
@@ -46,8 +48,12 @@ const defaults: StoreData = {
   budgetWarned: {},
   chatTitles: {},
   chatProjects: {},
+  costAlerted: { day: '', ids: [] },
   settings: {
     defaultTaskBudgetUsd: 0,
+    defaultTaskModel: '',
+    chatCostAlertUsd: 20,
+    contextWarnTokens: 200_000,
     hotkey: 'Ctrl+Alt+M',
     closeToTray: true,
     queueEnabled: false,

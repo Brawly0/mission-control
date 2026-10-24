@@ -45,6 +45,10 @@ export interface ProjectMeta {
   checkCommand?: string
   /** Estimated monthly spend (USD, at API prices) after which automation for this project holds. */
   monthlyBudgetUsd?: number
+  /** Model for new chats and tasks in this project ("opus", "sonnet", "haiku"); unset = Claude's default. */
+  defaultModel?: string
+  /** MCP servers loaded for agents Mission Control starts here; unset = all of them. */
+  mcpAllow?: string[]
 }
 
 export interface GitInitPreview {
@@ -396,6 +400,47 @@ export interface AppSettings {
   autoUpdate: boolean
   /** Spending cap (USD) for headless tasks that don't set their own; 0 = none. */
   defaultTaskBudgetUsd: number
+  /** Model for tasks that don't pick one and whose project has no default; '' = Claude's default. */
+  defaultTaskModel: string
+  /** Notify when one chat's estimated cost today passes this (USD); 0 = off. */
+  chatCostAlertUsd: number
+  /** A live chat turns amber (and you get one reminder) at this many tokens of context. */
+  contextWarnTokens: number
+}
+
+/** How big a live chat's context is: every reply re-reads all of it. */
+export interface ContextUsage {
+  sessionId: string
+  /** Tokens in the conversation as of Claude's latest reply. */
+  tokens: number
+  model: string
+  /** The model's context window. */
+  window: number
+  /** Estimated cost of re-reading the context once (one more reply), at API cache-read prices. */
+  perTurnUsd: number
+}
+
+export interface McpServerInfo {
+  name: string
+  /** Where it's configured: your user config, this project in your user config, or the project's .mcp.json. */
+  scope: 'user' | 'local' | 'project'
+  /** "stdio" (a local program) or "http"/"sse" (a URL). */
+  kind: string
+  /** The command or URL, for recognizing it. */
+  detail: string
+  /** Whether agents Mission Control starts in this project load it. */
+  enabled: boolean
+}
+
+/** What a new chat in a project carries before you type anything. */
+export interface StartupReport {
+  /** Measured from this project's recent chats: context size of the first reply. */
+  measured?: { medianTokens: number; samples: number; model: string; firstTurnUsd: number }
+  /** Instruction and memory files Claude Code loads, with estimated tokens. */
+  files: { label: string; path: string; tokens: number }[]
+  servers: McpServerInfo[]
+  /** True when only some servers are loaded here (Mission Control passes --strict-mcp-config). */
+  restricted: boolean
 }
 
 export interface QueueStatus {
@@ -503,7 +548,10 @@ export interface MissionControlApi {
   /** Applies settings; resolves with an error message if the hotkey can't be registered. */
   setSettings(patch: Partial<AppSettings>): Promise<string | null>
   /** Main process asks the UI to go somewhere (tray menu, hotkey). */
-  onNavigate(cb: (target: { view: string; newTask?: boolean }) => void): () => void
+  onNavigate(cb: (target: { view: string; newTask?: boolean; chat?: { projectPath: string; sessionId: string } }) => void): () => void
+  /** Context size of live chats, by session id (chats without a reply yet are left out). */
+  contextUsage(sessionIds: string[]): Promise<Record<string, ContextUsage>>
+  startupReport(projectPath: string, keys: string[]): Promise<StartupReport>
 
   getUiState(): Promise<UiState>
   setUiState(patch: Partial<UiState>): void

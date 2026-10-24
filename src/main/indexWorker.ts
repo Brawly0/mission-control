@@ -478,6 +478,36 @@ function usageReport(since: number): UsageReport {
   }
 }
 
+/** Context size of the first reply in a project's most recent chats: what a new chat carries before you type. */
+function firstReplies(keys: string[], limit = 12): { tokens: number; model: string }[] {
+  if (!keys.length) return []
+  const params: (string | number)[] = []
+  const filter = keyFilter(keys, params)
+  return (
+    db
+      .prepare(
+        `SELECT m.model, (m.input + m.cw5 + m.cw1h + m.cread) AS tokens
+         FROM msgs m JOIN sessions s ON s.session_id = m.session_id
+         WHERE ${filter} AND m.ts = (SELECT MIN(ts) FROM msgs m2 WHERE m2.session_id = m.session_id)
+         ORDER BY m.ts DESC LIMIT ?`
+      )
+      .all(...params, limit) as { tokens: number; model: string }[]
+  ).filter((r) => r.tokens > 0)
+}
+
+/** Chats whose estimated cost since a time is at least `usd`, most expensive first. */
+function chatsOverCost(since: number, usd: number): { sessionId: string; title: string; projectPath: string; cost: number }[] {
+  return (
+    db
+      .prepare(
+        `SELECT m.session_id, s.title, s.project_path, SUM(m.cost) AS cost
+         FROM msgs m JOIN sessions s ON s.session_id = m.session_id
+         WHERE m.ts >= ? GROUP BY m.session_id HAVING cost >= ? ORDER BY cost DESC LIMIT 20`
+      )
+      .all(since, usd) as any[]
+  ).map((r) => ({ sessionId: r.session_id, title: r.title, projectPath: r.project_path, cost: r.cost }))
+}
+
 /** Usage totals per chat since a time, for moving a chat's usage to the project it's shown under. */
 function sessionTotals(since: number, sessionIds: string[]): unknown[] {
   if (!sessionIds.length) return []
@@ -520,6 +550,8 @@ const handlers: Record<string, (...args: any[]) => unknown> = {
   sessionUsage,
   sessionFolders,
   sessionTotals,
+  firstReplies,
+  chatsOverCost,
   status: () => status
 }
 

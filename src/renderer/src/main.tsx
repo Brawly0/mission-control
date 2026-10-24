@@ -6,6 +6,7 @@ import './tasks.css'
 import './automation.css'
 import './chains.css'
 import './identity.css'
+import './spend.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

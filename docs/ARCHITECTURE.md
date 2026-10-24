@@ -18,6 +18,7 @@ src/
     tray.ts        tray icon, tray menu, global show/hide hotkey
     templates.ts   task templates, {{variables}}, scheduler for recurring templates
     updater.ts     auto-update via electron-updater (public releases repo)
+    spend.ts       live chat size, startup report, MCP servers per project, extra launch args (model, --strict-mcp-config)
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)

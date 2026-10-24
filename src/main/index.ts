@@ -52,6 +52,7 @@ import { hookSettingsFor, removeHookSettings, startHookServer, stopHookServer } 
 import { agentEnv, killAllTerminals, killTerminal, killTerminalsIn, resizeTerminal, spawnTerminal, terminalCount, writeTerminal, whichSync } from './pty'
 import { loadStore, updateStore, type WindowBounds } from './store'
 import { worktreeParent } from '../shared/projectLook'
+import { contextUsage, launchArgs, startupReport } from './spend'
 import { runSmoke } from './smoke'
 
 let mainWindow: BrowserWindow | null = null
@@ -188,6 +189,8 @@ export function launchTerminal(spec: TerminalSpec): TerminalInfo {
       sessionId = randomUUID()
       args = ['--session-id', sessionId, ...args]
     }
+    // The project's default model for new chats, and only the MCP servers it loads.
+    args = [...launchArgs(spec.cwd, { newChat: resumeAt < 0 && !args.includes('--continue'), hasModel: args.includes('--model') }), ...args]
     args = ['--settings', hookSettingsFor(id), ...args]
   }
   const info = spawnTerminal(
@@ -216,6 +219,11 @@ function registerIpc(): void {
   ipcMain.handle('projects:list', () => listProjects())
   ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
   ipcMain.handle('sessions:move', (_e, id: string, path: string) => moveSession(id, path))
+  ipcMain.handle('spend:context', (_e, ids: string[]) => contextUsage(ids))
+  ipcMain.handle('spend:startup', async (_e, path: string, keys: string[]) => {
+    const first = await queryIndex<{ tokens: number; model: string }[]>('firstReplies', keys).catch(() => [])
+    return startupReport(path, first)
+  })
   ipcMain.handle('sessions:rename', (_e, id: string, title: string) => renameSession(id, title))
   ipcMain.handle('sessions:get', (_e, key: string, id: string) => getSession(key, id))
 
@@ -427,6 +435,36 @@ function registerIpc(): void {
 let quitting = false
 
 /** A Windows notification that opens the task board when clicked. */
+/** One notification per chat per day when a chat's estimated cost today passes the limit in Settings. */
+async function checkChatCosts(): Promise<void> {
+  const limit = loadStore().settings.chatCostAlertUsd
+  if (!limit || process.env.MC_SMOKE) return
+  const midnight = new Date()
+  midnight.setHours(0, 0, 0, 0)
+  const day = midnight.toLocaleDateString('sv')
+  const over = await queryIndex<{ sessionId: string; title: string; projectPath: string; cost: number }[]>('chatsOverCost', midnight.getTime(), limit).catch(() => [])
+  const seen = loadStore().costAlerted
+  const done = new Set(seen.day === day ? seen.ids : [])
+  const fresh = over.filter((c) => !done.has(c.sessionId))
+  if (!fresh.length) return
+  updateStore((s) => {
+    s.costAlerted = { day, ids: [...done, ...fresh.map((c) => c.sessionId)] }
+  })
+  const moved = new Map(movedChatList().map((m) => [m.id, m.path]))
+  for (const c of fresh.slice(0, 3)) {
+    const n = new Notification({
+      title: `"${c.title.slice(0, 60)}" has cost about $${c.cost.toFixed(2)} today`,
+      body: 'Long chats re-read their whole history on every reply. Compacting it or starting fresh with a summary is cheaper. (Estimated at API prices.)',
+      icon: join(__dirname, '../../build/icon.png')
+    })
+    n.on('click', () => {
+      showWindow()
+      sendToWindow('navigate', { view: 'project', chat: { projectPath: moved.get(c.sessionId) ?? c.projectPath, sessionId: c.sessionId } })
+    })
+    n.show()
+  }
+}
+
 function notifyTasks(title: string, body: string): void {
   if (process.env.MC_SMOKE) return
   const n = new Notification({ title, body, icon: join(__dirname, '../../build/icon.png') })
@@ -495,7 +533,14 @@ app.whenReady().then(async () => {
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
   setFolderSource((ids) => queryIndex('sessionFolders', ids))
-  startIndexer((status) => sendToWindow('index:status', status))
+  let lastIndexRun = 0
+  startIndexer((status) => {
+    sendToWindow('index:status', status)
+    if (status.lastRun && status.lastRun !== lastIndexRun) {
+      lastIndexRun = status.lastRun
+      void checkChatCosts()
+    }
+  })
   if (!process.env.MC_SMOKE) {
     createTray({
       getWindow: () => mainWindow,

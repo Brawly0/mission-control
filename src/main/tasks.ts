@@ -9,6 +9,7 @@ import { commitIfDirty, createWorktree, gitInfo } from './git'
 import { agentEnv, whichSync } from './pty'
 import { loadStore, updateStore } from './store'
 import { addEvent, applyStreamEvent } from './streamParser'
+import { defaultModelFor, launchArgs } from './spend'
 
 /**
  * The task board's data and the headless runner.
@@ -200,6 +201,8 @@ export function createTask(input: NewTask): Task {
   if (wouldCreateCycle(id, dependsOn, tasks)) throw new Error('That would make the tasks wait on each other in a loop.')
   const task: Task = {
     ...input,
+    // A task that doesn't pick a model uses its project's default, then the app's (Settings).
+    model: input.model || defaultModelFor(input.projectPath, true),
     title: input.title.trim() || input.prompt.trim().split('\n')[0].slice(0, 80) || 'Untitled task',
     id,
     column: 'todo',
@@ -255,7 +258,7 @@ export function setTaskRun(id: string, patch: Partial<TaskRun>, column?: TaskCol
 
 // ---------------------------------------------------------------- running
 
-function claudeCommand(): { file: string; prefix: string[] } {
+export function claudeCommand(): { file: string; prefix: string[] } {
   const path = whichSync('claude')
   if (!path) throw new Error('claude was not found on PATH. Install Claude Code first.')
   if (/\.(cmd|bat)$/i.test(path)) return { file: 'cmd.exe', prefix: ['/c', path] }
@@ -338,7 +341,9 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
     '--permission-mode',
     t.permission,
     ...(budget ? ['--max-budget-usd', String(budget)] : []),
-    ...(t.model ? ['--model', t.model] : [])
+    ...(t.model ? ['--model', t.model] : []),
+    // Only the MCP servers this project loads (when you limited them).
+    ...launchArgs(cwd, { newChat: false, hasModel: true })
   ]
   if (budget && !t.budgetUsd) addEvent(run, 'info', `Default budget $${budget} applies`)
 

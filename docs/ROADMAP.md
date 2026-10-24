@@ -63,7 +63,17 @@
 - [x] Chats started from a parent folder (C:\, Desktop) matched to the project they worked in; Move to project corrects it
 - [x] Folders Claude Code was opened in are listed even without saved chats
 
+## ✅ v0.9: Spend less
+- [x] Context meter on live agents (from Claude's latest reply), amber/red levels, Compact button, one reminder per chat
+- [x] Expensive-chat alert: notification when one chat passes a daily cost (default $20)
+- [x] Default model per project (new chats and tasks) and for tasks in Settings
+- [x] Startup cost per project: measured first-reply size, CLAUDE.md and memory files, MCP servers
+- [x] Per-project MCP picker: agents and tasks load only the chosen servers (--strict-mcp-config)
+
 ## Next ideas
+- [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
+- [ ] Prompt snippets you can insert into any agent
+- [ ] One "Needs you" inbox and a daily digest
 - [ ] Code signing so Windows SmartScreen stops warning
 - [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches
 

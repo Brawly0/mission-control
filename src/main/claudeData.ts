@@ -424,6 +424,8 @@ export function setProjectMeta(path: string, patch: Partial<ProjectMeta>): void 
     else next.displayName = next.displayName.trim().slice(0, 60)
     if (next.icon == null) delete next.icon
     if (next.hue == null) delete next.hue
+    if (!next.defaultModel) delete next.defaultModel
+    if (next.mcpAllow == null) delete next.mcpAllow
     s.projectMeta[key] = next
   })
 }

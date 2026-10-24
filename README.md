@@ -2,7 +2,14 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
-## Features (v0.8)
+## Features (v0.9)
+
+- **Chat size on every agent**: a meter shows how big each live chat is. Every reply re-reads the whole chat, so cost per reply grows with it. It turns amber at 200K tokens (change it in Settings) and red when it's very large, with a **Compact** button that sends `/compact`. You also get one reminder per chat.
+- **Expensive chat alert**: a Windows notification when one chat has cost more than $20 today (estimated at API prices; change or turn off in Settings). Click it to open the chat.
+- **Default models**: each project can set the model for its new chats and tasks (Overview → Spending), and Settings has a default for tasks. Use Sonnet or Haiku for routine work.
+- **What a new chat costs before you type**: Overview → Spending shows the typical size of the first reply in the project's recent chats, the CLAUDE.md and memory files loaded, and every MCP server. Uncheck servers a project never uses: agents and tasks Mission Control starts there then load only the checked ones (`--strict-mcp-config`). Claude's own config files aren't changed.
+
+## Earlier features
 
 - **Better project detection**: a chat you started in a parent folder (like `C:\` or your Desktop) and then spent in one project shows up under that project, marked "from C: drive". A project you only ever reached that way still gets its own entry. Folders Claude Code was opened in show up even before they have a saved chat. If a match is wrong, use **Move to project** on the chat.
 - **Readable names and icons**: projects are named from their README's title (e.g. "WBP · Journal & Intel", "Case Closed") with a one-line description, and get an icon that fits (game, journal, trading, bot, course…). Click a project's icon to set your own name, icon and color.
