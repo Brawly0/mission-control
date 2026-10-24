@@ -7,6 +7,7 @@ import { encodeProjectKey, worktreeParent } from '../shared/projectLook'
 import { claudeProjectsDir, normalizePath } from './claudeData'
 import { priceFor } from './pricing'
 import { loadStore } from './store'
+import { ecoLaunchArgs, ecoModel } from './eco'
 
 /**
  * "Spend less": how big live chats are, what a new chat carries before you type, and the
@@ -36,7 +37,8 @@ export function projectFor(cwd: string): { path: string; meta?: ProjectMeta } {
 
 /** Model a new chat or task should use when it doesn't pick one: the project's, then (for tasks) the app's. */
 export function defaultModelFor(cwd: string, forTask: boolean): string | undefined {
-  return projectFor(cwd).meta?.defaultModel || (forTask ? loadStore().settings.defaultTaskModel : '') || undefined
+  // Your own choices win; eco mode only fills in when nothing was chosen.
+  return projectFor(cwd).meta?.defaultModel || (forTask ? loadStore().settings.defaultTaskModel : '') || ecoModel() || undefined
 }
 
 // ---------------------------------------------------------------- MCP servers
@@ -103,6 +105,8 @@ export function launchArgs(cwd: string, opts: { newChat: boolean; hasModel: bool
     // "=" form: --mcp-config takes several values, so a prompt after it would be read as another config.
     args.push('--strict-mcp-config', `--mcp-config=${file}`)
   }
+  // Eco mode: effort, earlier compaction and the eco:coach skill.
+  args.push(...ecoLaunchArgs())
   return args
 }
 

@@ -13,10 +13,11 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { basename, join } from 'node:path'
 import { costOf } from './pricing'
 import { titleFromPrompt, windowsPath } from '../shared/projectLook'
+import { skillUsesIn } from '../shared/skills'
 import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
 
 const { dbPath, projectsDir } = workerData as { dbPath: string; projectsDir: string }
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 const MAX_BODY = 20_000
 
 function openDb(): DatabaseSync {
@@ -31,7 +32,7 @@ function openDb(): DatabaseSync {
   d.exec('CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)')
   const version = (d.prepare("SELECT value FROM meta WHERE key = 'schema'").get() as { value?: string } | undefined)?.value
   if (Number(version) !== SCHEMA_VERSION) {
-    d.exec('DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS msgs; DROP TABLE IF EXISTS fts; DROP TABLE IF EXISTS folders; DROP TABLE IF EXISTS briefings;')
+    d.exec('DROP TABLE IF EXISTS files; DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS msgs; DROP TABLE IF EXISTS fts; DROP TABLE IF EXISTS folders; DROP TABLE IF EXISTS briefings; DROP TABLE IF EXISTS skill_uses;')
   }
   d.exec(`
     CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, session_id TEXT, size INTEGER, mtime REAL, offset INTEGER);
@@ -45,6 +46,9 @@ function openDb(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS msgs_ts ON msgs(ts);
     CREATE TABLE IF NOT EXISTS briefings(
       session_id TEXT, ts INTEGER, trigger TEXT, pre_tokens INTEGER, text TEXT, PRIMARY KEY(session_id, ts));
+    CREATE TABLE IF NOT EXISTS skill_uses(
+      session_id TEXT, use_id TEXT, ts INTEGER, skill TEXT, how TEXT, PRIMARY KEY(session_id, use_id));
+    CREATE INDEX IF NOT EXISTS skill_uses_ts ON skill_uses(ts);
     CREATE TABLE IF NOT EXISTS folders(
       session_id TEXT, folder_lc TEXT, folder TEXT, hits INTEGER, PRIMARY KEY(session_id, folder_lc));
     CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
@@ -74,6 +78,8 @@ function statements(d: DatabaseSync) {
     dropFiles: d.prepare('DELETE FROM files WHERE session_id = ?'),
     dropFolders: d.prepare('DELETE FROM folders WHERE session_id = ?'),
     dropBriefings: d.prepare('DELETE FROM briefings WHERE session_id = ?'),
+    dropSkillUses: d.prepare('DELETE FROM skill_uses WHERE session_id = ?'),
+    addSkillUse: d.prepare('INSERT OR IGNORE INTO skill_uses(session_id, use_id, ts, skill, how) VALUES (?, ?, ?, ?, ?)'),
     addBriefing: d.prepare('INSERT OR REPLACE INTO briefings(session_id, ts, trigger, pre_tokens, text) VALUES (?, ?, ?, ?, ?)'),
     addFolder: d.prepare(
       `INSERT INTO folders(session_id, folder_lc, folder, hits) VALUES (?, ?, ?, ?)
@@ -193,6 +199,7 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
       q.dropFiles.run(sessionId)
       q.dropFolders.run(sessionId)
       q.dropBriefings.run(sessionId)
+      q.dropSkillUses.run(sessionId)
     }
   }
 
@@ -243,6 +250,7 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
           if (text) q.addBriefing.run(sessionId, ts || st.mtimeMs, String(boundary?.trigger ?? ''), Number(boundary?.preTokens ?? 0), text)
           boundary = null
         }
+        for (const use of skillUsesIn(e)) q.addSkillUse.run(sessionId, use.id, ts || st.mtimeMs, use.skill, use.how)
         if (e.type === 'assistant' && Array.isArray(e.message?.content)) {
           for (const b of e.message.content) {
             if (b?.type !== 'tool_use' || !b.input) continue
@@ -544,6 +552,19 @@ function briefings(since = 0, limit = 200): unknown[] {
   }))
 }
 
+/** How often each skill was used since a time: by Claude (the Skill tool) and by you (/name). */
+function skillUsage(since = 0): unknown[] {
+  return (
+    db
+      .prepare(
+        `SELECT skill, COUNT(*) AS uses, SUM(how = 'claude') AS by_claude, SUM(how = 'you') AS by_you,
+                COUNT(DISTINCT session_id) AS chats, MAX(ts) AS last
+         FROM skill_uses WHERE ts >= ? GROUP BY skill ORDER BY uses DESC`
+      )
+      .all(since) as any[]
+  ).map((r) => ({ skill: r.skill, uses: r.uses, byClaude: r.by_claude, byYou: r.by_you, chats: r.chats, lastUsed: r.last }))
+}
+
 /** Usage totals per chat since a time, for moving a chat's usage to the project it's shown under. */
 function sessionTotals(since: number, sessionIds: string[]): unknown[] {
   if (!sessionIds.length) return []
@@ -587,6 +608,7 @@ const handlers: Record<string, (...args: any[]) => unknown> = {
   sessionFolders,
   sessionTotals,
   briefings,
+  skillUsage,
   firstReplies,
   chatsOverCost,
   status: () => status

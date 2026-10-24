@@ -2,30 +2,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Bot,
   FileStack,
-  KanbanSquare,
-  ListPlus,
-  Settings,
-  TextSearch,
   FolderOpen,
   FolderPlus,
   GitFork,
   History,
   House,
+  KanbanSquare,
+  Keyboard,
   LayoutGrid,
+  Leaf,
+  ListPlus,
+  MessageSquareDashed,
+  NotebookPen,
+  PanelLeft,
   Play,
   RefreshCw,
   RotateCcw,
   Rows2,
-  Terminal,
-  X,
-  Keyboard,
-  BookOpen,
-  MessageSquareDashed,
-  NotebookPen,
-  PanelLeft,
+  Settings,
   SunMoon,
+  Terminal,
+  TextSearch,
+  Wand2,
+  X,
   ZoomIn,
   ZoomOut
 } from 'lucide-react'
@@ -69,6 +71,7 @@ import { LookContext, makeLookUp } from './projectLook'
 import { ShortcutContext, allowedIn, bindingIndex, comboFromEvent, effectiveKeys } from './shortcuts'
 import ShortcutsDialog from './components/ShortcutsDialog'
 import TopBar from './components/TopBar'
+import SkillsView from './components/SkillsView'
 import ProjectsView from './components/ProjectsView'
 import NotebookView from './components/NotebookView'
 import KnowledgeView from './components/KnowledgeView'
@@ -109,6 +112,7 @@ export default function App() {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [taskFilter, setTaskFilter] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'general' | 'spending' | undefined>()
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
   const [templatesOpen, setTemplatesOpen] = useState(false)
@@ -620,6 +624,25 @@ export default function App() {
     }
   }, [openPalette])
 
+  /** Eco mode on or off (Settings → Spending has what it changes). */
+  const toggleEco = async () => {
+    if (!appSettings) return
+    const on = !appSettings.eco?.enabled
+    await saveSettings({ eco: { ...appSettings.eco, enabled: on } })
+    toast(on ? 'success' : 'info', on ? 'Eco mode on' : 'Eco mode off', on ? 'New chats and tasks use less of your plan. Running chats keep their settings until restarted.' : 'New chats and tasks use your normal settings again.')
+  }
+
+  /** New chat that starts with a skill (/name), in the open project or a quick chat. */
+  const useSkill = async (skill: string) => {
+    const p = selected && !selected.worktree ? selected : null
+    try {
+      const cwd = p?.path ?? (await window.mc.quickChatFolder())
+      launch({ cwd, projectName: p?.name ?? 'Quick chat', projectPath: cwd, title: `${p?.name ?? 'Quick chat'} · /${skill}`, args: [`/${skill}`] })
+    } catch (e) {
+      toast('error', 'Could not start the chat', errorMessage(e))
+    }
+  }
+
   /** New session that starts by reading the project's newest briefing. */
   const startFromBriefing = async (projectPath?: string, file?: string) => {
     const p = projects.find((x) => x.path === (projectPath ?? selected?.path))
@@ -680,6 +703,8 @@ export default function App() {
         setView('notebook')
         setNewNoteRequest(Date.now())
       },
+      goSkills: () => setView('skills'),
+      toggleEco: () => void toggleEco(),
       quickChat: () =>
         void window.mc
           .quickChatFolder()
@@ -754,6 +779,8 @@ export default function App() {
       { id: 'go-projects', group: 'Go to', title: 'All projects', icon: FolderOpen, keywords: 'cards folders', run: () => setView('projects') },
       { id: 'go-notebook', group: 'Go to', title: 'Notebook', icon: NotebookPen, keywords: 'notes write', run: () => setView('notebook') },
       { id: 'go-knowledge', group: 'Go to', title: 'Knowledge (all docs)', icon: BookOpen, keywords: 'docs readme claude.md', run: () => setView('knowledge') },
+      { id: 'go-skills', group: 'Go to', title: 'Skills', icon: Wand2, keywords: 'skills plugins slash commands', run: () => setView('skills') },
+      { id: 'toggle-eco', group: 'View', title: appSettings?.eco?.enabled ? 'Turn Eco mode off' : 'Turn Eco mode on', icon: Leaf, keywords: 'eco save usage credits tokens cheaper', run: () => runShortcutRef.current('toggleEco') },
       { id: 'new-project', group: 'Actions', title: 'New project…', icon: FolderPlus, keywords: 'create folder', run: () => setNewProjectOpen(true) },
       { id: 'quick-chat', group: 'Actions', title: 'Quick chat', icon: MessageSquareDashed, keywords: 'temporary scratch', run: () => runShortcutRef.current('quickChat') },
       { id: 'new-note', group: 'Actions', title: 'New note', icon: NotebookPen, keywords: 'notebook write', run: () => runShortcutRef.current('newNote') },
@@ -802,7 +829,7 @@ export default function App() {
     // Show each command's shortcut.
     const shortcutOf: Record<string, string> = {
       'go-home': 'goHome', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
-      'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks',
+      'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco',
       'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
       'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
       add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',
@@ -843,7 +870,14 @@ export default function App() {
         }}
       />
       <main className="main">
-        <TopBar theme={theme} userName={userName} currentProject={selected?.name} rateLimit={rateLimit} onShortcut={(id) => runShortcutRef.current(id)} />
+        <TopBar theme={theme} userName={userName} currentProject={selected?.name}
+          rateLimit={rateLimit}
+          eco={appSettings?.eco}
+          onEcoSettings={() => {
+            setSettingsTab('spending')
+            setSettingsOpen(true)
+          }}
+          onShortcut={(id) => runShortcutRef.current(id)} />
         {pendingRestore && pendingRestore.length > 0 && (
           <div className="restore-banner">
             <RotateCcw size={15} />
@@ -962,6 +996,20 @@ export default function App() {
           <div className={view === 'notebook' ? 'view-pane' : 'view-pane hidden'}>
             <NotebookView projects={projects} visible={view === 'notebook'} newNoteRequest={newNoteRequest} onOpenProject={openProject} onProjectNotesSaved={() => void refreshProjects()} />
           </div>
+          <div className={view === 'skills' ? 'view-pane' : 'view-pane hidden'}>
+            <SkillsView
+              visible={view === 'skills'}
+              eco={appSettings?.eco}
+              projects={projects}
+              projectName={selected && !selected.worktree ? selected.name : undefined}
+              onUse={(id) => void useSkill(id)}
+              onToggleEco={() => void toggleEco()}
+              onEcoSettings={() => {
+                setSettingsTab('spending')
+                setSettingsOpen(true)
+              }}
+            />
+          </div>
           <div className={view === 'knowledge' ? 'view-pane' : 'view-pane hidden'}>
             <KnowledgeView visible={view === 'knowledge'} onStartFromBriefing={(projectPath, file) => void startFromBriefing(projectPath, file)} />
           </div>
@@ -1074,7 +1122,10 @@ export default function App() {
           }}
         />
       )}
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} onOpenShortcuts={() => setShortcutsOpen(true)} />}
+      {settingsOpen && <SettingsDialog initialTab={settingsTab} onClose={() => {
+        setSettingsOpen(false)
+        setSettingsTab(undefined)
+      }} onOpenShortcuts={() => setShortcutsOpen(true)} />}
       {newProjectOpen && (
         <NewProjectDialog
           onClose={() => setNewProjectOpen(false)}

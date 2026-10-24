@@ -22,11 +22,15 @@ src/
     hub.ts         notes, Knowledge (docs across projects), Claude Code status, greeting name, quick chats, new projects
     planUsage.ts   plan limits (session / weekly) polled from your Claude account with Claude Code's saved login, read-only (ADR 0013)
     vault.ts       docs vault: reads docs/ + root notes with links, watches them, starts Claude's build/update tasks (ADR 0014)
+    skills.ts      Skills page: personal, plugin and project skills read from disk (ADR 0015)
+    eco.ts         Eco mode: launch flags (model, effort, autocompact, plugin) and the long-chat coach
+    ecoPlugin.ts   the eco:coach skill, written as a plugin to the app's data folder for --plugin-dir
     spend.ts       live chat size, startup report, MCP servers per project, extra launch args (model, --strict-mcp-config)
     smoke.ts       self-test run with MC_SMOKE=<png path>
   preload/     exposes a typed `window.mc` API to the UI (contextIsolation on)
   shared/      types used by both sides (MissionControlApi lives here)
     planUsage.ts    parses the plan-usage response; pace forecast; window names, "resets in" text (pure, unit-tested)
+    skills.ts       skill uses in transcripts, coach levels and wording (pure, unit-tested)
     vault.ts        frontmatter, [[wikilinks]], link resolution, headings, the vault prompts (pure, unit-tested)
     projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
@@ -38,7 +42,7 @@ src/
     src/shortcuts.ts         every keyboard shortcut, key matching, terminal-safe rules, rebinding (ADR 0010)
     src/components/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
-      Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, VaultView (VaultGraph, NoteMarkdown), PlanMeter
+      Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, VaultView (VaultGraph, NoteMarkdown), PlanMeter, SkillsView
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
       SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
       TopBar, ProjectsView, NotebookView, KnowledgeView, DocViewer, NewProjectDialog

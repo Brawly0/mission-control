@@ -1,0 +1,385 @@
+/* ---------- Skills page ---------- */
+.skills-view {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.skills-main {
+  min-height: 0;
+  padding: 26px 32px 48px;
+}
+.skills-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.skills-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px;
+  font: 600 24px var(--font-display);
+}
+.skills-head h1 svg {
+  color: var(--accent-text);
+}
+.skills-head p {
+  margin: 0;
+}
+.skills-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Eco card */
+.eco-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.eco-card.on {
+  border-color: rgba(74, 222, 128, 0.35);
+  background: linear-gradient(120deg, rgba(74, 222, 128, 0.08), var(--surface) 55%);
+}
+.eco-card-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+.eco-card.on .eco-card-icon {
+  background: rgba(74, 222, 128, 0.16);
+  color: var(--green);
+}
+.eco-card-body h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font: 600 16px var(--font-display);
+}
+.eco-card-body p {
+  margin: 0;
+  line-height: 1.55;
+  max-width: 760px;
+}
+.eco-pill {
+  padding: 1px 8px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font: 600 11px var(--font);
+}
+.eco-pill.on {
+  background: rgba(74, 222, 128, 0.16);
+  color: var(--green);
+}
+.eco-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.eco-chips span {
+  padding: 2px 9px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.eco-card:not(.on) .eco-chips span {
+  opacity: 0.6;
+}
+.eco-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+@media (max-width: 1180px) {
+  .eco-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .eco-card-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+.skills-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.skills-tip > svg {
+  flex-shrink: 0;
+  color: var(--accent-text);
+}
+.skills-tip > span {
+  flex: 1;
+}
+.link-btn {
+  color: var(--accent-text);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.skills-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 10px;
+  flex-wrap: wrap;
+}
+.skills-search {
+  margin: 0;
+  width: 240px;
+  height: 32px;
+}
+
+.skills-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.skill-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 170px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.skill-row:last-child {
+  border-bottom: 0;
+}
+.skill-row:hover {
+  background: var(--hover);
+}
+.skill-row.selected {
+  background: var(--active);
+}
+.skill-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.skill-icon.src-mission-control {
+  background: rgba(74, 222, 128, 0.14);
+  color: var(--green);
+}
+.skill-icon.src-plugin {
+  color: var(--blue);
+}
+.skill-icon.src-project {
+  color: var(--yellow);
+}
+.skill-icon.src-other {
+  color: var(--faint);
+}
+.skill-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.skill-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.skill-badge {
+  padding: 0 7px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.skill-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.skill-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12.5px;
+  text-align: right;
+}
+
+/* detail panel */
+.skill-detail {
+  width: 420px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+.skill-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 50px;
+  padding: 0 12px 0 18px;
+  border-bottom: 1px solid var(--border);
+}
+.skill-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px 4px;
+}
+.skill-facts {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 8px 18px 10px;
+  font-size: 12px;
+}
+.skill-facts dt {
+  color: var(--muted);
+}
+.skill-facts dd {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.skill-md {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 18px 28px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+@media (max-width: 1280px) {
+  .skill-detail {
+    width: 340px;
+  }
+}
+
+/* ---------- Eco toggle in the top bar ---------- */
+.eco-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font: 600 12.5px var(--font);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.eco-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+.eco-toggle.on {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--green);
+}
+
+/* ---------- Eco block in Settings → Spending ---------- */
+.eco-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.eco-fields.on {
+  border-color: rgba(74, 222, 128, 0.35);
+}
+.eco-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.eco-switch > svg {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.eco-fields.on .eco-switch > svg {
+  color: var(--green);
+}
+.eco-switch > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.eco-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.eco-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.eco-fields .inline-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.eco-fields .inline-check input {
+  margin-top: 3px;
+}
+.eco-fields:not(.on) .eco-grid,
+.eco-fields:not(.on) .inline-check {
+  opacity: 0.55;
+}

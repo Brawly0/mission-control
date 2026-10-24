@@ -4,16 +4,18 @@ import { execFileSync, spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
 import { refreshPlanUsage } from './planUsage'
 import { vaultNotes } from './vault'
+import { coachPrompt } from './eco'
+import { hookSettingsFor, removeHookSettings } from './hookServer'
 import { automationHold, claudeCommand, getRateLimit, takeDueReminders, createTask, deleteTask, flushTasks, followUpTask, listTasks, pumpQueue, rerunChecks, startTask } from './tasks'
 import { invalidateBudgets, projectBudget } from './budget'
 import { reindex } from './indexer'
 import { deleteTemplate, fillVariables, listTemplates, nextRunAfter, runDueTemplates, saveTemplate } from './templates'
 import { checkForUpdates, initUpdater, updateStatus } from './updater'
 import type { DocFile, HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
-import { listProjects, listSessions, movedChatList, normalizePath, renameSession, setProjectMeta } from './claudeData'
+import { listProjects, listSessions, movedChatList, recentSessions, normalizePath, renameSession, setProjectMeta } from './claudeData'
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { agentEnv, killTerminal, killTerminalsIn } from './pty'
-import { contextUsage, launchArgs, startupReport } from './spend'
+import { contextUsage, defaultModelFor, launchArgs, startupReport } from './spend'
 import { latestBriefing, listBriefings } from './briefings'
 import { briefingFileName, briefingMarkdown } from '../shared/projectLook'
 import { claudeStatus, createProject, deleteNote, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
@@ -528,6 +530,81 @@ async function vaultTour(win: BrowserWindow, outFile: string, dir: string): Prom
   } finally {
     updateStore((s) => {
       s.manualProjects = s.manualProjects.filter((p) => p !== dir)
+    })
+  }
+}
+
+/**
+ * MC_SMOKE_SKILLS=1: the Skills page and Eco mode, against your real skills and chats, for free.
+ * Lists skills and their uses from the index, turns Eco mode on for the tour (restored after),
+ * checks the launch flags, asks the coach about your largest recent chat directly and through
+ * the hook server (a real UserPromptSubmit round trip), and screenshots the Skills page, a
+ * skill's detail, the top bar and Settings → Spending as <MC_SMOKE>-skills-*.png.
+ */
+async function skillsTour(win: BrowserWindow, outFile: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 900) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-skills-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
+
+  const skills = await js('window.mc.listSkills()')
+  const bySource: Record<string, number> = {}
+  for (const s of skills) bySource[s.source] = (bySource[s.source] ?? 0) + 1
+  log('skills:', skills.length, JSON.stringify(bySource), 'eco:coach found:', skills.some((s: any) => s.id === 'eco:coach'))
+  log('listing tokens total:', skills.reduce((n: number, s: any) => n + s.listingTokens, 0))
+  const usage = await js('window.mc.skillUsage(0)')
+  log('skill uses (all time):', usage.slice(0, 8).map((u: any) => `${u.skill}=${u.uses} (claude ${u.byClaude}, you ${u.byYou})`).join(', '))
+
+  const before = loadStore().settings.eco
+  updateStore((s) => {
+    s.settings.eco = { ...before, enabled: true, coach: true, skill: true, autocompactTokens: 150_000, model: 'sonnet' }
+  })
+  try {
+    log('eco launch args:', JSON.stringify(launchArgs(process.cwd(), { newChat: true, hasModel: false })))
+    log('eco task model:', defaultModelFor(process.cwd(), true))
+
+    // The coach, on your largest recent chat.
+    const recent = await recentSessions(12)
+    const sizes = await contextUsage(recent.map((r) => r.id))
+    const big = Object.values(sizes).sort((a, b) => b.tokens - a.tokens)[0]
+    if (big) {
+      log('largest recent chat:', Math.round(big.tokens / 1000) + 'k tokens', 'window', Math.round(big.window / 1000) + 'k')
+      // Through the hook server, as Claude Code asks on every prompt; then directly, when it was already said once.
+      const settingsFile = hookSettingsFor('smoke-coach')
+      const url = /"(http:\/\/127\.0\.0\.1:[^"]+)"/.exec(readFileSync(settingsFile, 'utf8').replace(/\\"/g, '"'))?.[1]
+      const res = await fetch(url!, { method: 'POST', body: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: big.sessionId, prompt: 'hi' }) })
+      log('coach (hook reply):', (await res.text()).slice(0, 400))
+      log('coach (asked again, same level):', JSON.stringify(await coachPrompt(big.sessionId)))
+      removeHookSettings('smoke-coach')
+    }
+
+    // The UI reads settings when the Settings dialog closes: open and close it to pick up eco mode.
+    await js(`window.__mcSmoke.openSettings()`)
+    await sleep(400)
+    await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+    await sleep(400)
+    await js(`window.__mcSmoke.setView('skills')`)
+    await js(`window.__mcSmoke.runShortcut('refresh')`)
+    await shot('page', 2500)
+    log('rows:', await js(`document.querySelectorAll('.skill-row').length`), 'eco card on:', await js(`!!document.querySelector('.eco-card.on')`), 'top bar eco on:', await js(`!!document.querySelector('.eco-toggle.on')`))
+    await js(`[...document.querySelectorAll('.skill-row')].find(r => r.textContent.includes('/eco:coach'))?.click()`)
+    await shot('detail', 1200)
+    log('detail:', await js(`document.querySelector('.skill-detail-head')?.textContent`))
+    await js(`window.__mcSmoke.openSettings()`)
+    await sleep(500)
+    await js(`[...document.querySelectorAll('.dialog button')].find(b => b.textContent.includes('Spending'))?.click()`)
+    await shot('settings', 900)
+    await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+  } finally {
+    updateStore((s) => {
+      s.settings.eco = before
     })
   }
 }
@@ -1051,6 +1128,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_NAMES) await namesTour(win, outFile, process.env.MC_SMOKE_NAMES)
     if (process.env.MC_SMOKE_SPEND) await spendTour(win, outFile, process.env.MC_SMOKE_SPEND)
     if (process.env.MC_SMOKE_PLAN) await planTour(win, outFile)
+    if (process.env.MC_SMOKE_SKILLS) await skillsTour(win, outFile)
     if (process.env.MC_SMOKE_VAULT) await vaultTour(win, outFile, process.env.MC_SMOKE_VAULT)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
     if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)

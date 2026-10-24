@@ -1,5 +1,5 @@
-import { ChevronDown, FolderPlus, ListPlus, MessageSquareDashed, Moon, NotebookPen, Play, Plus, Search, Settings, Sun } from 'lucide-react'
-import type { RateLimitInfo } from '@shared/types'
+import { ChevronDown, FolderPlus, Leaf, ListPlus, MessageSquareDashed, Moon, NotebookPen, Play, Plus, Search, Settings, Sun } from 'lucide-react'
+import type { EcoSettings, RateLimitInfo } from '@shared/types'
 import { useKeyFor, withKey } from '../shortcuts'
 import { initials } from '../util'
 import { KeyCombo } from './ShortcutsDialog'
@@ -12,18 +12,46 @@ interface Props {
   /** Name of the project "New session" starts in. */
   currentProject?: string
   rateLimit: RateLimitInfo | null
+  eco?: EcoSettings
+  /** Opens Settings → Spending, where Eco mode's details are. */
+  onEcoSettings: () => void
   onShortcut: (id: string) => void
 }
 
 /** Search, plan limits, the New menu, theme, settings and you, across the top of every page. */
-export default function TopBar({ theme, userName, currentProject, rateLimit, onShortcut }: Props) {
+export default function TopBar({ theme, userName, currentProject, rateLimit, eco, onEcoSettings, onShortcut }: Props) {
   const keyFor = useKeyFor()
+  const ecoTip = eco?.enabled
+    ? [
+        'Eco mode is on. New chats and tasks:',
+        eco.model ? `· use ${eco.model[0].toUpperCase()}${eco.model.slice(1)} unless they pick a model` : '',
+        eco.effort ? `· think at ${eco.effort} effort` : '',
+        eco.autocompactTokens ? `· compact at ${Math.round(eco.autocompactTokens / 1000)}k tokens` : '',
+        eco.coach ? '· get coached when they grow long' : '',
+        eco.skill ? '· have the eco:coach skill' : '',
+        'Click to turn off · right-click for settings'
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : 'Eco mode is off. Click to use less of your plan in new chats and tasks · right-click for settings'
   return (
     <header className="topbar">
       <button className="topbar-search" onClick={() => onShortcut('palette')}>
         <Search size={16} />
         <span>Search projects, chats, tasks…</span>
         {keyFor('palette') && <KeyCombo combo={keyFor('palette')} />}
+      </button>
+      <button
+        className={`eco-toggle ${eco?.enabled ? 'on' : ''}`}
+        title={withKey(ecoTip, keyFor('toggleEco'))}
+        onClick={() => onShortcut('toggleEco')}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onEcoSettings()
+        }}
+      >
+        <Leaf size={15} />
+        <span>Eco</span>
       </button>
       <PlanMeter info={rateLimit} onOpen={() => onShortcut('goUsage')} />
       <div className="topbar-actions">

@@ -271,7 +271,7 @@ export interface GitChanges {
 /** UI state remembered between runs. */
 export interface UiState {
   selectedPath?: string
-  view?: 'home' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge'
+  view?: 'home' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
   /** Sidebar shrunk to an icon rail. */
@@ -508,6 +508,55 @@ export interface RateLimitInfo {
   error?: string
 }
 
+/** Eco mode: what Mission Control changes in the chats and tasks it starts, to use less of your plan. */
+export interface EcoSettings {
+  enabled: boolean
+  /** Model for new chats and tasks that have no model of their own (project default, task default); '' = Claude's default. */
+  model: string
+  /** --effort for every launch: '' = Claude's default. */
+  effort: '' | 'low' | 'medium' | 'high'
+  /** --autocompact window in tokens (compacts sooner, so every reply re-reads less); 0 = Claude's default. */
+  autocompactTokens: number
+  /** Coach long chats: when a chat grows, Claude is told to suggest compacting or handing off at a good moment. */
+  coach: boolean
+  /** Load the eco:coach skill into chats Mission Control starts. */
+  skill: boolean
+}
+
+/** One installed (or used) skill. */
+export interface SkillInfo {
+  /** What Claude Code calls it, e.g. "graphify" or "eco:coach" for a plugin's skill. */
+  id: string
+  name: string
+  description: string
+  source: 'personal' | 'plugin' | 'project' | 'mission-control' | 'other'
+  /** Plugin it comes from, or project folder for project skills. */
+  plugin?: string
+  projectPath?: string
+  /** SKILL.md, and its folder ('' for skills that were used but aren't on disk). */
+  path: string
+  dir: string
+  /** Rough tokens every chat carries to list it (name + description); 0 if Claude can't call it by itself. */
+  listingTokens: number
+  /** Rough tokens of SKILL.md, read when the skill is used. */
+  bodyTokens: number
+  /** Files in the skill's folder. */
+  files: number
+  /** false when its frontmatter says disable-model-invocation: only you can start it. */
+  modelInvocable: boolean
+}
+
+/** How often a skill was used, from your chats. */
+export interface SkillUse {
+  skill: string
+  uses: number
+  /** Started by Claude (the Skill tool) or by you (/name). */
+  byClaude: number
+  byYou: number
+  chats: number
+  lastUsed: number
+}
+
 export interface AppSettings {
   /** Accelerator for the global show/hide hotkey, e.g. "Ctrl+Alt+M"; empty to disable. */
   hotkey: string
@@ -529,6 +578,8 @@ export interface AppSettings {
   chatCostAlertUsd: number
   /** Notify when the session or weekly plan limit passes this percentage (and again when it's used up); 0 = off. */
   planAlertPercent: number
+  /** Eco mode: launch settings that use less of your plan (ADR 0015). */
+  eco: EcoSettings
   /** A live chat turns amber (and you get one reminder) at this many tokens of context. */
   contextWarnTokens: number
   /** Your own key combinations by shortcut id ('' turns one off); missing ids use the defaults. */
@@ -705,6 +756,12 @@ export interface MissionControlApi {
   onTasksChanged(cb: (tasks: Task[]) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void
   getRateLimit(): Promise<RateLimitInfo | null>
+  /** Every installed skill (personal, plugins, projects, Mission Control's own). */
+  listSkills(): Promise<SkillInfo[]>
+  /** Skill uses in your chats since a time (ms). */
+  skillUsage(since: number): Promise<SkillUse[]>
+  /** Copies the eco:coach skill into a project's .claude/skills, for chats started outside Mission Control. */
+  addEcoSkillToProject(projectPath: string): Promise<string>
   /** Asks your Claude account for the latest plan-limit numbers now. */
   refreshRateLimit(): Promise<RateLimitInfo | null>
   /** Live agent counts, shown in the tray tooltip and menu. */

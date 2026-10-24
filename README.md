@@ -2,6 +2,12 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.15)
+
+- **Eco mode** (the leaf in the top bar, `Ctrl+Alt+L`): chats and tasks Mission Control starts use less of your plan. They default to Sonnet (Opus is one `/model opus` away), compact at 150k tokens instead of running up to the full window, and get the **eco:coach** skill. Fine-tune it in Settings → Spending. Most usage on long chats is Claude re-reading the chat on every reply, so compacting sooner is the biggest saving.
+- **Long-chat coach**: when a chat reaches 60% and 85% of that size, or your session limit is nearly used up, Claude is told once to suggest `/compact` or a briefing plus a fresh chat at a good moment. Type `/eco:coach` for advice on the current chat any time.
+- **Skills page**: every skill you have (personal, plugins, projects) with what it does, how often you and Claude actually used it, and how many tokens it adds to every chat. Unused skills are flagged; start a chat with any skill in one click. **Add to a project** copies eco:coach into a project, for chats you start outside Mission Control.
+
 ## Features (v0.14)
 
 - **Docs vault for every project**: the Docs tab is now an Obsidian-style vault of the project's `docs/` folder. Click **Build vault with Claude** and Claude reads the project and writes a linked set of notes (INDEX hub, overview, architecture, setup, conventions, status, decisions), then points CLAUDE.md at it, so every new chat starts out knowing the project. Browse it with a folder tree, clickable `[[links]]`, backlinks, an outline and a **graph view**. Notes appear live as Claude writes them. Turn on **Keep up to date** and Claude refreshes the vault after each compaction. It runs as a background task with Sonnet by default, and it never touches your code.

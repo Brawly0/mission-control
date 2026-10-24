@@ -59,6 +59,8 @@ import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledge
 import { runSmoke } from './smoke'
 import { refreshPlanUsage, startPlanUsage, stopPlanUsage } from './planUsage'
 import { buildVault, stopVaultWatch, vaultNotes, watchVault } from './vault'
+import { addEcoSkillToProject, listSkills } from './skills'
+import { coachPrompt, ecoPluginDir } from './eco'
 import { windowLabel } from '../shared/planUsage'
 
 let mainWindow: BrowserWindow | null = null
@@ -278,6 +280,9 @@ function registerIpc(): void {
   ipcMain.handle('notes:list', () => listNotes())
   ipcMain.handle('notes:save', (_e, note: Partial<Note>) => saveNote(note))
   ipcMain.handle('notes:delete', (_e, id: string) => deleteNote(id))
+  ipcMain.handle('skills:list', async () => listSkills((await listProjects()).map((p) => p.path), ecoPluginDir()))
+  ipcMain.handle('skills:usage', (_e, since: number) => queryIndex('skillUsage', since))
+  ipcMain.handle('skills:addEco', (_e, path: string) => addEcoSkillToProject(path))
   ipcMain.handle('vault:notes', (_e, path: string) => vaultNotes(path))
   ipcMain.handle('vault:build', (_e, path: string, name: string, mode: 'build' | 'update', model?: string) => buildVault(path, name, mode, model))
   ipcMain.on('vault:watch', (_e, path: string | null) => watchVault(path, (p) => sendToWindow('vault:changed', p)))
@@ -587,10 +592,13 @@ if (!process.env.MC_SMOKE && !app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
-  await startHookServer((event) => {
-    sendToWindow('hook:event', event)
-    hookTaps.forEach((tap) => tap(event))
-  })
+  await startHookServer(
+    (event) => {
+      sendToWindow('hook:event', event)
+      hookTaps.forEach((tap) => tap(event))
+    },
+    (sessionId) => coachPrompt(sessionId)
+  )
   registerIpc()
   initTasks({
     onChange: (list) => {

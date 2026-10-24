@@ -33,6 +33,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'goProjects', label: 'All projects', group: 'Go to', keys: ['Ctrl+7'] },
   { id: 'goNotebook', label: 'Notebook', group: 'Go to', keys: ['Ctrl+8'] },
   { id: 'goKnowledge', label: 'Knowledge (all docs)', group: 'Go to', keys: ['Ctrl+9'] },
+  { id: 'goSkills', label: 'Skills', group: 'Go to', keys: ['Ctrl+Alt+K'] },
   { id: 'prevProject', label: 'Previous project', group: 'Go to', keys: ['Alt+Up'] },
   { id: 'nextProject', label: 'Next project', group: 'Go to', keys: ['Alt+Down'] },
 
@@ -76,6 +77,7 @@ export const SHORTCUTS: ShortcutDef[] = [
 
   { id: 'toggleSidebar', label: 'Show or hide sidebar', group: 'View', keys: ['Ctrl+B'] },
   { id: 'toggleTheme', label: 'Light or dark theme', group: 'View', keys: ['Ctrl+Shift+L'] },
+  { id: 'toggleEco', label: 'Eco mode on or off', group: 'View', keys: ['Ctrl+Alt+L'] },
   { id: 'zoomIn', label: 'Zoom in', group: 'View', keys: ['Ctrl+='] },
   { id: 'zoomOut', label: 'Zoom out', group: 'View', keys: ['Ctrl+-'] },
   { id: 'zoomReset', label: 'Reset zoom', group: 'View', keys: ['Ctrl+0'] },

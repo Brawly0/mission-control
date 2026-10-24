@@ -66,6 +66,7 @@ const defaults: StoreData = {
     defaultTaskModel: '',
     chatCostAlertUsd: 20,
     planAlertPercent: 80,
+    eco: { enabled: false, model: 'sonnet', effort: '', autocompactTokens: 150_000, coach: true, skill: true },
     contextWarnTokens: 200_000,
     keybindings: {},
     theme: 'dark',

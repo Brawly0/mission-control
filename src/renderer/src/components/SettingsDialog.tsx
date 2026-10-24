@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Download, Keyboard, ListTodo, Minus, Monitor, Moon, Palette, PiggyBank, Plus, RefreshCw, Settings2, Sun, X } from 'lucide-react'
-import type { AppSettings, UpdateState } from '@shared/types'
+import { Download, Keyboard, Leaf, ListTodo, Minus, Monitor, Moon, Palette, PiggyBank, Plus, RefreshCw, Settings2, Sun, X } from 'lucide-react'
+import type { AppSettings, EcoSettings, UpdateState } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 import { SHORTCUTS, effectiveKeys } from '../shortcuts'
 import { KeyCombo } from './ShortcutsDialog'
@@ -144,9 +144,9 @@ function UpdatesSection({ autoUpdate, onAutoUpdate }: { autoUpdate: boolean; onA
   )
 }
 
-export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: () => void; onOpenShortcuts?: () => void }) {
+export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab }: { onClose: () => void; onOpenShortcuts?: () => void; initialTab?: Tab }) {
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const [tab, setTab] = useState<Tab>('general')
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'general')
   const [recording, setRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -296,6 +296,12 @@ export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: 
 
             </>)}
             {tab === 'spending' && (<>
+            <EcoFields eco={settings.eco} onChange={(patch) => {
+              const eco = { ...settings.eco, ...patch }
+              setSettings({ ...settings, eco })
+              apply({ eco })
+            }} />
+
             <div className="field">
               <span className="field-label">Expensive chat alert</span>
               <label className="inline-field">
@@ -360,6 +366,60 @@ export default function SettingsDialog({ onClose, onOpenShortcuts }: { onClose: 
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Eco mode: one switch, and what it changes in the chats and tasks Mission Control starts. */
+export function EcoFields({ eco, onChange }: { eco: EcoSettings; onChange: (patch: Partial<EcoSettings>) => void }) {
+  return (
+    <div className={`eco-fields ${eco.enabled ? 'on' : ''}`}>
+      <label className="eco-switch">
+        <input type="checkbox" checked={eco.enabled} onChange={(e) => onChange({ enabled: e.target.checked })} />
+        <Leaf size={15} />
+        <span>
+          <span className="strong">Eco mode</span>
+          <span className="field-hint">Uses less of your plan in the chats and tasks Mission Control starts. Chats already running keep their settings until you restart them.</span>
+        </span>
+      </label>
+      <div className="eco-grid">
+        <label>
+          <span className="field-label">Model</span>
+          <select className="select" value={eco.model} disabled={!eco.enabled} onChange={(e) => onChange({ model: e.target.value })}>
+            <option value="sonnet">Sonnet</option>
+            <option value="haiku">Haiku</option>
+            <option value="">Claude’s default</option>
+          </select>
+          <span className="field-hint">For new chats and tasks with no model of their own. A project’s default model still wins. Type /model opus in a chat when you need it.</span>
+        </label>
+        <label>
+          <span className="field-label">Effort</span>
+          <select className="select" value={eco.effort} disabled={!eco.enabled} onChange={(e) => onChange({ effort: e.target.value as EcoSettings['effort'] })}>
+            <option value="">Claude’s default</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <span className="field-hint">How hard Claude thinks before answering. Lower is cheaper and faster; keep the default for tricky work.</span>
+        </label>
+        <label>
+          <span className="field-label">Compact chats at</span>
+          <select className="select" value={eco.autocompactTokens} disabled={!eco.enabled} onChange={(e) => onChange({ autocompactTokens: Number(e.target.value) })}>
+            <option value={100000}>100k tokens</option>
+            <option value={150000}>150k tokens</option>
+            <option value={200000}>200k tokens</option>
+            <option value={0}>Claude’s default</option>
+          </select>
+          <span className="field-hint">Every reply re-reads the whole chat, so compacting sooner is the biggest saving on long chats.</span>
+        </label>
+      </div>
+      <label className="inline-check">
+        <input type="checkbox" checked={eco.coach} disabled={!eco.enabled} onChange={(e) => onChange({ coach: e.target.checked })} />
+        Coach long chats: when a chat reaches 60% and 85% of that size, or your session limit is nearly used up, Claude is told once to suggest compacting or a fresh chat at a good moment
+      </label>
+      <label className="inline-check">
+        <input type="checkbox" checked={eco.skill} disabled={!eco.enabled} onChange={(e) => onChange({ skill: e.target.checked })} />
+        Load the eco:coach skill (lean working habits; type /eco:coach for advice on the current chat)
+      </label>
     </div>
   )
 }

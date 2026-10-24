@@ -10,6 +10,7 @@ import './spend.css'
 import './ui2.css'
 import './dashboard.css'
 import './vault.css'
+import './skills.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

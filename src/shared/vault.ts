@@ -21,7 +21,19 @@ export function parseFrontmatter(text: string): { props: Record<string, string |
   if (!m) return { props: {}, body: text }
   const props: Record<string, string | string[]> = {}
   let listKey: string | null = null
-  for (const line of m[1].split(/\r?\n/)) {
+  const lines = m[1].split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    // Block text: "key: |" keeps line breaks, "key: >" folds them into spaces.
+    const block = /^([A-Za-z0-9_-]+):\s*([|>])[+-]?\s*$/.exec(line)
+    if (block) {
+      const body: string[] = []
+      while (i + 1 < lines.length && (/^\s+\S/.test(lines[i + 1]) || !lines[i + 1].trim())) body.push(lines[++i].trim())
+      while (body.length && !body[body.length - 1]) body.pop()
+      props[block[1]] = block[2] === '|' ? body.join('\n') : body.join(' ').replace(/\s+/g, ' ').trim()
+      listKey = null
+      continue
+    }
     const item = /^\s+-\s+(.*)$/.exec(line) ?? (listKey ? /^-\s+(.*)$/.exec(line) : null)
     if (item && listKey) {
       const cur = props[listKey]

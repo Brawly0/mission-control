@@ -196,6 +196,12 @@ Settings are restored afterwards.
 
 It removes what it created.
 
+`MC_SMOKE_SKILLS=1` checks the Skills page and Eco mode against your real skills and chats, for free:
+- Lists the skills by source and the skill uses from the index.
+- Turns Eco mode on for the tour (restored afterwards) and logs the launch flags.
+- Asks the coach about your largest recent chat through the hook server (a real `UserPromptSubmit` round trip), then again directly, which must return nothing new.
+- Screenshots the Skills page, eco:coach's detail and Settings → Spending.
+
 `MC_SMOKE_VAULT=<empty scratch folder>` writes a sample vault there (INDEX, linked notes, a decision, a briefing), shows it as a project for the tour, and checks link resolution, backlinks, the live watcher (a new file appears), the graph, and the empty "Build vault" screen and its dialog (cancelled). It screenshots each as `<MC_SMOKE>-vault-*.png`. Free: nothing is sent to Claude.
 
 `MC_SMOKE_PLAN=1` asks your Claude account for your plan limits (one small request, no model use), logs the windows and plan, checks the top-bar meter text and screenshots Home and Usage. Free. (Normal smoke runs don't poll.)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star } from 'lucide-react'
+import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
 import type { ClaudeStatus } from '@shared/types'
 import type { BudgetState, GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
@@ -254,6 +254,7 @@ export default function Sidebar(props: Props) {
     { view: 'notebook', icon: NotebookPen, label: 'Notebook', shortcut: 'goNotebook' },
     { view: 'templates', icon: FileStack, label: 'Templates', shortcut: 'templates' },
     { view: 'knowledge', icon: BookOpen, label: 'Knowledge', shortcut: 'goKnowledge' },
+    { view: 'skills', icon: Wand2, label: 'Skills', shortcut: 'goSkills' },
     { view: 'usage', icon: BarChart3, label: 'Usage & Insights', shortcut: 'goUsage' }
   ]
   const go = (v: View | 'templates') => (v === 'templates' ? props.onOpenTemplates() : props.onNavigate(v))

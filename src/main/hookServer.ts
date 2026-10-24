@@ -25,7 +25,13 @@ function hooksDir(): string {
   return join(app.getPath('userData'), 'hooks')
 }
 
-export async function startHookServer(onEvent: (e: HookEvent) => void): Promise<void> {
+/**
+ * Answers a prompt hook with text for Claude (Claude Code adds a UserPromptSubmit hook's
+ * additionalContext to the prompt). Used by eco mode's coach; null adds nothing.
+ */
+export type PromptCoach = (sessionId: string | undefined) => Promise<string | null>
+
+export async function startHookServer(onEvent: (e: HookEvent) => void, coach?: PromptCoach): Promise<void> {
   // Settings files from a previous run point at an old port and token.
   rmSync(hooksDir(), { recursive: true, force: true })
   mkdirSync(hooksDir(), { recursive: true })
@@ -42,14 +48,21 @@ export async function startHookServer(onEvent: (e: HookEvent) => void): Promise<
     req.on('data', (chunk) => {
       if (body.length < 1_000_000) body += chunk
     })
-    req.on('end', () => {
-      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
+    req.on('end', async () => {
       let input: any = {}
       try {
         input = JSON.parse(body)
       } catch {
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
         return
       }
+      let reply = '{}'
+      if (coach && input.hook_event_name === 'UserPromptSubmit') {
+        // The hook's curl gives up after 3 seconds; answer well before that, coached or not.
+        const text = await Promise.race([coach(input.session_id).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 1500))])
+        if (text) reply = JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } })
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(reply)
       onEvent({
         agentId,
         event: String(input.hook_event_name ?? ''),

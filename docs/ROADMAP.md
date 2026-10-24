@@ -101,6 +101,12 @@
 - [x] Vault browser in the Docs tab: tree, [[wikilinks]], properties, outline, links and backlinks, graph view, live updates, new note
 - [x] "Keep up to date": Claude refreshes the vault after each compaction (opt-in per project)
 
+## ✅ v0.15: Skills and Eco mode
+- [x] Skills page: every personal, plugin and project skill, what it does, how often you and Claude use it (from your chats), and what it costs in context; unused skills flagged
+- [x] eco:coach skill, shipped as a plugin loaded into Mission Control's chats (--plugin-dir), or copied into a project
+- [x] Eco mode (top bar, Ctrl+Alt+L): Sonnet by default, compact at 150k, optional lower effort, the eco:coach skill
+- [x] Long-chat coach: the hook server tells Claude once at 60% and 85% of the compaction size (and when the session limit is nearly used up) to suggest compacting or a fresh chat
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

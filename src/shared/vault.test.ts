@@ -9,6 +9,10 @@ describe('parseFrontmatter', () => {
     expect(props).toEqual({ title: 'Setup', tags: ['dev', 'build'], aliases: ['install', 'run'], generated: 'claude' })
     expect(body).toBe('# Setup\n')
   })
+  it('reads folded and literal block text, as skills use for descriptions', () => {
+    const { props } = parseFrontmatter('---\nname: x\ndescription: >\n  Use when the user\n  asks for x.\nnotes: |\n  line 1\n  line 2\nmodel: sonnet\n---\nbody')
+    expect(props).toEqual({ name: 'x', description: 'Use when the user asks for x.', notes: 'line 1\nline 2', model: 'sonnet' })
+  })
   it('leaves notes without frontmatter alone', () => {
     expect(parseFrontmatter('# Hi\n---\n')).toEqual({ props: {}, body: '# Hi\n---\n' })
   })
