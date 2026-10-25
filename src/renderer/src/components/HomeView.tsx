@@ -24,6 +24,7 @@ import type { ClaudeStatus, Project, RateLimitInfo, RecentSession, Task, UsageRe
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { windowLabel } from '@shared/planUsage'
+import { isScratchPath } from '@shared/projectLook'
 import { elapsed, timeAgo } from '../util'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
@@ -389,7 +390,7 @@ export default function HomeView(props: Props) {
                 <span className="muted small">Tasks created</span>
               </div>
               <div>
-                <span className="week-num">{week?.byProject.filter((p) => p.cost > 0 && !/[\\/](AppData[\\/]Local[\\/]Temp|scratch-workspaces)[\\/]/i.test(p.projectPath)).length ?? 0}</span>
+                <span className="week-num">{week?.byProject.filter((p) => p.cost > 0 && !isScratchPath(p.projectPath)).length ?? 0}</span>
                 <span className="muted small">Active projects</span>
               </div>
             </div>

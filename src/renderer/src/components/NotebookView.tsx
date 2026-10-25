@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
+import { Md } from './Md'
 import { Eye, FolderOpen, NotebookPen, Pencil, Pin, PinOff, Plus, Search, Trash2 } from 'lucide-react'
 import type { Note, Project } from '@shared/types'
 import { timeAgo } from '../util'
@@ -186,7 +186,7 @@ export default function NotebookView({ projects, visible, newNoteRequest, onOpen
             </div>
             {preview ? (
               <div className="markdown scroll nb-preview">
-                <Markdown>{draft.body || '*Nothing here yet.*'}</Markdown>
+                <Md>{draft.body || '*Nothing here yet.*'}</Md>
               </div>
             ) : (
               <textarea

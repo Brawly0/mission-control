@@ -3,6 +3,7 @@ import { BarChart3, Coins, Info, Leaf, MessagesSquare, RefreshCw, Scale, Sigma, 
 import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
 import { paceText, resetsIn, windowLabel } from '@shared/planUsage'
 import { ecoVerdict, formatShare, modelFamily, tokensPerPercent } from '@shared/planCost'
+import { isScratchPath } from '@shared/projectLook'
 import { PlanShare, usePlanRate } from '../planRate'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
 import { Avatar, EmptyState, IconButton, Segmented } from './ui'
@@ -134,7 +135,6 @@ function DailyChart({ days }: { days: (UsageTotals & { day: string })[] }) {
 }
 
 const TEMP = '(temp)'
-const TEMP_PATH = /[\\/](AppData[\\/]Local[\\/]Temp|scratch-workspaces)[\\/]/i
 
 function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; avatar?: string; total: UsageTotals; max: number; onClick?: () => void; sub?: string }) {
   const pct = max > 0 ? Math.max(1.5, (total.cost / max) * 100) : 0
@@ -339,7 +339,7 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
     const rows: UsageReport['byProject'] = []
     let temp: UsageReport['byProject'][number] | null = null
     for (const r of report?.byProject ?? []) {
-      if (!TEMP_PATH.test(r.projectPath)) {
+      if (!isScratchPath(r.projectPath)) {
         rows.push(r)
         continue
       }
@@ -352,7 +352,22 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
     return temp ? [...rows, temp] : rows
   }, [report])
   const maxProject = Math.max(0, ...projectRows.map((p) => p.cost))
-  const maxModel = Math.max(0, ...(report?.byModel.map((m) => m.cost) ?? []))
+  // Dated and undated IDs of one model ("claude-haiku-4-5", "claude-haiku-4-5-20251001") share a row.
+  const modelRows = useMemo(() => {
+    const rows = new Map<string, UsageReport['byModel'][number]>()
+    for (const m of report?.byModel ?? []) {
+      const model = modelFamily(m.model)
+      const row = rows.get(model)
+      if (!row) {
+        rows.set(model, { ...m, model })
+        continue
+      }
+      const t = row as unknown as Record<string, number>
+      for (const [k, v] of Object.entries(m)) if (typeof v === 'number') t[k] = (t[k] ?? 0) + v
+    }
+    return [...rows.values()].sort((a, b) => b.cost - a.cost)
+  }, [report])
+  const maxModel = Math.max(0, ...modelRows.map((m) => m.cost))
   const maxSession = Math.max(0, ...(report?.topSessions.map((s) => s.cost) ?? []))
 
   return (
@@ -468,7 +483,7 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
                 <h2>By model</h2>
                 <span className="muted small">cost · tokens</span>
               </div>
-              {report.byModel.map((m) => (
+              {modelRows.map((m) => (
                 <BarRow key={m.model} label={m.model} total={m} max={maxModel} />
               ))}
             </section>

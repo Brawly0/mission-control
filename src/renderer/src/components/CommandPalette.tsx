@@ -37,10 +37,13 @@ export default function CommandPalette({ commands, onClose }: { commands: Comman
   const listRef = useRef<HTMLDivElement>(null)
 
   const results = useMemo(() => {
+    // Without a query, keep each group together (in order of first appearance) so no heading shows twice.
+    const groupOrder = new Map<string, number>()
+    for (const c of commands) if (!groupOrder.has(c.group)) groupOrder.set(c.group, groupOrder.size)
     return commands
       .map((c) => ({ c, s: score(query, `${c.title} ${c.keywords ?? ''} ${c.group}`) }))
       .filter((r) => r.s > 0)
-      .sort((a, b) => (query ? b.s - a.s : 0))
+      .sort((a, b) => (query ? b.s - a.s : groupOrder.get(a.c.group)! - groupOrder.get(b.c.group)!))
       .slice(0, 60)
       .map((r) => r.c)
   }, [commands, query])

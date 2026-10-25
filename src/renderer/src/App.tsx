@@ -571,7 +571,7 @@ export default function App() {
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
     if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), closeAgent, runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current }
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), closeAgent, runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current, openSession: (projectPath: string, sessionId: string) => openSessionRef.current(projectPath, sessionId) }
   }, [launch, refreshProjects, startTask, closeAgent])
 
   const renameAgent = useCallback((id: string, title: string) => {

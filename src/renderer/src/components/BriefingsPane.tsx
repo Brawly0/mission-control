@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import Markdown from 'react-markdown'
+import { Md } from './Md'
 import { FileCheck2, FileText, Play, Save } from 'lucide-react'
 import type { Briefing } from '@shared/types'
 import { cleanBriefing } from '@shared/projectLook'
@@ -104,7 +104,7 @@ export function BriefingDetail({ state, onStartFromBriefing }: { state: State; o
           ) : (
             <div className="markdown scroll briefing-text">
               <h1>Session briefing: {current.title || 'Untitled chat'}</h1>
-              <Markdown>{cleanBriefing(current.text)}</Markdown>
+              <Md>{cleanBriefing(current.text)}</Md>
             </div>
           )}
         </div>

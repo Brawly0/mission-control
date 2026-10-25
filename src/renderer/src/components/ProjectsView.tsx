@@ -107,7 +107,9 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
                       {p.pinned && <Star size={13} className="pin-star" fill="currentColor" />}
                       {p.meta.status && <span className={`status-chip status-${p.meta.status}`}>{p.meta.status}</span>}
                     </span>
-                    {layout === 'grid' && <span className="muted small clamp-2">{p.description || p.folderName}</span>}
+                    {layout === 'grid' && (p.description || p.folderName.toLowerCase() !== p.name.toLowerCase()) && (
+                      <span className="muted small clamp-2">{p.description || p.folderName}</span>
+                    )}
                     <span className="muted small big-project-meta">
                       {p.sessionCount} {p.sessionCount === 1 ? 'chat' : 'chats'} • {n} {n === 1 ? 'task' : 'tasks'}
                       {g?.isRepo && ` • ${g.branch}${g.dirty ? ` (${g.dirty} changed)` : ''}`}

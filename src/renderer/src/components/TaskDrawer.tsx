@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import Markdown from 'react-markdown'
+import { Md } from './Md'
 import {
   AlertCircle,
   CheckCircle2,
@@ -297,7 +297,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
             <section>
               <h3>Result</h3>
               <div className="markdown result-view">
-                <Markdown>{run.result}</Markdown>
+                <Md>{run.result}</Md>
               </div>
               {run.commit && task.worktree && (
                 <p className="muted small commit-note">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import Markdown from 'react-markdown'
+import { Md } from './Md'
 import { Copy, Play, Sparkles } from 'lucide-react'
 import type { SessionDetail, SessionSummary } from '@shared/types'
 import { useToast } from '../toast'
@@ -87,7 +87,7 @@ export default function SessionViewer({ session, onResume, actions, onTitleChang
               )}
             </div>
             <div className="message-text">
-              {m.role === 'assistant' ? <Markdown>{m.text}</Markdown> : <div className="user-text">{m.text}</div>}
+              {m.role === 'assistant' ? <Md>{m.text}</Md> : <div className="user-text">{m.text}</div>}
             </div>
           </div>
         ))}

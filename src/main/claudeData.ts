@@ -8,6 +8,7 @@ import {
   encodeProjectKey,
   folderLabel,
   guessIcon,
+  isScratchPath,
   pickProject,
   prettyWorktreeName,
   projectRootOf,
@@ -335,7 +336,7 @@ export async function listProjects(): Promise<Project[]> {
     lastActivity: 0,
     pinned: pinned.has(normalizePath(path)),
     manual,
-    worktree: /[\\/]\.claude[\\/]worktrees[\\/]|[\\/]scratch-workspaces[\\/]|[\\/]AppData[\\/]Local[\\/]Temp[\\/]/i.test(path),
+    worktree: /[\\/]\.claude[\\/]worktrees[\\/]/i.test(path) || isScratchPath(path),
     meta: metaFor(store, path)
   })
 

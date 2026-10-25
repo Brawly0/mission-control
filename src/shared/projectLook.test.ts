@@ -7,6 +7,7 @@ import {
   briefingMarkdown,
   cleanBriefing,
   isInside,
+  isScratchPath,
   pickProject,
   prettyWorktreeName,
   projectRootOf,
@@ -80,6 +81,13 @@ describe('worktrees', () => {
   it('makes worktree names readable', () => {
     expect(prettyWorktreeName('semester-schedule-planning-2b8af2')).toBe('semester schedule planning')
     expect(prettyWorktreeName('agent-3414')).toBe('agent')
+  })
+  it('treats temp and scratch folders as scratch, including the Temp folder itself', () => {
+    expect(isScratchPath('C:\\Users\\me\\AppData\\Local\\Temp')).toBe(true)
+    expect(isScratchPath('C:\\Users\\me\\AppData\\Local\\Temp\\claude\\x\\scratchpad')).toBe(true)
+    expect(isScratchPath('C:\\Users\\me\\AppData\\Roaming\\Claude\\scratch-workspaces\\a\\b')).toBe(true)
+    expect(isScratchPath('C:\\Users\\me\\Desktop\\Temperature')).toBe(false)
+    expect(isScratchPath('C:\\Users\\me\\AppData\\Local\\Temporary')).toBe(false)
   })
 })
 

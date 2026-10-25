@@ -984,6 +984,14 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
       await js(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent.includes(${JSON.stringify(tab)}))?.click()`)
       await shot(`project-${tab.toLowerCase()}`, 1200)
     }
+    // MC_SMOKE_CHAT=<session id>: also shoot that chat in the viewer (e.g. one with a Markdown table).
+    const chat = process.env.MC_SMOKE_CHAT
+    if (chat) {
+      await js(`window.__mcSmoke.openSession(${JSON.stringify(project.path)}, ${JSON.stringify(chat)})`)
+      await sleep(2500)
+      log('chat tables:', await js(`(() => { const t = document.querySelectorAll('.message-text table'); t[0]?.scrollIntoView({ block: 'center' }); return t.length })()`))
+      await shot('chat')
+    }
   }
   for (const view of ['projects', 'notebook', 'knowledge', 'tasks', 'agents', 'usage']) {
     await js(`window.__mcSmoke.setView('${view}')`)

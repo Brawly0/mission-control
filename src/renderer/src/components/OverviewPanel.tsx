@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
+import { Md } from './Md'
 import { Check, Circle, Coins, Eye, FileText, GitBranch, Pause, Pencil, Plus, Workflow, X } from 'lucide-react'
 import type { BudgetState, Project, ProjectMeta, ProjectStatus, UsageTotals } from '@shared/types'
 import { formatCost, formatTokens } from '../util'
@@ -303,7 +303,7 @@ export default function OverviewPanel({ project, groups, usage, budget, isRepo, 
           />
         ) : (
           <div className="markdown notes-view" onDoubleClick={() => setEditingNotes(true)}>
-            <Markdown>{meta.notes}</Markdown>
+            <Md>{meta.notes}</Md>
           </div>
         )}
       </section>

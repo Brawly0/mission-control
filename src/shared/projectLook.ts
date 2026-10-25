@@ -194,6 +194,13 @@ export function windowsPath(raw: string): string {
 
 /** Folders that hold projects rather than being one, when they have no project files of their own. */
 const CONTAINER_NAMES = /^(desktop|documents|downloads|onedrive.*|projects?|repos|source|code|dev|github|workspaces?|work)$/i
+/** Temp folders and Claude Desktop's scratch space, including the Temp folder itself. */
+const SCRATCH = /[\\/](AppData[\\/]Local[\\/]Temp|scratch-workspaces)([\\/]|$)/i
+/** True for a throwaway folder: chats started there are hidden as scratch and left out of project counts. */
+export function isScratchPath(path: string): boolean {
+  return SCRATCH.test(path)
+}
+
 /** Folders whose files never make a chat "about" a project: Claude's own data, temp, Windows. */
 const SKIP = /^[a-z]:\\(windows|program files|program files \(x86\)|programdata)(\\|$)|\\appdata(\\|$)|\\\.claude(\\|$)|\\\$recycle\.bin(\\|$)/i
 

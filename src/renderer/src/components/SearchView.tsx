@@ -15,9 +15,13 @@ interface Props {
 
 type Role = 'all' | 'user' | 'assistant'
 
-/** Renders a snippet whose matches are wrapped in \u0001 … \u0002. */
+/** Renders a snippet whose matches are wrapped in \u0001 … \u0002, without Markdown's bold, code and heading marks. */
 function Snippet({ text }: { text: string }) {
-  const parts = text.replace(/\s+/g, ' ').split(/(\u0001[^\u0002]*\u0002)/)
+  const plain = text
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/(^|\n)#{1,6} /g, '$1')
+  const parts = plain.replace(/\s+/g, ' ').split(/(\u0001[^\u0002]*\u0002)/)
   return (
     <>
       {parts.map((p, i) =>
