@@ -1,0 +1,345 @@
+import { app, dialog, ipcMain, shell } from 'electron'
+import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { promises as fs } from 'node:fs'
+import { dirname } from 'node:path'
+import type {
+  AppSettings,
+  NewTask,
+  Schedule,
+  TemplateInput,
+  ProjectMeta,
+  Note,
+  SavedAgent,
+  SearchHit,
+  Task,
+  TaskColumn,
+  TaskRun,
+  TerminalSpec,
+  UiState,
+  UsageReport,
+  Workspace,
+  WorktreeInfo
+} from '../shared/types'
+import {
+  createTask,
+  deleteTask,
+  followUpTask,
+  rerunChecks,
+  getRateLimit,
+  listTasks,
+  pumpQueue,
+  queueStatus,
+  setTaskRun,
+  startTask,
+  stopTask,
+  updateTask
+} from './tasks'
+import { refreshTray, setHotkey } from './tray'
+import { deleteTemplate, listTemplates, runTemplate, saveTemplate } from './templates'
+import { checkForUpdates, installUpdate, setAutoCheck, updateNow, updateStatus } from './updater'
+import { getSession, listProjects, listSessions, normalizePath, recentSessions, renameSession, sessionExists, setProjectMeta, moveSession, movedChatList } from './claudeData'
+import { indexStatus, queryIndex, reindex } from './indexer'
+import { commitAll, createWorktree, getChanges, gitInfoMany, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
+import { allBudgets } from './budget'
+import { removeHookSettings } from './hookServer'
+import { agentEnv, killTerminal, killTerminalsIn, resizeTerminal, writeTerminal, whichSync } from './pty'
+import { loadStore, updateStore } from './store'
+import { worktreeParent } from '../shared/projectLook'
+import { contextUsage, startupReport } from './spend'
+import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing } from './briefings'
+import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
+import { refreshPlanUsage } from './planUsage'
+import { planRate } from './planCost'
+import { buildDigest } from './digest'
+import { nameChats, sessionRecap, summarizeChat } from './recap'
+import { buildVault, vaultNotes, watchVault } from './vault'
+import { addEcoSkillToProject, listSkills } from './skills'
+import { ecoPluginDir } from './eco'
+import { listDocs } from './docs'
+import { launchTerminal } from './terminals'
+import { getMainWindow, isQuitting, sendToWindow, setQuitting } from './window'
+
+/** Live counts pushed by the UI, for the tray tooltip and menu. */
+let summary = { agents: 0, attention: 0 }
+export const uiSummary = (): { agents: number; attention: number } => summary
+
+/** Every handler behind the renderer's `window.mc` API (see MissionControlApi in shared/types.ts). */
+export function registerIpc(): void {
+  ipcMain.handle('projects:list', () => listProjects())
+  ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
+  ipcMain.handle('sessions:move', (_e, id: string, path: string) => moveSession(id, path))
+  ipcMain.handle('spend:context', (_e, ids: string[]) => contextUsage(ids))
+  ipcMain.on('ui:zoom', (e, factor: number) => e.sender.setZoomFactor(Math.min(1.6, Math.max(0.7, Number(factor) || 1))))
+  ipcMain.handle('spend:startup', async (_e, path: string, keys: string[]) => {
+    const first = await queryIndex<{ tokens: number; model: string }[]>('firstReplies', keys).catch(() => [])
+    return startupReport(path, first)
+  })
+  ipcMain.handle('sessions:rename', (_e, id: string, title: string) => renameSession(id, title))
+  ipcMain.handle('sessions:recap', (_e, id: string) => sessionRecap(id))
+  ipcMain.handle('sessions:summarize', (_e, id: string) => summarizeChat(id))
+  ipcMain.handle('sessions:name', (_e, ids: string[]) => nameChats(ids))
+  ipcMain.handle('sessions:get', (_e, key: string, id: string) => getSession(key, id))
+
+  ipcMain.handle('projects:add', async () => {
+    const result = await dialog.showOpenDialog(getMainWindow()!, { properties: ['openDirectory'] })
+    if (result.canceled || !result.filePaths[0]) return null
+    const path = result.filePaths[0]
+    updateStore((s) => {
+      if (!s.manualProjects.some((p) => normalizePath(p) === normalizePath(path))) s.manualProjects.push(path)
+    })
+    return path
+  })
+  ipcMain.handle('projects:remove', (_e, path: string) => {
+    updateStore((s) => {
+      s.manualProjects = s.manualProjects.filter((p) => normalizePath(p) !== normalizePath(path))
+    })
+  })
+  ipcMain.handle('projects:togglePin', (_e, path: string) => {
+    updateStore((s) => {
+      const norm = normalizePath(path)
+      s.pinned = s.pinned.some((p) => normalizePath(p) === norm)
+        ? s.pinned.filter((p) => normalizePath(p) !== norm)
+        : [...s.pinned, path]
+    })
+  })
+
+  ipcMain.handle('docs:list', (_e, projectPath: string) => listDocs(projectPath))
+  ipcMain.handle('docs:read', (_e, file: string) => fs.readFile(file, 'utf8'))
+  ipcMain.handle('docs:write', async (_e, file: string, content: string) => {
+    await fs.mkdir(dirname(file), { recursive: true })
+    await fs.writeFile(file, content, 'utf8')
+    invalidateKnowledge()
+  })
+  ipcMain.handle('dialog:folder', async (_e, title?: string) => {
+    const result = await dialog.showOpenDialog(getMainWindow()!, { title, properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  ipcMain.handle('projects:create', (_e, opts: { parent: string; name: string; claudeMd: boolean; git: boolean }) => createProject(opts))
+  ipcMain.handle('chat:quickFolder', () => quickChatFolder())
+  ipcMain.handle('notes:list', () => listNotes())
+  ipcMain.handle('notes:save', (_e, note: Partial<Note>) => saveNote(note))
+  ipcMain.handle('notes:delete', (_e, id: string) => deleteNote(id))
+  ipcMain.handle('skills:list', async () => listSkills((await listProjects()).map((p) => p.path), ecoPluginDir()))
+  ipcMain.handle('skills:usage', (_e, since: number) => queryIndex('skillUsage', since))
+  ipcMain.handle('skills:addEco', (_e, path: string) => addEcoSkillToProject(path))
+  ipcMain.handle('vault:notes', (_e, path: string) => vaultNotes(path))
+  ipcMain.handle('vault:build', (_e, path: string, name: string, mode: 'build' | 'update', model?: string) => buildVault(path, name, mode, model))
+  ipcMain.on('vault:watch', (_e, path: string | null) => watchVault(path, (p) => sendToWindow('vault:changed', p)))
+  ipcMain.handle('knowledge:list', () => knowledgeDocs(listDocs))
+  ipcMain.handle('knowledge:search', (_e, q: string) => searchKnowledge(q, listDocs))
+  ipcMain.handle('claude:status', (_e, force?: boolean) => claudeStatus(!!force))
+  ipcMain.handle('user:name', () => userName())
+  ipcMain.handle('briefings:list', () => listBriefings())
+  ipcMain.handle('briefings:save', (_e, id: string, at: number) => saveBriefing(id, at))
+  ipcMain.handle('briefings:latest', (_e, path: string) => latestBriefing(path))
+  ipcMain.handle('briefings:hasInstructions', (_e, path: string) => hasSummaryInstructions(path))
+  ipcMain.handle('briefings:addInstructions', (_e, path: string) => addSummaryInstructions(path))
+  ipcMain.handle('folders:common', () => ({ desktop: app.getPath('desktop'), documents: app.getPath('documents'), home: app.getPath('home') }))
+
+  ipcMain.handle('open:explorer', (_e, path: string) => shell.openPath(path))
+  ipcMain.handle('open:vscode', (_e, path: string) => {
+    spawn('code', [path], { shell: true, detached: true, stdio: 'ignore' }).unref()
+  })
+  ipcMain.handle('open:terminal', (_e, cwd: string, args: string[]) => {
+    // Opens Windows Terminal in the folder running claude, outside the app.
+    const wt = whichSync('wt')
+    const claudeArgs = ['claude', ...args]
+    if (wt) {
+      spawn(wt, ['-d', cwd, ...claudeArgs], { detached: true, stdio: 'ignore', env: agentEnv() }).unref()
+    } else {
+      spawn('cmd.exe', ['/c', 'start', 'powershell', '-NoExit', '-Command', claudeArgs.join(' ')], {
+        cwd,
+        detached: true,
+        env: agentEnv(),
+        stdio: 'ignore'
+      }).unref()
+    }
+  })
+
+  ipcMain.handle('pty:spawn', (_e, spec: TerminalSpec) => launchTerminal(spec))
+  ipcMain.on('pty:write', (_e, id: string, data: string) => writeTerminal(id, data))
+  ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => resizeTerminal(id, cols, rows))
+  ipcMain.on('pty:kill', (_e, id: string) => {
+    killTerminal(id)
+    removeHookSettings(id)
+  })
+
+  ipcMain.on('agents:save', (_e, agents: SavedAgent[]) => {
+    // While quitting, terminals exit one by one; don't let that wipe the list we want to restore.
+    if (isQuitting() || process.env.MC_SMOKE) return
+    updateStore((s) => {
+      s.savedAgents = agents
+    })
+  })
+  ipcMain.handle('agents:loadSaved', () => loadStore().savedAgents)
+  ipcMain.handle('workspaces:list', () => loadStore().workspaces)
+  ipcMain.handle('workspaces:save', (_e, ws: Omit<Workspace, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
+    const now = Date.now()
+    return updateStore((s) => {
+      const old = ws.id ? s.workspaces.find((w) => w.id === ws.id) : undefined
+      const saved: Workspace = { ...ws, id: old?.id ?? randomUUID(), createdAt: old?.createdAt ?? now, updatedAt: now }
+      s.workspaces = [saved, ...s.workspaces.filter((w) => w.id !== saved.id)]
+    }).workspaces
+  })
+  ipcMain.handle('workspaces:delete', (_e, id: string) =>
+    updateStore((s) => {
+      s.workspaces = s.workspaces.filter((w) => w.id !== id)
+    }).workspaces
+  )
+  ipcMain.handle('sessions:exists', (_e, id: string) => sessionExists(id))
+  ipcMain.handle('sessions:recent', (_e, limit: number) => recentSessions(limit))
+
+  ipcMain.handle('git:infoMany', (_e, paths: string[]) => gitInfoMany(paths))
+  ipcMain.handle('git:createWorktree', (_e, projectPath: string) => createWorktree(projectPath))
+  ipcMain.handle('git:changes', (_e, path: string, base?: string) => getChanges(path, base))
+  ipcMain.handle('git:commitAll', (_e, path: string, message: string) => commitAll(path, message))
+  ipcMain.handle('git:mergeWorktree', (_e, wt: WorktreeInfo) => mergeWorktree(wt))
+  ipcMain.handle('git:removeWorktree', async (_e, wt: WorktreeInfo) => {
+    // Deleting work is permanent, so the confirmation lives here rather than in the UI.
+    const { response } = await dialog.showMessageBox(getMainWindow()!, {
+      type: 'warning',
+      buttons: ['Delete worktree', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Discard worktree',
+      message: `Delete the worktree and branch "${wt.branch}"?`,
+      detail: `${wt.path}\n\nAgents running in it are stopped. Any changes in it that were not merged are lost for good.`
+    })
+    if (response !== 0) return false
+    await killTerminalsIn(wt.path)
+    await removeWorktree(wt)
+    return true
+  })
+
+  ipcMain.handle('projects:setMeta', (_e, path: string, patch: Partial<ProjectMeta>) => setProjectMeta(path, patch))
+  // Usage from a project's worktrees counts toward the project, matching how the sidebar lists chats.
+  const foldWorktrees = (rows: UsageReport['byProject']): UsageReport['byProject'] => {
+    const out = new Map<string, UsageReport['byProject'][number]>()
+    for (const r of rows) {
+      const path = worktreeParent(r.projectPath)?.parent ?? r.projectPath
+      const id = normalizePath(path || r.projectKey)
+      const cur = out.get(id)
+      if (!cur) {
+        out.set(id, { ...r, projectPath: path })
+        continue
+      }
+      const sum = cur as unknown as Record<string, unknown>
+      for (const [k, v] of Object.entries(r)) if (typeof v === 'number') sum[k] = ((sum[k] as number) ?? 0) + v
+    }
+    return [...out.values()].sort((a, b) => b.cost - a.cost)
+  }
+  // Chat titles you set in Mission Control, and names Claude gave chats here, live in the store, not the index.
+  const ownTitles = <T extends { sessionId: string; title: string }>(rows: T[]): T[] => {
+    const { chatTitles, chatAiNames } = loadStore()
+    return rows.map((r) => {
+      const t = chatTitles[r.sessionId] || chatAiNames[r.sessionId]
+      return t ? { ...r, title: t } : r
+    })
+  }
+  ipcMain.handle('index:search', async (_e, query: string, opts?: object) =>
+    ownTitles((await queryIndex('search', query, opts ?? {})) as SearchHit[])
+  )
+  ipcMain.handle('index:usage', async (_e, since: number) => {
+    const report = (await queryIndex('usageReport', since)) as UsageReport
+    // Chats shown under another project (started from C:\, or moved by you) count toward that project.
+    const moved = movedChatList()
+    let byProject = report.byProject
+    if (moved.length) {
+      const totals = (await queryIndex('sessionTotals', since, moved.map((m) => m.id))) as (UsageReport['byProject'][number] & { sessionId: string })[]
+      const target = new Map(moved.map((m) => [m.id, m.path]))
+      const shift = (row: UsageReport['byProject'][number], t: Record<string, unknown>, sign: number) => {
+        const r = row as unknown as Record<string, unknown>
+        for (const [k, v] of Object.entries(t)) if (typeof v === 'number' && typeof r[k] === 'number') r[k] = (r[k] as number) + sign * v
+      }
+      byProject = byProject.map((r) => ({ ...r }))
+      for (const t of totals) {
+        const from = byProject.find((r) => r.projectKey === t.projectKey)
+        const { sessionId, projectKey: _k, projectPath: _p, ...nums } = t
+        if (from) shift(from, nums, -1)
+        byProject.push({ ...(nums as UsageReport['byProject'][number]), projectKey: '', projectPath: target.get(sessionId) ?? '', sessions: 1 })
+      }
+      byProject = byProject.filter((r) => r.cost > 0.0001 || (r.sessions ?? 0) > 0)
+    }
+    return { ...report, byProject: foldWorktrees(byProject), topSessions: ownTitles(report.topSessions) }
+  })
+  ipcMain.handle('index:sessionUsage', (_e, key: string | string[]) => queryIndex('sessionUsage', key))
+  ipcMain.handle('index:status', () => indexStatus())
+  ipcMain.on('index:run', () => reindex())
+
+  ipcMain.handle('tasks:list', () => listTasks())
+  ipcMain.handle('tasks:create', (_e, t: NewTask) => createTask(t))
+  ipcMain.handle('tasks:update', (_e, id: string, patch: Partial<Task>) => updateTask(id, patch))
+  ipcMain.handle('tasks:delete', (_e, id: string) => deleteTask(id))
+  ipcMain.handle('tasks:start', (_e, id: string) => startTask(id))
+  ipcMain.handle('tasks:stop', (_e, id: string) => stopTask(id))
+  ipcMain.handle('tasks:setRun', (_e, id: string, patch: Partial<TaskRun>, column?: TaskColumn) => setTaskRun(id, patch, column))
+  ipcMain.handle('ratelimit:get', () => getRateLimit())
+  ipcMain.handle('plan:rate', (_e, force?: boolean) => planRate(!!force))
+  ipcMain.handle('digest:get', (_e, which: 'yesterday' | 'today') => buildDigest(which))
+  ipcMain.handle('ratelimit:refresh', async () => {
+    await refreshPlanUsage(true)
+    return getRateLimit()
+  })
+
+  ipcMain.handle('settings:get', () => loadStore().settings)
+  ipcMain.handle('settings:set', (_e, patch: Partial<AppSettings>) => {
+    const next = { ...loadStore().settings, ...patch }
+    const error = patch.hotkey !== undefined ? setHotkey(next.hotkey) : null
+    if (error) {
+      // Keep the old, working shortcut.
+      setHotkey(loadStore().settings.hotkey)
+      return error
+    }
+    updateStore((s) => {
+      s.settings = next
+    })
+    if (patch.autoUpdate !== undefined) setAutoCheck(next.autoUpdate)
+    if (patch.queueEnabled !== undefined || patch.queueParallel !== undefined || patch.queuePauseAtPercent !== undefined) void pumpQueue()
+    return null
+  })
+
+  ipcMain.handle('queue:status', () => queueStatus())
+  ipcMain.handle('tasks:followUp', (_e, id: string, prompt: string) => followUpTask(id, prompt))
+  ipcMain.handle('tasks:rerunChecks', (_e, id: string) => rerunChecks(id))
+  ipcMain.handle('git:previewInit', (_e, folder: string) => previewGitInit(folder))
+  ipcMain.handle('git:init', (_e, folder: string) => initGit(folder))
+  ipcMain.handle('budgets:all', () => allBudgets())
+  ipcMain.handle('templates:list', () => listTemplates())
+  ipcMain.handle('templates:save', (_e, t: TemplateInput, id?: string) => saveTemplate(t, id))
+  ipcMain.handle('templates:delete', (_e, id: string) => deleteTemplate(id))
+  ipcMain.handle('templates:run', (_e, id: string, then: Schedule['then'], projectPath?: string) => runTemplate(id, then, projectPath))
+
+  ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('update:status', () => updateStatus())
+  ipcMain.handle('update:check', () => checkForUpdates())
+  ipcMain.on('update:install', () => {
+    setQuitting()
+    installUpdate()
+  })
+  ipcMain.on('update:now', () =>
+    updateNow(() => {
+      setQuitting()
+    })
+  )
+  ipcMain.on('status:summary', (_e, s: { agents: number; attention: number }) => {
+    summary = s
+    refreshTray()
+  })
+
+  ipcMain.handle('ui:get', () => loadStore().ui)
+  ipcMain.on('ui:set', (_e, patch: Partial<UiState>) => {
+    if (process.env.MC_SMOKE) return
+    updateStore((s) => {
+      s.ui = { ...s.ui, ...patch }
+    })
+  })
+
+  ipcMain.on('window:focus', () => {
+    const win = getMainWindow()
+    if (!win) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+  })
+}
