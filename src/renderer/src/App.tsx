@@ -1,39 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  BarChart3,
-  Bell,
-  BookOpen,
-  Bot,
-  Download,
-  FileStack,
-  FolderOpen,
-  FolderPlus,
-  GitFork,
-  History,
-  House,
-  Inbox,
-  KanbanSquare,
-  Keyboard,
-  LayoutGrid,
-  Leaf,
-  ListPlus,
-  MessageSquareDashed,
-  NotebookPen,
-  PanelLeft,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Rows2,
-  Send,
-  Settings,
-  SunMoon,
-  Terminal,
-  TextSearch,
-  Wand2,
-  X,
-  ZoomIn,
-  ZoomOut
-} from 'lucide-react'
+import { RotateCcw, X } from 'lucide-react'
 import type {
   GitInfo,
   IndexStatus,
@@ -42,17 +8,12 @@ import type {
   QueueStatus,
   RateLimitInfo,
   RecentSession,
-  SavedAgent,
   SearchHit,
   SessionSummary,
-  Task,
   TaskTemplate,
   UpdateState,
-  AppSettings,
   BudgetState,
-  ContextUsage,
-  PlanRate,
-  Workspace
+  PlanRate
 } from '@shared/types'
 import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
@@ -68,9 +29,7 @@ import AgentsView from './components/AgentsView'
 import StatusBar from './components/StatusBar'
 import CommandPalette, { type Command } from './components/CommandPalette'
 import { Button } from './components/ui'
-import type { Agent, AgentLayout, LaunchOptions, View } from './types'
-import { onActivity } from './terminalBus'
-import { statusFromHook } from './agentStatus'
+import type { AgentLayout, View } from './types'
 import { useToast } from './toast'
 import { errorMessage } from './util'
 import { LookContext, makeLookUp } from './projectLook'
@@ -87,16 +46,13 @@ import BroadcastDialog from './components/BroadcastDialog'
 import WorkspacesDialog from './components/WorkspacesDialog'
 import { inboxCount, inboxItems, visibleInbox, type InboxItem } from './inbox'
 import { PlanRateContext } from './planRate'
-import { sidebarOrder } from './components/Sidebar'
-import { briefingFileName, briefingPrompt, worktreeParent, writeBriefingPrompt } from '@shared/projectLook'
-
-function loadNotifyPref(): boolean {
-  try {
-    return localStorage.getItem('mc.notify') !== 'off'
-  } catch {
-    return true
-  }
-}
+import { paletteCommands } from './app/commands'
+import { runShortcutAction } from './app/shortcutActions'
+import { useAppSettings } from './app/useAppSettings'
+import { useAgents } from './app/useAgents'
+import { useTasks } from './app/useTasks'
+import { useWorkspaces } from './app/useWorkspaces'
+import { briefingPrompt, worktreeParent } from '@shared/projectLook'
 
 export default function App() {
   const toast = useToast()
@@ -106,19 +62,12 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [view, setView] = useState<View>('home')
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [activeAgent, setActiveAgent] = useState<string | null>(null)
   const [layout, setLayout] = useState<AgentLayout>('tabs')
   const [showWorktrees, setShowWorktrees] = useState(false)
-  const [lastOutput, setLastOutput] = useState<Record<string, number>>({})
-  const [notify, setNotify] = useState(loadNotifyPref)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [recentForPalette, setRecentForPalette] = useState<RecentSession[]>([])
-  /** Agents from the last run that haven't been restored or dismissed yet; null until loaded. */
-  const [pendingRestore, setPendingRestore] = useState<SavedAgent[] | null>(null)
   const [uiLoaded, setUiLoaded] = useState(false)
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
   const [composerOpen, setComposerOpen] = useState(false)
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [taskFilter, setTaskFilter] = useState('')
@@ -132,27 +81,7 @@ export default function App() {
   const [update, setUpdate] = useState<UpdateState>({ state: 'idle' })
   const [budgets, setBudgets] = useState<Record<string, BudgetState>>({})
   const [planRate, setPlanRate] = useState<PlanRate | null>(null)
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [workspacesOpen, setWorkspacesOpen] = useState(false)
   const [broadcastOpen, setBroadcastOpen] = useState(false)
-  const [agentCols, setAgentColsState] = useState<string>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('mc.agentCols') ?? '"auto"')
-    } catch {
-      return 'auto'
-    }
-  })
-  const setAgentCols = (cols: string) => {
-    setAgentColsState(cols)
-    try {
-      localStorage.setItem('mc.agentCols', JSON.stringify(cols))
-    } catch {
-      /* just won't be remembered */
-    }
-  }
-  useEffect(() => {
-    window.mc.listWorkspaces().then(setWorkspaces).catch(() => undefined)
-  }, [])
   const [inboxDismissed, setInboxDismissed] = useState<string[]>([])
   const [showDismissed, setShowDismissed] = useState(false)
 
@@ -171,9 +100,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    window.mc.listTasks().then(setTasks)
     window.mc.getRateLimit().then(setRateLimit)
-    const offTasks = window.mc.onTasksChanged(setTasks)
     const offRate = window.mc.onRateLimit(setRateLimit)
     // The tray menu and notifications can send the UI somewhere.
     const offNav = window.mc.onNavigate((target) => {
@@ -183,7 +110,6 @@ export default function App() {
       if (target.taskId) setOpenTaskId(target.taskId)
     })
     return () => {
-      offTasks()
       offRate()
       offNav()
     }
@@ -194,43 +120,8 @@ export default function App() {
     window.mc.indexStatus().then(setIndexStatus)
     return window.mc.onIndexStatus(setIndexStatus)
   }, [])
-  const [, setTick] = useState(0)
-
-  // Hook events and timers run outside React's render cycle; refs give them current values.
-  const agentsRef = useRef(agents)
-  // How big each live chat is (by session id), refreshed every few seconds.
-  const [contexts, setContexts] = useState<Record<string, ContextUsage>>({})
-  const warnedContext = useRef(new Set<string>())
-  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
+  const { appSettings, saveSettings, theme } = useAppSettings(settingsOpen)
   const warnAt = appSettings?.contextWarnTokens ?? 200_000
-  const reloadSettings = useCallback(() => window.mc.getSettings().then(setAppSettings).catch(() => undefined), [])
-  useEffect(() => {
-    void reloadSettings()
-  }, [settingsOpen, reloadSettings])
-  const saveSettings = useCallback(
-    async (patch: Partial<AppSettings>) => {
-      setAppSettings((cur) => (cur ? { ...cur, ...patch } : cur))
-      await window.mc.setSettings(patch)
-      await reloadSettings()
-    },
-    [reloadSettings]
-  )
-
-  // Theme: "system" follows Windows' light/dark setting.
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const on = () => setSystemDark(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-  const theme = appSettings?.theme === 'system' ? (systemDark ? 'dark' : 'light') : (appSettings?.theme ?? 'dark')
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-  }, [theme])
-  useEffect(() => {
-    if (appSettings) window.mc.setZoom(appSettings.uiZoom || 1)
-  }, [appSettings?.uiZoom]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
@@ -244,27 +135,27 @@ export default function App() {
   const shortcutIndex = useRef(bindingIndex(shortcutKeys))
   shortcutIndex.current = bindingIndex(shortcutKeys)
   const keyOf = (id: string) => shortcutKeys.get(id)?.[0] ?? ''
-  useEffect(() => {
-    const tick = async () => {
-      const live = agentsRef.current.filter((a) => a.kind === 'claude' && !a.exited && a.sessionId)
-      if (!live.length) return setContexts((c) => (Object.keys(c).length ? {} : c))
-      const next = await window.mc.contextUsage(live.map((a) => a.sessionId!)).catch(() => null)
-      if (!next) return
-      setContexts(next)
-      for (const a of live) {
-        const u = next[a.sessionId!]
-        if (!u || u.tokens < warnAt || warnedContext.current.has(a.sessionId!)) continue
-        warnedContext.current.add(a.sessionId!)
-        toast('info', `${a.title} is getting large`, `${Math.round(u.tokens / 1000)}K tokens: each reply re-reads all of it (about $${u.perTurnUsd.toFixed(2)}). Press Compact on the agent to shrink it, or ${keyOf('writeBriefing') || 'Write briefing'} for a handoff first.`)
-      }
-    }
-    void tick()
-    const timer = setInterval(tick, 8000)
-    return () => clearInterval(timer)
-  }, [warnAt, toast])
-  agentsRef.current = agents
-  const uiRef = useRef({ view, activeAgent, notify })
-  uiRef.current = { view, activeAgent, notify }
+  const {
+    agents,
+    agentsRef,
+    activeAgent,
+    setActiveAgent,
+    lastOutput,
+    contexts,
+    notify,
+    toggleNotify,
+    pendingRestore,
+    setPendingRestore,
+    restoreAll,
+    launch,
+    focusAgent,
+    closeAgent,
+    renameAgent,
+    markExited,
+    openSessions,
+    maximizedAgent,
+    setMaximizedAgent
+  } = useAgents({ view, setView, toast, warnAt, writeBriefingKey: keyOf('writeBriefing'), onTurnDone: () => void refreshGit() })
   const projectsRef = useRef(projects)
   projectsRef.current = projects
 
@@ -302,7 +193,6 @@ export default function App() {
       setUiLoaded(true)
       refreshProjects()
     })
-    window.mc.loadSavedAgents().then(setPendingRestore)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -320,207 +210,7 @@ export default function App() {
     }
   }, [refreshGit])
 
-  // Track when each terminal last printed output, for agents without hook status.
-  useEffect(() => {
-    let pendingUpdate: Record<string, number> = {}
-    let scheduled = false
-    const off = onActivity((id) => {
-      pendingUpdate[id] = Date.now()
-      if (scheduled) return
-      scheduled = true
-      setTimeout(() => {
-        const batch = pendingUpdate
-        pendingUpdate = {}
-        scheduled = false
-        setLastOutput((prev) => ({ ...prev, ...batch }))
-      }, 250)
-    })
-    const timer = setInterval(() => setTick((t) => t + 1), 1000)
-    return () => {
-      off()
-      clearInterval(timer)
-    }
-  }, [])
-
-  const focusAgent = useCallback((id: string) => {
-    window.mc.focusWindow()
-    setView('agents')
-    setActiveAgent(id)
-  }, [])
-
-  // Exact status from Claude Code hooks, plus desktop notifications.
-  useEffect(() => {
-    return window.mc.onHookEvent((event) => {
-      const agent = agentsRef.current.find((a) => a.id === event.agentId)
-      if (!agent || agent.exited) return
-      const change = statusFromHook(event, agent.hookStatus)
-      setAgents((list) =>
-        list.map((a) =>
-          a.id !== event.agentId
-            ? a
-            : {
-                ...a,
-                sessionId: event.sessionId ?? a.sessionId,
-                hookStatus: change?.status ?? a.hookStatus,
-                statusAt: change && change.status !== a.hookStatus ? Date.now() : a.statusAt,
-                statusMessage: change ? change.message : a.statusMessage
-              }
-        )
-      )
-      // A finished turn usually means files changed.
-      if (event.event === 'Stop') refreshGit()
-      const ui = uiRef.current
-      const lookingAtIt = document.hasFocus() && ui.view === 'agents' && ui.activeAgent === agent.id
-      if (change?.notify && ui.notify && !lookingAtIt) {
-        const body = change.status === 'done' ? 'Finished. Your turn.' : change.message || 'Claude needs your input.'
-        const n = new Notification(agent.title, { body, silent: false })
-        n.onclick = () => focusAgent(agent.id)
-      }
-    })
-  }, [focusAgent, refreshGit])
-
-  // Remember open agents so they can be reopened after a restart.
-  useEffect(() => {
-    if (pendingRestore === null) return
-    const open: SavedAgent[] = agents
-      .filter((a) => !a.exited)
-      .map(({ title, cwd, projectName, projectPath, kind, sessionId, worktree }) => ({ title, cwd, projectName, projectPath, kind, sessionId, worktree }))
-    window.mc.saveAgents([...pendingRestore, ...open])
-  }, [agents, pendingRestore])
-
-  // ---------- actions ----------
-  const launch = useCallback(
-    async (opts: LaunchOptions) => {
-      const kind = opts.kind ?? 'claude'
-      const args = opts.args ?? []
-      const resumeAt = args.indexOf('--resume')
-      const resumedFrom = resumeAt >= 0 ? args[resumeAt + 1] : undefined
-      // A chat that's already open as an agent is shown, not started a second time.
-      const open = resumedFrom ? agentsRef.current.find((a) => !a.exited && a.sessionId === resumedFrom) : undefined
-      if (open) {
-        setActiveAgent(open.id)
-        setView('agents')
-        return { id: open.id, pid: 0, sessionId: open.sessionId }
-      }
-      try {
-        const info = await window.mc.ptySpawn({ cwd: opts.cwd, args: opts.args ?? [], kind, cols: 120, rows: 30 })
-        const agent: Agent = {
-          id: info.id,
-          title: opts.title,
-          cwd: opts.cwd,
-          projectName: opts.projectName,
-          projectPath: opts.projectPath ?? opts.cwd,
-          kind,
-          sessionId: info.sessionId,
-          worktree: opts.worktree,
-          exited: false,
-          startedAt: Date.now(),
-          resumedFrom
-        }
-        setAgents((a) => [...a, agent])
-        setActiveAgent(info.id)
-        setView('agents')
-        return info
-      } catch (e) {
-        toast('error', 'Could not start the agent', errorMessage(e))
-        return null
-      }
-    },
-    [toast]
-  )
-
-  // ---------- tasks ----------
-  const tasksRef = useRef(tasks)
-  tasksRef.current = tasks
-
-  const startTask = useCallback(
-    async (task: Task) => {
-      try {
-        const res = await window.mc.startTask(task.id)
-        if (res.interactive) {
-          const { cwd, args, worktree } = res.interactive
-          const info = await launch({ cwd, projectName: task.projectName, projectPath: task.projectPath, title: task.title.slice(0, 48), args, worktree })
-          if (info) {
-            await window.mc.setTaskRun(
-              task.id,
-              { agentId: info.id, sessionId: info.sessionId, startedAt: Date.now(), finishedAt: undefined, error: undefined, result: undefined, toolCalls: 0, events: [], activity: 'Running in an agent tab' },
-              'running'
-            )
-          }
-        } else {
-          toast('info', 'Task started', task.title)
-        }
-      } catch (e) {
-        toast('error', 'Could not start the task', errorMessage(e))
-      }
-    },
-    [launch, toast]
-  )
-
-  // A recurring interactive task fired: open its agent.
-  useEffect(() => {
-    return window.mc.onLaunchTask(async (taskId) => {
-      const task = (await window.mc.listTasks()).find((t) => t.id === taskId)
-      if (task) startTask(task)
-    })
-  }, [startTask])
-
-  const saveAsTemplate = useCallback(
-    async (input: NewTask) => {
-      try {
-        const name = input.title || input.prompt.split('\n')[0].slice(0, 60)
-        await window.mc.saveTemplate({
-          name,
-          title: input.title,
-          prompt: input.prompt,
-          projectPath: input.projectPath,
-          projectName: input.projectName,
-          mode: input.mode,
-          permission: input.permission,
-          useWorktree: input.useWorktree,
-          budgetUsd: input.budgetUsd,
-          model: input.model
-        })
-        toast('success', 'Saved as a template', `${name}. Add a schedule in Templates.`)
-      } catch (e) {
-        toast('error', 'Could not save the template', errorMessage(e))
-      }
-    },
-    [toast]
-  )
-
-  const continueTask = useCallback(
-    (task: Task) => {
-      if (!task.run?.sessionId) return
-      launch({
-        cwd: task.worktree?.path ?? task.projectPath,
-        projectName: task.projectName,
-        projectPath: task.projectPath,
-        title: task.title.slice(0, 48),
-        args: ['--resume', task.run.sessionId],
-        worktree: task.worktree
-      })
-    },
-    [launch]
-  )
-
-  // An interactive task's agent closing ends its run; move it to Review.
-  useEffect(() => {
-    for (const t of tasksRef.current) {
-      const agentId = t.run?.agentId
-      if (t.column !== 'running' || !agentId) continue
-      const agent = agents.find((a) => a.id === agentId)
-      if (!agent || agent.exited) {
-        window.mc.setTaskRun(t.id, { agentId: undefined, finishedAt: Date.now(), activity: 'Agent closed' }, 'review')
-      }
-    }
-  }, [agents])
-
-  // Live counts for the tray tooltip.
-  useEffect(() => {
-    const live = agents.filter((a) => !a.exited)
-    window.mc.reportStatus({ agents: live.length, attention: live.filter((a) => a.hookStatus === 'needs-input').length })
-  }, [agents])
+  const { tasks, tasksRef, startTask, saveAsTemplate, continueTask } = useTasks({ agents, launch, toast })
 
   const launchWorktree = useCallback(
     async (project: Project) => {
@@ -541,32 +231,7 @@ export default function App() {
     [launch, toast]
   )
 
-  const restoreAll = useCallback(async () => {
-    const saved = pendingRestore ?? []
-    setPendingRestore([])
-    for (const s of saved) {
-      // A session that never got a prompt has no transcript, so it can't be resumed; start fresh.
-      const canResume = s.kind === 'claude' && s.sessionId && (await window.mc.sessionExists(s.sessionId))
-      await launch({
-        cwd: s.cwd,
-        projectName: s.projectName,
-        projectPath: s.projectPath,
-        title: s.title,
-        kind: s.kind,
-        worktree: s.worktree,
-        args: canResume ? ['--resume', s.sessionId!] : []
-      })
-    }
-  }, [pendingRestore, launch])
 
-  const closeAgent = useCallback((id: string) => {
-    window.mc.ptyKill(id)
-    setAgents((list) => {
-      const next = list.filter((a) => a.id !== id)
-      setActiveAgent((cur) => (cur === id ? (next[next.length - 1]?.id ?? null) : cur))
-      return next
-    })
-  }, [])
 
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
@@ -574,25 +239,8 @@ export default function App() {
     ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), closeAgent, runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current, openSession: (projectPath: string, sessionId: string) => openSessionRef.current(projectPath, sessionId) }
   }, [launch, refreshProjects, startTask, closeAgent])
 
-  const renameAgent = useCallback((id: string, title: string) => {
-    setAgents((list) => list.map((a) => (a.id === id ? { ...a, title } : a)))
-  }, [])
 
-  const markExited = useCallback((id: string, code: number) => {
-    setAgents((list) => list.map((a) => (a.id === id ? { ...a, exited: true, exitCode: code } : a)))
-  }, [])
 
-  const toggleNotify = useCallback(() => {
-    setNotify((cur) => {
-      const next = !cur
-      try {
-        localStorage.setItem('mc.notify', next ? 'on' : 'off')
-      } catch {
-        /* preference just won't persist */
-      }
-      return next
-    })
-  }, [])
 
   const openProject = useCallback((path: string) => {
     // Paths from the index may differ in letter case from the project list.
@@ -684,35 +332,9 @@ export default function App() {
     if (chats.length > 1) setLayout('grid')
     toast('success', `Opened ${chats.length} ${chats.length === 1 ? 'chat' : 'chats'} from ${project.name}`, 'Minimize, maximize or resize them from each agent’s header.')
   }
-  const openSessions = useMemo(() => new Set(agents.filter((a) => !a.exited && a.sessionId).map((a) => a.sessionId!)), [agents])
-  // One agent filling the whole window (Maximize); anything that leaves the Agents page restores the layout.
-  const [maximizedAgent, setMaximizedAgent] = useState<string | null>(null)
-  useEffect(() => {
-    if (view !== 'agents' || (maximizedAgent && !agents.some((a) => a.id === maximizedAgent))) setMaximizedAgent(null)
-  }, [view, agents, maximizedAgent])
 
   // ---------- workspaces ----------
-  /** Saves the open agents and the layout under a name (replacing the workspace with `replaceId`). */
-  const saveWorkspace = async (name: string, replaceId?: string) => {
-    const open = agents
-      .filter((a) => !a.exited)
-      .map(({ title, cwd, projectName, projectPath, kind, sessionId, worktree }) => ({ title, cwd, projectName, projectPath, kind, sessionId, worktree }))
-    setWorkspaces(await window.mc.saveWorkspace({ id: replaceId, name, layout, cols: agentCols, agents: open }))
-    toast('success', `Workspace "${name}" saved`, `${open.length} ${open.length === 1 ? 'agent' : 'agents'}. Open it from Agents → Workspaces or the command palette.`)
-  }
-  /** Reopens a workspace's agents (resuming their chats) in its layout; agents already open are shown, not doubled. */
-  const openWorkspace = async (ws: Workspace) => {
-    setWorkspacesOpen(false)
-    setLayout(ws.layout)
-    setAgentCols(ws.cols || 'auto')
-    for (const a of ws.agents) {
-      // A shell that's still open isn't opened twice (chats are matched by their session in launch).
-      if (a.kind === 'shell' && agentsRef.current.some((x) => !x.exited && x.kind === 'shell' && x.title === a.title && x.cwd === a.cwd)) continue
-      const canResume = a.kind === 'claude' && !!a.sessionId && (await window.mc.sessionExists(a.sessionId))
-      await launch({ cwd: a.cwd, projectName: a.projectName, projectPath: a.projectPath, title: a.title, kind: a.kind, worktree: a.worktree, args: canResume ? ['--resume', a.sessionId!] : [] })
-    }
-    toast('success', `Opened "${ws.name}"`, `${ws.agents.length} ${ws.agents.length === 1 ? 'agent' : 'agents'}`)
-  }
+  const { workspaces, workspacesOpen, setWorkspacesOpen, agentCols, setAgentCols, saveWorkspace, openWorkspace, deleteWorkspace } = useWorkspaces({ agents, agentsRef, layout, setLayout, launch, toast })
 
   // ---------- inbox ----------
   const allInbox = inboxItems({
@@ -780,208 +402,83 @@ export default function App() {
 
   /** What each shortcut does. Anything not listed here is handled by the visible view (see useShortcutEvent). */
   const runShortcutRef = useRef<(id: string) => void>(() => undefined)
-  runShortcutRef.current = (id: string) => {
-    const active = agents.find((a) => a.id === activeAgent) ?? agents[agents.length - 1]
-    const broadcast = (shortcut: string) => window.dispatchEvent(new CustomEvent('mc:shortcut', { detail: shortcut }))
-    const inProject = (shortcut: string) => {
-      if (!selected) return
-      if (view !== 'project') {
-        setView('project')
-        setTimeout(() => broadcast(shortcut), 50)
-      } else broadcast(shortcut)
-    }
-    const cycleProject = (step: number) => {
-      const order = sidebarOrder(projects, showWorktrees)
-      if (!order.length) return
-      const i = order.findIndex((p) => p.path === selectedPath)
-      openProject(order[(i + step + order.length) % order.length].path)
-    }
-    const cycleAgent = (step: number) => {
-      if (!agents.length) return
-      const i = agents.findIndex((a) => a.id === active?.id)
-      focusAgent(agents[(i + step + agents.length) % agents.length].id)
-    }
-    const zoom = (factor: number) => void saveSettings({ uiZoom: Math.round(Math.min(1.6, Math.max(0.7, factor)) * 10) / 10 })
-    const handlers: Record<string, () => void> = {
-      palette: openPalette,
-      shortcuts: () => setShortcutsOpen(true),
-      settings: () => setSettingsOpen(true),
-      refresh: () => void refreshProjects(),
-      addProject: () => void addProject(),
-      notifications: () => {
-        toggleNotify()
-        toast('info', notify ? 'Notifications off' : 'Notifications on')
-      },
-      goHome: () => setView('home'),
-      broadcast: () => agents.some((a) => a.kind === 'claude' && !a.exited) && setBroadcastOpen(true),
-      goInbox: () => setView('inbox'),
-      goAgents: () => setView('agents'),
-      goTasks: () => setView('tasks'),
-      goSearch: () => setView('search'),
-      goUsage: () => setView('usage'),
-      goProject: () => selected && setView('project'),
-      goProjects: () => setView('projects'),
-      goNotebook: () => setView('notebook'),
-      goKnowledge: () => setView('knowledge'),
-      newProject: () => setNewProjectOpen(true),
-      newNote: () => {
-        setView('notebook')
-        setNewNoteRequest(Date.now())
-      },
-      goSkills: () => setView('skills'),
-      toggleEco: () => void toggleEco(),
-      quickChat: () =>
-        void window.mc
-          .quickChatFolder()
-          .then((folder) => launch({ cwd: folder, projectName: 'Quick chat', projectPath: folder, title: 'Quick chat' }))
-          .catch((e) => toast('error', 'Could not start a quick chat', errorMessage(e))),
-      prevProject: () => cycleProject(-1),
-      nextProject: () => cycleProject(1),
-      newSession: () => selected && newInSelected(),
-      newWorktreeSession: () => selected && launchWorktree(selected),
-      continueLast: () =>
-        selected && launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · continued`, args: ['--continue'] }),
-      powershell: () => selected && launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · shell`, kind: 'shell' }),
-      pinProject: () => {
-        if (!selected) return
-        void window.mc.togglePin(selected.path).then(refreshProjects)
-        toast('info', selected.pinned ? `Unpinned ${selected.name}` : `Pinned ${selected.name}`)
-      },
-      openExplorer: () => selected && window.mc.openInExplorer(selected.path),
-      openVSCode: () => selected && window.mc.openInVSCode(selected.path),
-      openTerminal: () => selected && window.mc.openExternalTerminal(selected.path, []),
-      nextAgent: () => cycleAgent(1),
-      prevAgent: () => cycleAgent(-1),
-      closeAgent: () => active && closeAgent(active.id),
-      toggleGrid: () => setLayout((l) => (l === 'tabs' ? 'grid' : 'tabs')),
-      compactAgent: () => {
-        if (!active || active.kind !== 'claude' || active.exited) return
-        window.mc.ptyWrite(active.id, '/compact\r')
-        toast('info', `Compacting ${active.title}`, 'Claude summarizes the chat so far and continues from the summary. Mission Control saves that summary as a session briefing.')
-      },
-      writeBriefing: () => {
-        if (!active || active.kind !== 'claude' || active.exited) return
-        window.mc.ptyWrite(active.id, writeBriefingPrompt(`docs/briefings/${briefingFileName(Date.now(), active.title).replace(/\.md$/, '')}.md`) + '\r')
-        setView('agents')
-        setActiveAgent(active.id)
-        toast('info', `Asked ${active.title} for a briefing`, 'It writes it to docs/briefings/ in its folder.')
-      },
-      briefingSession: () => void startFromBriefing(),
-      toggleReview: () => {
-        setView('agents')
-        setTimeout(() => broadcast('toggleReview'), 50)
-      },
-      renameAgent: () => {
-        setView('agents')
-        setTimeout(() => broadcast('renameAgent'), 50)
-      },
-      newTask: () => setComposerOpen(true),
-      templates: () => setTemplatesOpen(true),
-      toggleQueue: () => {
-        const on = !appSettings?.queueEnabled
-        void saveSettings({ queueEnabled: on })
-        toast('info', on ? 'Auto-run queue on' : 'Auto-run queue off')
-      },
-      toggleSidebar: () => setSidebarCollapsed((c) => !c),
-      toggleTheme: () => void saveSettings({ theme: theme === 'dark' ? 'light' : 'dark' }),
-      zoomIn: () => zoom((appSettings?.uiZoom ?? 1) + 0.1),
-      zoomOut: () => zoom((appSettings?.uiZoom ?? 1) - 0.1),
-      zoomReset: () => zoom(1),
-      toggleWorktrees: () => setShowWorktrees((v) => !v)
-    }
-    for (let n = 1; n <= 9; n++) handlers[`agent${n}`] = () => agents[n - 1] && focusAgent(agents[n - 1].id)
-    for (const t of ['tabOverview', 'tabChats', 'tabChanges', 'tabDocs', 'nameIcon', 'chatFilter', 'chatNext', 'chatPrev', 'chatResume', 'chatRename']) handlers[t] = () => inProject(t)
-    ;(handlers[id] ?? (() => broadcast(id)))()
-  }
+  runShortcutRef.current = (id: string) =>
+    runShortcutAction(id, {
+      agents,
+      activeAgent,
+      setActiveAgent,
+      selected,
+      selectedPath,
+      projects,
+      view,
+      setView,
+      showWorktrees,
+      setShowWorktrees,
+      setSidebarCollapsed,
+      setLayout,
+      appSettings,
+      saveSettings,
+      theme,
+      notify,
+      toggleNotify,
+      toast,
+      openProject,
+      focusAgent,
+      closeAgent,
+      launch,
+      newInSelected,
+      launchWorktree,
+      refreshProjects,
+      addProject,
+      toggleEco,
+      startFromBriefing: () => startFromBriefing(),
+      openPalette,
+      openShortcuts: () => setShortcutsOpen(true),
+      openSettings: () => setSettingsOpen(true),
+      openBroadcast: () => setBroadcastOpen(true),
+      openNewProject: () => setNewProjectOpen(true),
+      requestNewNote: () => setNewNoteRequest(Date.now()),
+      openComposer: () => setComposerOpen(true),
+      openTemplates: () => setTemplatesOpen(true)
+    })
 
-  const commands = useMemo<Command[]>(() => {
-    const list: Command[] = [
-      { id: 'go-home', group: 'Go to', title: 'Home', icon: House, run: () => setView('home') },
-      { id: 'go-inbox', group: 'Go to', title: 'Inbox (needs you) and daily digest', icon: Inbox, keywords: 'attention waiting review notifications digest', run: () => setView('inbox') },
-      { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') },
-      { id: 'broadcast', group: 'Actions', title: 'Send a prompt to several agents…', icon: Send, keywords: 'broadcast all agents message briefing', run: () => runShortcutRef.current('broadcast') },
-      { id: 'save-workspace', group: 'Actions', title: 'Save or manage workspaces…', icon: LayoutGrid, keywords: 'workspace layout save agents set', run: () => setWorkspacesOpen(true) },
-      ...workspaces.map((w) => ({ id: `ws-${w.id}`, group: 'Workspaces', title: `Open workspace: ${w.name}`, hint: `${w.agents.length} agents`, icon: LayoutGrid, keywords: w.agents.map((a) => a.title).join(' '), run: () => void openWorkspace(w) })),
-      { id: 'go-search', group: 'Go to', title: 'Search all chats', hint: 'Ctrl+Shift+F', icon: TextSearch, keywords: 'find full text', run: () => setView('search') },
-      { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') },
-      { id: 'go-tasks', group: 'Go to', title: 'Task board', icon: KanbanSquare, keywords: 'kanban todo', run: () => setView('tasks') },
-      { id: 'go-projects', group: 'Go to', title: 'All projects', icon: FolderOpen, keywords: 'cards folders', run: () => setView('projects') },
-      { id: 'go-notebook', group: 'Go to', title: 'Notebook', icon: NotebookPen, keywords: 'notes write', run: () => setView('notebook') },
-      { id: 'go-knowledge', group: 'Go to', title: 'Knowledge (all docs)', icon: BookOpen, keywords: 'docs readme claude.md', run: () => setView('knowledge') },
-      { id: 'go-skills', group: 'Go to', title: 'Skills', icon: Wand2, keywords: 'skills plugins slash commands', run: () => setView('skills') },
-      { id: 'toggle-eco', group: 'View', title: appSettings?.eco?.enabled ? 'Turn Eco mode off' : 'Turn Eco mode on', icon: Leaf, keywords: 'eco save usage credits tokens cheaper', run: () => runShortcutRef.current('toggleEco') },
-      { id: 'new-project', group: 'Actions', title: 'New project…', icon: FolderPlus, keywords: 'create folder', run: () => setNewProjectOpen(true) },
-      { id: 'quick-chat', group: 'Actions', title: 'Quick chat', icon: MessageSquareDashed, keywords: 'temporary scratch', run: () => runShortcutRef.current('quickChat') },
-      { id: 'new-note', group: 'Actions', title: 'New note', icon: NotebookPen, keywords: 'notebook write', run: () => runShortcutRef.current('newNote') },
-      { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: () => setComposerOpen(true) },
-      { id: 'templates', group: 'Actions', title: 'Task templates and schedules', icon: FileStack, keywords: 'recurring cron repeat', run: () => setTemplatesOpen(true) },
-      { id: 'settings', group: 'Actions', title: 'Settings', icon: Settings, keywords: 'hotkey shortcut tray', run: () => setSettingsOpen(true) },
-      {
-        id: 'update',
-        group: 'Actions',
-        title: update.state === 'ready' ? `Restart to update to ${update.version}` : update.state === 'available' || update.state === 'downloading' ? `Update to ${update.version}` : 'Check for updates',
-        icon: Download,
-        keywords: 'update upgrade new version release',
-        run: () => {
-          if (update.state === 'ready' || update.state === 'available' || update.state === 'downloading') return window.mc.updateNow()
-          void window.mc.checkForUpdates()
-          toast('info', 'Checking for updates', update.state === 'disabled' ? 'Updates only work in the installed app.' : 'If there is one, an Update button appears in the top bar.')
-        }
-      },
-      { id: 'shortcuts', group: 'Actions', title: 'Keyboard shortcuts', icon: Keyboard, keywords: 'keys hotkeys bindings', run: () => setShortcutsOpen(true) },
-      { id: 'toggleSidebar', group: 'View', title: 'Show or hide sidebar', icon: PanelLeft, run: () => runShortcutRef.current('toggleSidebar') },
-      { id: 'toggleTheme', group: 'View', title: 'Light or dark theme', icon: SunMoon, keywords: 'appearance colors', run: () => runShortcutRef.current('toggleTheme') },
-      { id: 'zoomIn', group: 'View', title: 'Zoom in', icon: ZoomIn, keywords: 'bigger text size', run: () => runShortcutRef.current('zoomIn') },
-      { id: 'zoomOut', group: 'View', title: 'Zoom out', icon: ZoomOut, keywords: 'smaller text size', run: () => runShortcutRef.current('zoomOut') },
-      { id: 'zoomReset', group: 'View', title: 'Reset zoom', icon: ZoomIn, run: () => runShortcutRef.current('zoomReset') }
-    ]
-    if (selected) {
-      list.push(
-        { id: 'new', group: 'Actions', title: `New Claude session in ${selected.name}`, icon: Play, run: newInSelected },
-        { id: 'new-wt', group: 'Actions', title: `New session in a worktree of ${selected.name}`, icon: GitFork, keywords: 'branch parallel', run: () => launchWorktree(selected) },
-        {
-          id: 'continue',
-          group: 'Actions',
-          title: `Continue last chat in ${selected.name}`,
-          icon: RotateCcw,
-          run: () => launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · continued`, args: ['--continue'] })
-        },
-        {
-          id: 'shell',
-          group: 'Actions',
-          title: `PowerShell in ${selected.name}`,
-          icon: Terminal,
-          run: () => launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · shell`, kind: 'shell' })
-        }
-      )
-    }
-    list.push(
-      { id: 'layout', group: 'Actions', title: layout === 'tabs' ? 'Show agents in a grid' : 'Show agents as tabs', icon: layout === 'tabs' ? LayoutGrid : Rows2, run: () => setLayout(layout === 'tabs' ? 'grid' : 'tabs') },
-      { id: 'notify', group: 'Actions', title: notify ? 'Turn notifications off' : 'Turn notifications on', icon: Bell, run: toggleNotify },
-      { id: 'add', group: 'Actions', title: 'Add a project folder…', icon: FolderPlus, run: addProject },
-      { id: 'refresh', group: 'Actions', title: 'Refresh projects', icon: RefreshCw, run: refreshProjects }
-    )
-    for (const a of agents.filter((x) => !x.exited)) {
-      list.push({ id: `agent-${a.id}`, group: 'Agents', title: a.title, hint: a.projectName, icon: Bot, run: () => focusAgent(a.id) })
-    }
-    for (const p of projects.filter((x) => showWorktrees || !x.worktree)) {
-      list.push({ id: `proj-${p.path}`, group: 'Projects', title: p.name, hint: p.path, icon: FolderOpen, keywords: p.path, run: () => openProject(p.path) })
-    }
-    // Show each command's shortcut.
-    const shortcutOf: Record<string, string> = {
-      'go-home': 'goHome', 'go-inbox': 'goInbox', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
-      'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco', broadcast: 'broadcast',
-      'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
-      'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
-      add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',
-      zoomOut: 'zoomOut', zoomReset: 'zoomReset'
-    }
-    for (const c of list) if (shortcutOf[c.id]) c.hint = keyOf(shortcutOf[c.id]) || c.hint
-    for (const s of recentForPalette) {
-      list.push({ id: `chat-${s.id}`, group: 'Resume a chat', title: s.title, hint: s.projectName, icon: History, keywords: s.projectName, run: () => resumeRecent(s) })
-    }
-    return list
-  }, [workspaces, update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
+  const commands = useMemo<Command[]>(
+    () =>
+      paletteCommands({
+        setView,
+        runShortcut: (id) => runShortcutRef.current(id),
+        keyOf,
+        toast,
+        workspaces,
+        openWorkspace,
+        openWorkspaces: () => setWorkspacesOpen(true),
+        appSettings,
+        update,
+        selected,
+        newInSelected,
+        launchWorktree,
+        launch,
+        layout,
+        setLayout,
+        notify,
+        toggleNotify,
+        addProject,
+        refreshProjects,
+        agents,
+        focusAgent,
+        projects,
+        showWorktrees,
+        openProject,
+        recentForPalette,
+        resumeRecent,
+        openNewProject: () => setNewProjectOpen(true),
+        openComposer: () => setComposerOpen(true),
+        openTemplates: () => setTemplatesOpen(true),
+        openSettings: () => setSettingsOpen(true),
+        openShortcuts: () => setShortcutsOpen(true)
+      }),
+    [workspaces, update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys] // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   return (
     <ShortcutContext.Provider value={shortcutKeys}>
@@ -1270,7 +767,7 @@ export default function App() {
           layout={layout}
           onSave={(name, id) => void saveWorkspace(name, id)}
           onOpen={(ws) => void openWorkspace(ws)}
-          onDelete={async (id) => setWorkspaces(await window.mc.deleteWorkspace(id))}
+          onDelete={deleteWorkspace}
           onClose={() => setWorkspacesOpen(false)}
         />
       )}
