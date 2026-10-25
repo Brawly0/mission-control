@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification, screen, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { promises as fs } from 'node:fs'
+import { copyFileSync, mkdirSync, promises as fs } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type {
   AppSettings,
@@ -23,6 +23,7 @@ import type {
   TerminalSpec,
   UiState,
   UsageReport,
+  Workspace,
   WorktreeInfo
 } from '../shared/types'
 import { automationHold, takeDueReminders, createTask,
@@ -56,7 +57,7 @@ import { worktreeParent } from '../shared/projectLook'
 import { contextUsage, launchArgs, startupReport } from './spend'
 import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing, saveNewBriefings } from './briefings'
 import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
-import { runSmoke } from './smoke'
+import { log as smokeLog, runSmoke } from './smoke'
 import { refreshPlanUsage, startPlanUsage, stopPlanUsage } from './planUsage'
 import { markEcoSession, planRate } from './planCost'
 import { buildDigest, checkDigest } from './digest'
@@ -343,6 +344,20 @@ function registerIpc(): void {
     })
   })
   ipcMain.handle('agents:loadSaved', () => loadStore().savedAgents)
+  ipcMain.handle('workspaces:list', () => loadStore().workspaces)
+  ipcMain.handle('workspaces:save', (_e, ws: Omit<Workspace, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
+    const now = Date.now()
+    return updateStore((s) => {
+      const old = ws.id ? s.workspaces.find((w) => w.id === ws.id) : undefined
+      const saved: Workspace = { ...ws, id: old?.id ?? randomUUID(), createdAt: old?.createdAt ?? now, updatedAt: now }
+      s.workspaces = [saved, ...s.workspaces.filter((w) => w.id !== saved.id)]
+    }).workspaces
+  })
+  ipcMain.handle('workspaces:delete', (_e, id: string) =>
+    updateStore((s) => {
+      s.workspaces = s.workspaces.filter((w) => w.id !== id)
+    }).workspaces
+  )
   ipcMain.handle('sessions:exists', (_e, id: string) => sessionExists(id))
   ipcMain.handle('sessions:recent', (_e, limit: number) => recentSessions(limit))
 
@@ -615,6 +630,20 @@ function budgetWarning(projectPath: string, state: BudgetState): void {
   sendToWindow('budgets:changed')
 }
 
+// Self-tests run in their own profile, starting from a copy of your settings: they work while the
+// installed app is open (Chromium can't share a profile) and never change its data.
+if (process.env.MC_SMOKE) {
+  const real = app.getPath('userData')
+  const own = `${real} (self-test)`
+  mkdirSync(own, { recursive: true })
+  try {
+    copyFileSync(join(real, 'store.json'), join(own, 'store.json'))
+  } catch {
+    /* no settings yet */
+  }
+  app.setPath('userData', own)
+}
+
 app.setAppUserModelId('com.brawly0.missioncontrol') // needed for Windows toast notifications
 
 // One instance: opening the shortcut again brings back the running app (it may be in the tray).
@@ -732,20 +761,35 @@ app.whenReady().then(async () => {
   })
 })
 
+/** The quit test (MC_SMOKE_QUIT) logs how long each step of quitting takes. */
+const quitStart = { at: 0 }
+const quitStage = (name: string) => {
+  if (!process.env.MC_SMOKE_QUIT) return
+  if (!quitStart.at) quitStart.at = Date.now()
+  smokeLog(`quit stage: ${name} +${Date.now() - quitStart.at}ms`)
+}
+app.on('will-quit', () => quitStage('will-quit'))
+app.on('quit', () => quitStage('quit'))
+process.on('exit', () => quitStage('process exit'))
+
 app.on('before-quit', () => {
+  quitStage('before-quit')
   quitting = true
   stopAllTasks()
   flushTasks()
+  // Stops the agents' programs and terminates the terminal host (ADR 0018); quick even with busy terminals.
   killAllTerminals()
+  quitStage('terminals stopped')
   stopHookServer()
   stopIndexer()
   stopScheduler()
   stopPlanUsage()
   stopVaultWatch()
   destroyTray()
+  quitStage('before-quit done')
 })
 app.on('window-all-closed', () => {
+  quitStage('window-all-closed')
   quitting = true
-  killAllTerminals()
   if (process.platform !== 'darwin') app.quit()
 })

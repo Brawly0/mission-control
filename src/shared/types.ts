@@ -269,6 +269,18 @@ export interface SavedAgent {
   projectPath?: string
 }
 
+/** A saved set of agents with its layout, reopened in one click (ADR 0018). */
+export interface Workspace {
+  id: string
+  name: string
+  layout: 'tabs' | 'grid'
+  /** Grid columns: 'auto' or '1'–'4'. */
+  cols: string
+  agents: SavedAgent[]
+  createdAt: number
+  updatedAt: number
+}
+
 export interface GitInfo {
   isRepo: boolean
   /** Top folder of this checkout (a worktree's own folder for worktrees). */
@@ -804,6 +816,10 @@ export interface MissionControlApi {
 
   onHookEvent(cb: (event: HookEvent) => void): () => void
   saveAgents(agents: SavedAgent[]): void
+  listWorkspaces(): Promise<Workspace[]>
+  /** Saves a new workspace, or replaces the one with this id; returns the saved list. */
+  saveWorkspace(ws: Omit<Workspace, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): Promise<Workspace[]>
+  deleteWorkspace(id: string): Promise<Workspace[]>
   loadSavedAgents(): Promise<SavedAgent[]>
   sessionExists(sessionId: string): Promise<boolean>
   focusWindow(): void

@@ -65,6 +65,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'prevAgent', label: 'Previous agent', group: 'Agents', keys: ['Ctrl+Shift+Tab'] },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `agent${n}`, label: `Agent ${n}`, group: 'Agents' as const, keys: [`Alt+${n}`] })),
   { id: 'closeAgent', label: 'Close agent', group: 'Agents', keys: ['Ctrl+Shift+W'] },
+  { id: 'broadcast', label: 'Send a prompt to several agents', group: 'Agents', keys: ['Ctrl+Shift+A'] },
   { id: 'maximizeAgent', label: 'Maximize or restore agent (fills the window)', group: 'Agents', keys: ['Ctrl+Shift+Up'] },
   { id: 'minimizeAgent', label: 'Minimize agent (or restore from maximized)', group: 'Agents', keys: ['Ctrl+Shift+Down'] },
   { id: 'toggleGrid', label: 'Tabs or grid', group: 'Agents', keys: ['Ctrl+Shift+G'] },

@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { AiRecap, AppSettings, Note, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
+import type { AiRecap, AppSettings, Note, Workspace, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
 
 export interface WindowBounds {
   x: number
@@ -51,6 +51,8 @@ export interface StoreData {
   ecoSessions: Record<string, number>
   /** Day ("2026-10-24") the daily digest was last shown. */
   digestShown: string
+  /** Saved sets of agents (Agents → Workspaces). */
+  workspaces: Workspace[]
 }
 
 const defaults: StoreData = {
@@ -73,6 +75,7 @@ const defaults: StoreData = {
   chatAiNames: {},
   chatRecaps: {},
   digestShown: '',
+  workspaces: [],
   settings: {
     defaultTaskBudgetUsd: 0,
     defaultTaskModel: '',

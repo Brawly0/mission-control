@@ -356,7 +356,13 @@ export async function removeWorktree(wt: WorktreeInfo): Promise<void> {
       await git(wt.repoRoot, ['worktree', 'remove', '--force', wt.path])
       break
     } catch (e) {
-      if (attempt >= 5 || !/permission denied|being used|busy/i.test(String(e))) throw e
+      // An earlier attempt already unregistered it but couldn't delete the folder (still in use then): finish the job.
+      if (/is not a working tree/i.test(String(e))) {
+        await fs.rm(wt.path, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
+        await git(wt.repoRoot, ['worktree', 'prune']).catch(() => undefined)
+        break
+      }
+      if (attempt >= 5 || !/permission denied|being used|busy|not empty/i.test(String(e))) throw e
       await new Promise((r) => setTimeout(r, 600))
     }
   }

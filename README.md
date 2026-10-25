@@ -2,6 +2,12 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.18)
+
+- **Workspaces**: save the open agents with their layout under a name ("Bot: daily review") and reopen them in one click. Each chat resumes where it left off. Find them under Agents → Workspaces, in the command palette, or on the empty Agents page.
+- **Send to several agents** (`Ctrl+Shift+A`): type one prompt and send it to the agents you pick. Ready-made: write a briefing (each to its own file), "where are you?", wrap up, /compact.
+- **Quitting with busy agents never hangs**: terminals now run in their own background process, so closing an agent while Claude is typing, or quitting with many agents running, can't freeze Mission Control.
+
 ## Features (v0.17)
 
 - **One-click updates**: when a new version is out, an **Update** button appears in the top bar. One click downloads it and restarts into it. Mission Control checks every 30 minutes and whenever you come back to the window.

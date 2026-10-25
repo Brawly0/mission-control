@@ -35,10 +35,10 @@ interface SmokeDeps {
 }
 
 /** Logs to stdout, and to MC_SMOKE_LOG if set (a packaged Windows app has no console). */
-const log = (...a: unknown[]) => {
+export const log = (...a: unknown[]) => {
   console.log('[smoke]', ...a)
   if (process.env.MC_SMOKE_LOG) {
-    const line = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')
+    const line = a.map((x) => (typeof x === 'string' ? x : x instanceof Error ? (x.stack ?? x.message) : JSON.stringify(x))).join(' ')
     appendFileSync(process.env.MC_SMOKE_LOG, `[smoke] ${line}\n`)
   }
 }
@@ -612,6 +612,107 @@ async function skillsTour(win: BrowserWindow, outFile: string): Promise<void> {
       s.settings.eco = before
     })
   }
+}
+
+/**
+ * MC_SMOKE_WS=<empty scratch folder>: v0.18. Opens two PowerShell agents and one real Claude agent
+ * (Haiku) there, saves them as a workspace through the dialog, sends "pong" to the Claude agent
+ * with Send to… and checks its reply in the chat file, closes everything, reopens the workspace
+ * (the Claude chat must be resumed, in the grid) and deletes it. About $0.001 of Haiku.
+ * Screenshots <MC_SMOKE>-ws-*.png.
+ */
+async function workspacesTour(win: BrowserWindow, outFile: string, dir: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 900) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-ws-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  /** Types into a React-controlled field. */
+  const type = (selector: string, text: string, proto = 'HTMLInputElement') =>
+    js(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; Object.getOwnPropertyDescriptor(${proto}.prototype, 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true })()`)
+  const click = (selector: string, text: string) => js(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(selector)})].find(x => x.textContent.includes(${JSON.stringify(text)})); b?.click(); return !!b })()`)
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  mkdirSync(dir, { recursive: true })
+  const base = `{ cwd: ${JSON.stringify(dir)}, projectName: 'ws-smoke', projectPath: ${JSON.stringify(dir)} }`
+  const before = await js(`window.__mcSmoke.agents().length`)
+  await js(`window.__mcSmoke.launch({ ...${base}, title: 'ws shell 1', kind: 'shell' })`)
+  await js(`window.__mcSmoke.launch({ ...${base}, title: 'ws shell 2', kind: 'shell' })`)
+  await js(`window.__mcSmoke.launch({ ...${base}, title: 'ws claude', args: ['--model', 'haiku'] })`)
+  await js(`window.__mcSmoke.setView('agents')`)
+  if (!(await js(`!!document.querySelector('.agent-stage.grid')`))) await js(`window.__mcSmoke.runShortcut('toggleGrid')`)
+  const claudeId: string = await js(`window.__mcSmoke.agents().find(a => a.title === 'ws claude')?.id`)
+  // Wait for Claude to be ready for input (SessionStart hook).
+  for (let i = 0; i < 60 && !(await js(`window.__mcSmoke.agents().find(a => a.id === ${JSON.stringify(claudeId)})?.hookStatus`)); i++) await sleep(500)
+  await sleep(2500)
+  log('claude agent status:', await js(`window.__mcSmoke.agents().find(a => a.id === ${JSON.stringify(claudeId)})?.hookStatus ?? 'none'`))
+
+  // Save as a workspace through the dialog.
+  await click('.agent-bar-end button', 'Workspaces')
+  await sleep(300)
+  await click('.menu-item', 'Save or manage workspaces')
+  await sleep(400)
+  await type('.workspace-save input', 'Smoke workspace')
+  await shot('save-dialog', 500)
+  await click('.workspace-save button', 'Save')
+  await sleep(600)
+  const saved = (await js(`window.mc.listWorkspaces()`)) as { id: string; name: string; layout: string; agents: { title: string; sessionId?: string }[] }[]
+  const ws = saved.find((w) => w.name === 'Smoke workspace')
+  log('saved workspace:', ws ? `${ws.agents.length} agents, ${ws.layout}: ${ws.agents.map((a) => a.title).join(', ')}` : 'missing')
+  await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+
+  // Send to…: only the Claude agent is listed (shells aren't Claude).
+  await js(`window.__mcSmoke.runShortcut('broadcast')`)
+  await sleep(500)
+  log('send-to lists:', await js(`[...document.querySelectorAll('.broadcast-agents li')].map(l => l.textContent).join(' | ')`))
+  await type('.broadcast-text', 'Reply with exactly the word: pong', 'HTMLTextAreaElement')
+  await shot('broadcast', 400)
+  await click('.dialog.broadcast .dialog-foot button', 'Send to')
+  const seen: string[] = []
+  for (let i = 0; i < 120; i++) {
+    const st = await js(`window.__mcSmoke.agents().find(a => a.id === ${JSON.stringify(claudeId)})?.hookStatus ?? 'none'`)
+    if (seen[seen.length - 1] !== st) seen.push(st)
+    if (st === 'done' && seen.includes('working')) break
+    await sleep(500)
+  }
+  log('claude status after send:', seen.join(' -> '))
+  const sessionId: string | undefined = await js(`window.__mcSmoke.agents().find(a => a.id === ${JSON.stringify(claudeId)})?.sessionId`)
+  if (sessionId) {
+    await sleep(800)
+    const r = await sessionRecap(sessionId).catch((e) => ({ lastReply: `error: ${(e as Error).message}`, prompts: 0 }))
+    log('claude reply in chat file:', JSON.stringify(r.lastReply.slice(0, 60)), '| prompts:', r.prompts)
+  }
+
+  // Close the three, reopen the workspace.
+  for (const id of await js(`window.__mcSmoke.agents().filter(a => a.projectName === 'ws-smoke').map(a => a.id)`)) await js(`window.__mcSmoke.closeAgent(${JSON.stringify(id)})`)
+  await sleep(1500)
+  log('after closing:', await js(`window.__mcSmoke.agents().length`), 'agents (had', before, 'before)')
+  await click('.agent-bar-end button', 'Workspaces')
+  await sleep(300)
+  if (!(await click('.menu-item', 'Smoke workspace'))) {
+    // With no agents open the bar is gone; the empty page offers workspaces.
+    await click('.empty-workspaces button', 'Smoke workspace')
+  }
+  for (let i = 0; i < 40 && (await js(`window.__mcSmoke.agents().filter(a => a.projectName === 'ws-smoke').length`)) < 3; i++) await sleep(500)
+  await sleep(2500)
+  const reopened = await js(`window.__mcSmoke.agents().filter(a => a.projectName === 'ws-smoke').map(a => a.title + (a.resumedFrom ? ' (resumed)' : ''))`)
+  log('reopened:', JSON.stringify(reopened), '| grid:', await js(`!!document.querySelector('.agent-stage.grid')`))
+  await shot('reopened', 1500)
+
+  // Delete it.
+  await click('.agent-bar-end button', 'Workspaces')
+  await sleep(300)
+  await click('.menu-item', 'Save or manage workspaces')
+  await sleep(400)
+  await js(`[...document.querySelectorAll('.workspace-list li')].find(l => l.textContent.includes('Smoke workspace'))?.querySelector('button[aria-label="Delete"], button[title="Delete"]')?.click()`)
+  await sleep(500)
+  log('after delete:', JSON.stringify(((await js(`window.mc.listWorkspaces()`)) as { name: string }[]).map((w) => w.name)))
+  await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
+  for (const id of await js(`window.__mcSmoke.agents().filter(a => a.projectName === 'ws-smoke').map(a => a.id)`)) await js(`window.__mcSmoke.closeAgent(${JSON.stringify(id)})`)
+  await sleep(1000)
 }
 
 /**
@@ -1250,6 +1351,19 @@ async function updateCheck(): Promise<void> {
  */
 export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeDeps): Promise<void> {
   try {
+    // MC_SMOKE_QUIT=<n>: only the quit test, with n terminals printing as fast as they can (0: none).
+    const quitTest = Number(process.env.MC_SMOKE_QUIT || -1)
+    if (quitTest >= 0) {
+      const { writeTerminal } = await import('./pty')
+      for (let i = 0; i < quitTest; i++) {
+        const t = deps.launchTerminal({ cwd: process.cwd(), args: [], kind: 'shell', cols: 100, rows: 20 })
+        writeTerminal(t.id, 'while ($true) { "flood $(Get-Date -Format o)" }\r')
+      }
+      await sleep(2500)
+      log(`quit test: closing the window with ${quitTest} terminals printing`)
+      win.close()
+      return
+    }
     const projects = await listProjects()
     log('projects:', projects.length)
     const withSessions = projects.find((p) => p.key)
@@ -1349,6 +1463,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_SKILLS) await skillsTour(win, outFile)
     if (process.env.MC_SMOKE_INBOX) await inboxTour(win, outFile)
     if (process.env.MC_SMOKE_AGENTS) await agentsTour(win, outFile, process.env.MC_SMOKE_AGENTS)
+    if (process.env.MC_SMOKE_WS) await workspacesTour(win, outFile, process.env.MC_SMOKE_WS)
     if (process.env.MC_SMOKE_VAULT) await vaultTour(win, outFile, process.env.MC_SMOKE_VAULT)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
     if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)

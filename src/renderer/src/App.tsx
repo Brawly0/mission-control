@@ -24,6 +24,7 @@ import {
   RefreshCw,
   RotateCcw,
   Rows2,
+  Send,
   Settings,
   SunMoon,
   Terminal,
@@ -50,7 +51,8 @@ import type {
   AppSettings,
   BudgetState,
   ContextUsage,
-  PlanRate
+  PlanRate,
+  Workspace
 } from '@shared/types'
 import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
@@ -81,6 +83,8 @@ import NotebookView from './components/NotebookView'
 import KnowledgeView from './components/KnowledgeView'
 import NewProjectDialog from './components/NewProjectDialog'
 import InboxView from './components/InboxView'
+import BroadcastDialog from './components/BroadcastDialog'
+import WorkspacesDialog from './components/WorkspacesDialog'
 import { inboxCount, inboxItems, visibleInbox, type InboxItem } from './inbox'
 import { PlanRateContext } from './planRate'
 import { sidebarOrder } from './components/Sidebar'
@@ -128,6 +132,27 @@ export default function App() {
   const [update, setUpdate] = useState<UpdateState>({ state: 'idle' })
   const [budgets, setBudgets] = useState<Record<string, BudgetState>>({})
   const [planRate, setPlanRate] = useState<PlanRate | null>(null)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [workspacesOpen, setWorkspacesOpen] = useState(false)
+  const [broadcastOpen, setBroadcastOpen] = useState(false)
+  const [agentCols, setAgentColsState] = useState<string>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('mc.agentCols') ?? '"auto"')
+    } catch {
+      return 'auto'
+    }
+  })
+  const setAgentCols = (cols: string) => {
+    setAgentColsState(cols)
+    try {
+      localStorage.setItem('mc.agentCols', JSON.stringify(cols))
+    } catch {
+      /* just won't be remembered */
+    }
+  }
+  useEffect(() => {
+    window.mc.listWorkspaces().then(setWorkspaces).catch(() => undefined)
+  }, [])
   const [inboxDismissed, setInboxDismissed] = useState<string[]>([])
   const [showDismissed, setShowDismissed] = useState(false)
 
@@ -666,6 +691,29 @@ export default function App() {
     if (view !== 'agents' || (maximizedAgent && !agents.some((a) => a.id === maximizedAgent))) setMaximizedAgent(null)
   }, [view, agents, maximizedAgent])
 
+  // ---------- workspaces ----------
+  /** Saves the open agents and the layout under a name (replacing the workspace with `replaceId`). */
+  const saveWorkspace = async (name: string, replaceId?: string) => {
+    const open = agents
+      .filter((a) => !a.exited)
+      .map(({ title, cwd, projectName, projectPath, kind, sessionId, worktree }) => ({ title, cwd, projectName, projectPath, kind, sessionId, worktree }))
+    setWorkspaces(await window.mc.saveWorkspace({ id: replaceId, name, layout, cols: agentCols, agents: open }))
+    toast('success', `Workspace "${name}" saved`, `${open.length} ${open.length === 1 ? 'agent' : 'agents'}. Open it from Agents → Workspaces or the command palette.`)
+  }
+  /** Reopens a workspace's agents (resuming their chats) in its layout; agents already open are shown, not doubled. */
+  const openWorkspace = async (ws: Workspace) => {
+    setWorkspacesOpen(false)
+    setLayout(ws.layout)
+    setAgentCols(ws.cols || 'auto')
+    for (const a of ws.agents) {
+      // A shell that's still open isn't opened twice (chats are matched by their session in launch).
+      if (a.kind === 'shell' && agentsRef.current.some((x) => !x.exited && x.kind === 'shell' && x.title === a.title && x.cwd === a.cwd)) continue
+      const canResume = a.kind === 'claude' && !!a.sessionId && (await window.mc.sessionExists(a.sessionId))
+      await launch({ cwd: a.cwd, projectName: a.projectName, projectPath: a.projectPath, title: a.title, kind: a.kind, worktree: a.worktree, args: canResume ? ['--resume', a.sessionId!] : [] })
+    }
+    toast('success', `Opened "${ws.name}"`, `${ws.agents.length} ${ws.agents.length === 1 ? 'agent' : 'agents'}`)
+  }
+
   // ---------- inbox ----------
   const allInbox = inboxItems({
     now: Date.now(),
@@ -765,6 +813,7 @@ export default function App() {
         toast('info', notify ? 'Notifications off' : 'Notifications on')
       },
       goHome: () => setView('home'),
+      broadcast: () => agents.some((a) => a.kind === 'claude' && !a.exited) && setBroadcastOpen(true),
       goInbox: () => setView('inbox'),
       goAgents: () => setView('agents'),
       goTasks: () => setView('tasks'),
@@ -850,6 +899,9 @@ export default function App() {
       { id: 'go-home', group: 'Go to', title: 'Home', icon: House, run: () => setView('home') },
       { id: 'go-inbox', group: 'Go to', title: 'Inbox (needs you) and daily digest', icon: Inbox, keywords: 'attention waiting review notifications digest', run: () => setView('inbox') },
       { id: 'go-agents', group: 'Go to', title: 'Agents', icon: Bot, run: () => setView('agents') },
+      { id: 'broadcast', group: 'Actions', title: 'Send a prompt to several agents…', icon: Send, keywords: 'broadcast all agents message briefing', run: () => runShortcutRef.current('broadcast') },
+      { id: 'save-workspace', group: 'Actions', title: 'Save or manage workspaces…', icon: LayoutGrid, keywords: 'workspace layout save agents set', run: () => setWorkspacesOpen(true) },
+      ...workspaces.map((w) => ({ id: `ws-${w.id}`, group: 'Workspaces', title: `Open workspace: ${w.name}`, hint: `${w.agents.length} agents`, icon: LayoutGrid, keywords: w.agents.map((a) => a.title).join(' '), run: () => void openWorkspace(w) })),
       { id: 'go-search', group: 'Go to', title: 'Search all chats', hint: 'Ctrl+Shift+F', icon: TextSearch, keywords: 'find full text', run: () => setView('search') },
       { id: 'go-usage', group: 'Go to', title: 'Usage and cost', icon: BarChart3, keywords: 'tokens stats spend', run: () => setView('usage') },
       { id: 'go-tasks', group: 'Go to', title: 'Task board', icon: KanbanSquare, keywords: 'kanban todo', run: () => setView('tasks') },
@@ -918,7 +970,7 @@ export default function App() {
     // Show each command's shortcut.
     const shortcutOf: Record<string, string> = {
       'go-home': 'goHome', 'go-inbox': 'goInbox', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
-      'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco',
+      'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco', broadcast: 'broadcast',
       'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
       'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
       add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',
@@ -929,7 +981,7 @@ export default function App() {
       list.push({ id: `chat-${s.id}`, group: 'Resume a chat', title: s.title, hint: s.projectName, icon: History, keywords: s.projectName, run: () => resumeRecent(s) })
     }
     return list
-  }, [update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workspaces, update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ShortcutContext.Provider value={shortcutKeys}>
@@ -1073,6 +1125,12 @@ export default function App() {
               layout={layout}
               maximized={maximizedAgent}
               onMaximize={setMaximizedAgent}
+              cols={agentCols}
+              onCols={setAgentCols}
+              workspaces={workspaces}
+              onOpenWorkspace={(ws) => void openWorkspace(ws)}
+              onManageWorkspaces={() => setWorkspacesOpen(true)}
+              onBroadcast={() => runShortcutRef.current('broadcast')}
               visible={view === 'agents'}
               lastOutput={lastOutput}
               git={git}
@@ -1204,6 +1262,18 @@ export default function App() {
         />
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+      {broadcastOpen && <BroadcastDialog agents={agents.filter((a) => a.kind === 'claude' && !a.exited)} lastOutput={lastOutput} onClose={() => setBroadcastOpen(false)} />}
+      {workspacesOpen && (
+        <WorkspacesDialog
+          workspaces={workspaces}
+          agents={agents.filter((a) => !a.exited)}
+          layout={layout}
+          onSave={(name, id) => void saveWorkspace(name, id)}
+          onOpen={(ws) => void openWorkspace(ws)}
+          onDelete={async (id) => setWorkspaces(await window.mc.deleteWorkspace(id))}
+          onClose={() => setWorkspacesOpen(false)}
+        />
+      )}
       {composerOpen && (
         <TaskComposer
           tasks={tasks}

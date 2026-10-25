@@ -23,6 +23,7 @@ src/
     planUsage.ts   plan limits (session / weekly) polled from your Claude account with Claude Code's saved login, read-only (ADR 0013)
     planCost.ts    saves plan readings, caches the plan-cost rate, records Eco chats (ADR 0016)
     digest.ts      the daily digest: builds it, and decides when the notification is due (ADR 0016)
+    ptyHost.ts     the terminal host: a utilityProcess that owns every pseudo console (ADR 0018); pty.ts talks to it
     recap.ts       "what we worked on" from a transcript (streamed, cached), and the one-shot Haiku calls: summarize a chat, name chats (ADR 0017)
     vault.ts       docs vault: reads docs/ + root notes with links, watches them, starts Claude's build/update tasks (ADR 0014)
     skills.ts      Skills page: personal, plugin and project skills read from disk (ADR 0015)

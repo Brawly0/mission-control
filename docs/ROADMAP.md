@@ -121,6 +121,13 @@
 - [x] Clearer chat names: better first-prompt titles, Claude Code's ai-title, dates on duplicates, Name chats with Claude
 - [x] One-click updates: an Update button in the top bar downloads and restarts; checks every 30 minutes and when the window gets focus
 
+## ✅ v0.18: Reliable terminals, workspaces, send to several
+- [x] Terminals run in a separate host process; closing a busy agent or quitting with many can't freeze the app (Windows ConPTY close deadlock)
+- [x] Workspaces: save and reopen sets of agents with their layout
+- [x] Send one prompt to several agents, with ready-made prompts
+- [x] Self-tests run in their own profile (work while the installed app is open); quit stress test
+- [x] Chat index survives a worker crash or a locked database (queries fail and retry instead of hanging); removing a worktree finishes even when Windows held the folder a moment
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

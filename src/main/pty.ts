@@ -1,12 +1,16 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import * as pty from '@lydell/node-pty'
+import { utilityProcess, type UtilityProcess } from 'electron'
+import ptyHostPath from './ptyHost?modulePath'
+import type { HostEvent, HostRequest } from './ptyHost'
 import type { TerminalInfo, TerminalSpec } from '../shared/types'
 
 type Listener = { data: (id: string, data: string) => void; exit: (id: string, code: number) => void }
 
-const terminals = new Map<string, pty.IPty>()
+/** Terminals that are open (closing ones are already gone from here). They live in the terminal host (ptyHost.ts). */
+const terminals = new Set<string>()
 /** Working folder of each terminal, so a worktree can be freed before it is deleted. */
 const terminalCwd = new Map<string, string>()
 
@@ -58,52 +62,90 @@ export function agentEnv(): Record<string, string> {
   return env
 }
 
+// ---------------------------------------------------------------- the terminal host
+
+let host: UtilityProcess | null = null
+const listeners = new Map<string, Listener>()
+/** Program pid per terminal, reported by the host once it has started. */
+const pids = new Map<string, number>()
+/** Exits being waited for (killTerminalsIn). */
+const exitWaiters = new Map<string, (() => void)[]>()
+
+function finish(id: string, code: number): void {
+  const listener = listeners.get(id)
+  listeners.delete(id)
+  terminals.delete(id)
+  terminalCwd.delete(id)
+  pids.delete(id)
+  for (const done of exitWaiters.get(id) ?? []) done()
+  exitWaiters.delete(id)
+  listener?.exit(id, code)
+}
+
+/** Starts the terminal host on first use (see ptyHost.ts); if it ever dies, its terminals end and the next one starts a new host. */
+function ensureHost(): UtilityProcess {
+  if (host) return host
+  const child = utilityProcess.fork(ptyHostPath, [], { serviceName: 'Mission Control terminals', stdio: 'ignore' })
+  child.on('message', (e: HostEvent) => {
+    if (e.type === 'data') listeners.get(e.id)?.data(e.id, e.data)
+    else if (e.type === 'spawned') pids.set(e.id, e.pid)
+    else if (e.type === 'exit') {
+      if (e.error) listeners.get(e.id)?.data(e.id, `\r\n\x1b[31mCould not start: ${e.error}\x1b[0m\r\n`)
+      finish(e.id, e.code)
+    }
+  })
+  child.on('exit', () => {
+    if (host === child) host = null
+    for (const id of [...listeners.keys()]) finish(id, -1)
+  })
+  host = child
+  return child
+}
+
+function post(m: HostRequest): void {
+  ensureHost().postMessage(m)
+}
+
 export function spawnTerminal(spec: TerminalSpec, listener: Listener, id: string = randomUUID()): TerminalInfo {
   const { file, args } = resolveCommand(spec)
-  const proc = pty.spawn(file, args, {
-    name: 'xterm-256color',
-    cwd: existsSync(spec.cwd) ? spec.cwd : process.env.USERPROFILE,
-    cols: Math.max(spec.cols, 20),
-    rows: Math.max(spec.rows, 5),
-    env: agentEnv()
-  })
-  terminals.set(id, proc)
+  const cwd = existsSync(spec.cwd) ? spec.cwd : (process.env.USERPROFILE ?? process.cwd())
+  terminals.add(id)
   terminalCwd.set(id, existsSync(spec.cwd) ? spec.cwd : '')
-  proc.onData((data) => listener.data(id, data))
-  proc.onExit(({ exitCode }) => {
-    terminals.delete(id)
-    terminalCwd.delete(id)
-    listener.exit(id, exitCode)
-  })
-  return { id, pid: proc.pid }
+  listeners.set(id, listener)
+  post({ type: 'spawn', id, file, args, cwd, cols: Math.max(spec.cols, 20), rows: Math.max(spec.rows, 5), env: agentEnv() })
+  // The program's pid comes from the host a moment later; nothing needs it right away.
+  return { id, pid: 0 }
 }
 
 export function writeTerminal(id: string, data: string): void {
-  terminals.get(id)?.write(data)
+  if (terminals.has(id)) post({ type: 'write', id, data })
 }
 
 export function resizeTerminal(id: string, cols: number, rows: number): void {
-  if (cols < 2 || rows < 2) return
-  try {
-    terminals.get(id)?.resize(cols, rows)
-  } catch {
-    /* process may have just exited */
-  }
+  if (cols < 2 || rows < 2 || !terminals.has(id)) return
+  post({ type: 'resize', id, cols, rows })
 }
 
+/** Closes a terminal: the host stops its program first and closes the console once it has exited. */
 export function killTerminal(id: string): void {
-  const proc = terminals.get(id)
-  if (!proc) return
+  if (!terminals.has(id)) return
   terminals.delete(id)
-  try {
-    proc.kill()
-  } catch {
-    /* already gone */
-  }
+  post({ type: 'kill', id })
 }
 
+/**
+ * On quit: stops every terminal's program (and what it started), then terminates the host, which
+ * skips the console clean-up that can make Windows wait. Never blocks for more than a few seconds.
+ */
 export function killAllTerminals(): void {
-  for (const id of [...terminals.keys()]) killTerminal(id)
+  const list = [...pids.values()]
+  terminals.clear()
+  terminalCwd.clear()
+  if (list.length) spawnSync('taskkill', ['/T', '/F', ...list.flatMap((pid) => ['/PID', String(pid)])], { windowsHide: true, stdio: 'ignore', timeout: 4000 })
+  const child = host
+  host = null
+  listeners.clear()
+  child?.kill()
 }
 
 /**
@@ -120,9 +162,7 @@ export async function killTerminalsIn(folder: string): Promise<string[]> {
   const exited = ids.map(
     (id) =>
       new Promise<void>((resolve) => {
-        const proc = terminals.get(id)
-        if (!proc) return resolve()
-        proc.onExit(() => resolve())
+        exitWaiters.set(id, [...(exitWaiters.get(id) ?? []), resolve])
         setTimeout(resolve, 3000)
       })
   )

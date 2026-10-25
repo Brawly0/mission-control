@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bot, Columns3, FileText, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Shrink, Terminal, X } from 'lucide-react'
-import type { ContextUsage, GitInfo } from '@shared/types'
+import { Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
+import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed } from '../util'
@@ -8,7 +8,7 @@ import TerminalPane from './TerminalPane'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
-import { Avatar, Button, EmptyState, IconButton, Segmented } from './ui'
+import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented } from './ui'
 
 interface Props {
   agents: Agent[]
@@ -31,6 +31,14 @@ interface Props {
   onLayout: (layout: AgentLayout) => void
   onNew: () => void
   onGitChanged: () => void
+  /** Grid columns ('auto' or '1'–'4'), kept by App so workspaces can save and restore them. */
+  cols: string
+  onCols: (cols: string) => void
+  workspaces: Workspace[]
+  onOpenWorkspace: (ws: Workspace) => void
+  onManageWorkspaces: () => void
+  /** Opens "Send to several agents". */
+  onBroadcast: () => void
 }
 
 type Cols = 'auto' | '1' | '2' | '3' | '4'
@@ -115,7 +123,7 @@ export default function AgentsView(props: Props) {
   const [reviewOpen, setReviewOpen] = useState(false)
   const [renameRequest, setRenameRequest] = useState(0)
   const [minimized, setMinimized] = useState<Set<string>>(new Set())
-  const [cols, setCols] = useState<Cols>(() => load('mc.agentCols', 'auto'))
+  const cols = (['auto', '1', '2', '3', '4'].includes(props.cols) ? props.cols : 'auto') as Cols
   const [sizes, setSizes] = useState<Sizes>(() => load('mc.agentSizes', {}))
   const [hiddenRecaps, setHiddenRecaps] = useState<Set<string>>(new Set())
   const stageRef = useRef<HTMLDivElement>(null)
@@ -174,6 +182,16 @@ export default function AgentsView(props: Props) {
         <Button variant="primary" icon={Plus} onClick={onNew}>
           New session in current project
         </Button>
+        {props.workspaces.length > 0 && (
+          <div className="empty-workspaces">
+            <span className="muted small">Or open a workspace</span>
+            {props.workspaces.slice(0, 6).map((w) => (
+              <Button key={w.id} size="sm" icon={FolderOpen} onClick={() => props.onOpenWorkspace(w)} title={w.agents.map((a) => a.title).join('\n')}>
+                {w.name} · {w.agents.length}
+              </Button>
+            ))}
+          </div>
+        )}
       </EmptyState>
     )
   }
@@ -279,10 +297,7 @@ export default function AgentsView(props: Props) {
               <span className="agent-cols" title="Columns in the grid">
                 <Segmented<Cols>
                   value={cols}
-                  onChange={(v) => {
-                    setCols(v)
-                    save('mc.agentCols', v)
-                  }}
+                  onChange={(v) => props.onCols(v)}
                   options={[
                     { value: 'auto', label: 'Auto' },
                     { value: '1', label: '1' },
@@ -294,6 +309,33 @@ export default function AgentsView(props: Props) {
               </span>
             </>
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={Send}
+            disabled={!agents.some((a) => a.kind === 'claude' && !a.exited)}
+            title={withKey('Send one prompt to several agents', keyFor('broadcast'))}
+            onClick={props.onBroadcast}
+          >
+            Send to…
+          </Button>
+          <MenuButton
+            align="right"
+            trigger={(toggle) => (
+              <Button size="sm" variant="ghost" icon={LayoutGrid} onClick={toggle} title="Save these agents as a workspace, or open a saved one">
+                Workspaces
+              </Button>
+            )}
+            items={[
+              ...props.workspaces.slice(0, 8).map((w) => ({
+                label: w.name,
+                hint: `${w.agents.length} ${w.agents.length === 1 ? 'agent' : 'agents'} · ${w.layout}`,
+                icon: FolderOpen,
+                onSelect: () => props.onOpenWorkspace(w)
+              })),
+              { label: 'Save or manage workspaces…', icon: Save, onSelect: props.onManageWorkspaces }
+            ]}
+          />
           <Button
             size="sm"
             variant={showReview ? 'secondary' : 'ghost'}

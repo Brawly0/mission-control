@@ -24,7 +24,8 @@ const MAX_BODY = 20_000
 
 function openDb(): DatabaseSync {
   const d = new DatabaseSync(dbPath)
-  d.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
+  // Another copy that is still shutting down may hold the file for a moment: wait instead of failing.
+  d.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;')
   // A damaged file (e.g. a crash or another copy of the app writing at the same time) is rebuilt from scratch.
   const check = (d.prepare('PRAGMA quick_check(1)').get() as Record<string, string> | undefined) ?? {}
   if (Object.values(check)[0] !== 'ok') {

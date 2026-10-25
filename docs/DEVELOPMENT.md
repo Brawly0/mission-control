@@ -204,6 +204,15 @@ It removes what it created.
 
 `MC_SMOKE_VAULT=<empty scratch folder>` writes a sample vault there (INDEX, linked notes, a decision, a briefing), shows it as a project for the tour, and checks link resolution, backlinks, the live watcher (a new file appears), the graph, and the empty "Build vault" screen and its dialog (cancelled). It screenshots each as `<MC_SMOKE>-vault-*.png`. Free: nothing is sent to Claude.
 
+Self-tests run in their own profile, `%APPDATA%\Mission Control (self-test)`, starting from a copy of your settings, so they work while the installed app is open and never change its data.
+
+`MC_SMOKE_QUIT=<n>` runs only the quit test: n terminals printing as fast as they can, then the window closes. It logs the time of each quit stage (it should reach `process exit` in well under a second). The old in-process terminals hung here on the first try (ADR 0018).
+
+`MC_SMOKE_WS=<empty scratch folder>` checks workspaces and Send to… (about $0.001 of Haiku):
+- Opens two PowerShell agents and one real Claude agent (Haiku) and saves them as a workspace through the dialog.
+- Sends "pong" with Send to… and checks the reply in the chat file.
+- Closes everything, then reopens the workspace (the chat must be resumed, in the grid) and deletes it.
+
 `MC_SMOKE_AGENTS=<project folder name, e.g. bot>` checks v0.17 for free:
 - Logs the project's chat names (and where each comes from) and the recap of its newest chat, and screenshots the Chats tab with the recap card.
 - Opens four agents "resumed" from the newest chats. They're PowerShell tabs, so nothing runs in Claude and no chat file is touched.

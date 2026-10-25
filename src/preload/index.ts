@@ -73,6 +73,9 @@ const api: MissionControlApi = {
     return () => ipcRenderer.removeListener('hook:event', handler)
   },
   saveAgents: (agents) => ipcRenderer.send('agents:save', agents),
+  listWorkspaces: () => ipcRenderer.invoke('workspaces:list'),
+  saveWorkspace: (ws) => ipcRenderer.invoke('workspaces:save', ws),
+  deleteWorkspace: (id) => ipcRenderer.invoke('workspaces:delete', id),
   loadSavedAgents: () => ipcRenderer.invoke('agents:loadSaved'),
   sessionExists: (id) => ipcRenderer.invoke('sessions:exists', id),
   focusWindow: () => ipcRenderer.send('window:focus'),
