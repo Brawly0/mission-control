@@ -128,6 +128,13 @@
 - [x] Self-tests run in their own profile (work while the installed app is open); quit stress test
 - [x] Chat index survives a worker crash or a locked database (queries fail and retry instead of hanging); removing a worktree finishes even when Windows held the folder a moment
 
+## v0.19: Make it solid (in progress)
+- [x] Real-use walkthrough: Markdown tables render everywhere, scratch folders hidden, palette groups, cleaner cards, search snippets and model names, DEVELOPMENT.md repaired
+- [x] Code cleanup: App.tsx split into src/app/ hooks (1,349 → 852 lines); main/index.ts split into window, ipc, notify, terminals, docs (795 → 176 lines)
+- [ ] Speed and resource use: startup, idle CPU and memory, indexing, renderer bundle size
+- [ ] UI simplification: sidebar, top bar, settings
+- [ ] Known-issues backlog
+
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent

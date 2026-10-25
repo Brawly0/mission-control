@@ -35,7 +35,7 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 
 - TypeScript strict everywhere. Shared types live in `src/shared/types.ts`.
 - Never write to `~/.claude`. App data goes in `store.ts`.
-- New IPC: add to `MissionControlApi`, then `preload/index.ts`, then a handler in `main/index.ts`.
+- New IPC: add to `MissionControlApi`, then `preload/index.ts`, then a handler in `main/ipc.ts`.
 - Styles: plain CSS with variables in `renderer/src/styles.css`. No UI framework.
 - Record significant choices in `docs/decisions/NNNN-title.md`.
 

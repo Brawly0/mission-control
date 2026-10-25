@@ -5,7 +5,12 @@ Mission Control is an Electron app with three parts, built by `electron-vite`.
 ```
 src/
   main/        Node side: file access, PTYs, IPC handlers
-    index.ts       window + IPC registration
+    index.ts       app lifecycle: startup wiring (hooks, tasks, indexer, tray, scheduler) and shutdown
+    window.ts      the main window, showWindow / sendToWindow, the quitting flag
+    ipc.ts         every ipcMain handler behind window.mc
+    notify.ts      desktop notifications (chat cost, plan limits, digest, due tasks, task results, budgets, briefings)
+    terminals.ts   launchTerminal: session ids, hook settings and launch flags for claude terminals
+    docs.ts        listDocs: a project's CLAUDE.md, README, docs/ and .claude/ Markdown
     claudeData.ts  reads ~/.claude/projects (projects, sessions, chat transcripts); folds worktree chats into their project
     pty.ts         spawns claude / PowerShell in pseudo-terminals (ConPTY)
     store.ts       the app's own JSON store (pins, added folders, open agents, UI state, window bounds)
@@ -41,7 +46,13 @@ src/
     vault.ts        frontmatter, [[wikilinks]], link resolution, headings, the vault prompts (pure, unit-tested)
     projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
-    src/App.tsx              app state: projects, git info, agents, views, command palette
+    src/App.tsx              app state and layout: projects, git info, views, dialogs; wires the hooks below
+    src/app/useAgents.ts     open agents: launch, close, hook status + notifications, restore, chat sizes, maximize
+    src/app/useTasks.ts      task list and the actions that run tasks
+    src/app/useWorkspaces.ts saved agent sets and the grid column setting
+    src/app/useAppSettings.ts settings, theme, zoom
+    src/app/commands.ts      the command palette list
+    src/app/shortcutActions.ts what each keyboard shortcut does
     src/inbox.ts             the "Needs you" inbox worked out from live state (pure, unit-tested)
     src/planRate.tsx         plan-cost context and the PlanShare label ("≈0.4% wk")
     src/terminalBus.ts       routes PTY output to the right terminal pane
