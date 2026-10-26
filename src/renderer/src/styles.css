@@ -643,6 +643,12 @@ code {
   background: var(--hover);
   color: var(--text);
 }
+.nav-more {
+  color: var(--muted);
+}
+.nav-more svg {
+  transition: transform 0.12s;
+}
 .nav-item.active {
   background: var(--active);
   color: var(--text);

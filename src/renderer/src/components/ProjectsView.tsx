@@ -113,7 +113,7 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
                     <span className="muted small big-project-meta">
                       {p.sessionCount} {p.sessionCount === 1 ? 'chat' : 'chats'} • {n} {n === 1 ? 'task' : 'tasks'}
                       {g?.isRepo && ` • ${g.branch}${g.dirty ? ` (${g.dirty} changed)` : ''}`}
-                      {live > 0 && ` • ${live} running`}
+                      {live > 0 && ` • ${live} open`}
                     </span>
                   </span>
                   <span className="muted tiny big-project-when">{p.lastActivity ? timeAgo(p.lastActivity) : 'no chats'}</span>

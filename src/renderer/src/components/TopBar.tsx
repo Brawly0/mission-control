@@ -1,14 +1,13 @@
-import { ChevronDown, Download, FolderPlus, Leaf, Loader2, ListPlus, MessageSquareDashed, Moon, NotebookPen, Play, Plus, Search, Settings, Sun } from 'lucide-react'
+import { ChevronDown, Download, FolderPlus, Leaf, Loader2, ListPlus, MessageSquareDashed, NotebookPen, Play, Plus, Search } from 'lucide-react'
 import type { EcoSettings, RateLimitInfo, UpdateState } from '@shared/types'
 import { useState } from 'react'
 import { useKeyFor, withKey } from '../shortcuts'
 import { initials } from '../util'
 import { KeyCombo } from './ShortcutsDialog'
 import PlanMeter from './PlanMeter'
-import { IconButton, MenuButton } from './ui'
+import { MenuButton } from './ui'
 
 interface Props {
-  theme: 'dark' | 'light'
   userName: string
   /** Name of the project "New session" starts in. */
   currentProject?: string
@@ -20,7 +19,6 @@ interface Props {
   onShortcut: (id: string) => void
 }
 
-/** Search, plan limits, the New menu, theme, settings and you, across the top of every page. */
 /** Shows when a new version is out: one click downloads it (if needed) and restarts into it. */
 function UpdateButton({ update }: { update: UpdateState }) {
   const [pressed, setPressed] = useState(false)
@@ -52,7 +50,8 @@ function UpdateButton({ update }: { update: UpdateState }) {
   )
 }
 
-export default function TopBar({ theme, userName, currentProject, rateLimit, eco, update, onEcoSettings, onShortcut }: Props) {
+/** Search, Eco, plan limits, the New menu and Settings (your initials), across the top of every page. */
+export default function TopBar({ userName, currentProject, rateLimit, eco, update, onEcoSettings, onShortcut }: Props) {
   const keyFor = useKeyFor()
   const ecoTip = eco?.enabled
     ? [
@@ -106,9 +105,7 @@ export default function TopBar({ theme, userName, currentProject, rateLimit, eco
             { label: 'Note', hint: keyFor('newNote'), icon: NotebookPen, onSelect: () => onShortcut('newNote') }
           ]}
         />
-        <IconButton icon={theme === 'dark' ? Sun : Moon} label={withKey(theme === 'dark' ? 'Light theme' : 'Dark theme', keyFor('toggleTheme'))} size={18} onClick={() => onShortcut('toggleTheme')} />
-        <IconButton icon={Settings} label={withKey('Settings', keyFor('settings'))} size={18} onClick={() => onShortcut('settings')} />
-        <button className="topbar-avatar" title={userName ? `${userName} · Settings` : 'Add your name in Settings'} onClick={() => onShortcut('settings')}>
+        <button className="topbar-avatar" title={withKey(userName ? `${userName} · Settings` : 'Settings (add your name there)', keyFor('settings'))} aria-label="Settings" onClick={() => onShortcut('settings')}>
           {userName ? initials(userName) : '?'}
         </button>
       </div>

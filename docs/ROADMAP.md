@@ -128,12 +128,12 @@
 - [x] Self-tests run in their own profile (work while the installed app is open); quit stress test
 - [x] Chat index survives a worker crash or a locked database (queries fail and retry instead of hanging); removing a worktree finishes even when Windows held the folder a moment
 
-## v0.19: Make it solid (in progress)
+## ✅ v0.19: Make it solid
 - [x] Real-use walkthrough: Markdown tables render everywhere, scratch folders hidden, palette groups, cleaner cards, search snippets and model names, DEVELOPMENT.md repaired
 - [x] Code cleanup: App.tsx split into src/app/ hooks (1,349 → 852 lines); main/index.ts split into window, ipc, notify, terminals, docs (795 → 176 lines)
 - [x] Speed and resource use (ADR 0019): renderer minified and rarely used code loaded on first use (startup JS 2.2 MB → 437 KB); idle CPU with 4 agents 2.5% → 0.8% (only working agents pulse); fewer git processes; speed self-test MC_SMOKE_PERF
-- [ ] UI simplification: sidebar, top bar, settings
-- [ ] Known-issues backlog
+- [x] UI simplification: less-used pages under **More** in the sidebar; one Settings button (your initials) and no theme button in the top bar (Settings → Appearance, Ctrl+Shift+L); no clock card on Home; the status bar only shows what's happening or needs you; "open" vs "working" agents labelled honestly everywhere (Home, tray, Projects); Settings reviewed and left as is
+- [x] Known-issues backlog: everything fixable in the app is done. Left for you: delete old scratch chat folders in ~/.claude/projects if wanted, fix the GitHub MCP auth header, try Eco, Build vault and the morning digest in real use
 
 ## Next ideas
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
@@ -143,6 +143,6 @@
 
 ## Later
 - [x] Installer (`npm run dist`)
-- [ ] Usage: per-project budgets and alerts
-- [ ] Themes (light mode)
+- [x] Usage: per-project budgets and alerts (v0.7)
+- [x] Themes (light mode) (v0.10)
 - [ ] MCP server and plugin overview per project

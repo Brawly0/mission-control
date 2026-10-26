@@ -533,7 +533,7 @@ export default function App() {
         }}
       />
       <main className="main">
-        <TopBar theme={theme} userName={userName} currentProject={selected?.name}
+        <TopBar userName={userName} currentProject={selected?.name}
           rateLimit={rateLimit}
           update={update}
           eco={appSettings?.eco}
@@ -778,7 +778,6 @@ export default function App() {
         <StatusBar
           indexStatus={indexStatus}
           update={update}
-          onOpenSettings={() => setSettingsOpen(true)}
           view={view}
           project={selected}
           git={selected ? git[selected.path] : undefined}

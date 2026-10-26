@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   Bot,
-  CalendarDays,
   ChevronRight,
   CircleCheck,
   Circle,
@@ -70,9 +69,6 @@ export function matchesFilter(p: Project, f: Filter): boolean {
   return true
 }
 
-/** Short lines under the greeting, one per day. */
-const LINES = ['Build. Iterate. Ship.', 'Small steps, merged often.', 'Progress over perfection.', 'Clear prompts, clean diffs.', 'One task at a time.', 'Review, then merge.', 'Ship something today.']
-
 function greeting(): string {
   const h = new Date().getHours()
   if (h < 5) return 'Working late'
@@ -80,29 +76,6 @@ function greeting(): string {
   if (h < 18) return 'Good afternoon'
   return 'Good evening'
 }
-
-function Clock() {
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 15_000)
-    return () => clearInterval(timer)
-  }, [])
-  return (
-    <div className="card clock-card">
-      <div className="clock-row">
-        <span className="tile tile-blue">
-          <CalendarDays size={20} />
-        </span>
-        <div>
-          <div className="muted small">{now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</div>
-          <div className="clock-time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-        </div>
-      </div>
-      <div className="clock-line">“{LINES[(now.getDate() + 3) % LINES.length]}”</div>
-    </div>
-  )
-}
-
 
 export default function HomeView(props: Props) {
   const { agents, lastOutput, projects, tasks, visible, userName, rateLimit, onOpenAgent, onOpenProject, onResume, onShortcut } = props
@@ -141,7 +114,8 @@ export default function HomeView(props: Props) {
   const real = projects.filter((p) => !p.worktree)
   const totalChats = real.reduce((t, p) => t + p.sessionCount, 0)
   const openTasks = tasks.filter((t) => t.column !== 'done')
-  const working = live.filter((a) => a.hookStatus === 'working' || a.hookStatus === undefined).length
+  // Working right now: a hook said so, or (plain shells) it printed in the last few seconds. Open but idle doesn't count.
+  const working = live.filter((a) => displayStatus(a, lastOutput[a.id]).cls === 'working').length
   const needYou = live.filter((a) => a.hookStatus === 'needs-input').length
 
   const shownProjects = real.filter((p) => matchesFilter(p, filter)).slice(0, 8)
@@ -172,9 +146,17 @@ export default function HomeView(props: Props) {
   const maxDay = Math.max(0.01, ...days.map((d) => d.cost))
   const weekTasks = tasks.filter((t) => t.createdAt >= Date.now() - 7 * DAY).length
 
+  const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
   const summary = live.length
-    ? [`${live.length} ${live.length === 1 ? 'agent' : 'agents'} running`, needYou && `${needYou} need${needYou === 1 ? 's' : ''} you`].filter(Boolean).join(' · ')
-    : 'No agents running. Ready when you are.'
+    ? [
+        today,
+        `${live.length} ${live.length === 1 ? 'agent' : 'agents'} open`,
+        working > 0 && `${working} working`,
+        needYou > 0 && `${needYou} need${needYou === 1 ? 's' : ''} you`
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : `${today} · No agents open. Ready when you are.`
 
   return (
     <div className="home dash scroll">
@@ -193,15 +175,14 @@ export default function HomeView(props: Props) {
             <p>{summary}</p>
           </div>
         </div>
-        <Clock />
       </section>
 
       <section className="dash-stats">
         {[
           { icon: FolderKanban, tone: 'green', value: real.length, label: 'Projects', go: 'goProjects' },
-          { icon: MessagesSquare, tone: 'blue', value: totalChats, label: 'Total chats', go: 'goSearch' },
+          { icon: MessagesSquare, tone: 'blue', value: totalChats, label: 'Chats in your projects', go: 'goSearch' },
           { icon: ListChecks, tone: 'purple', value: openTasks.length, label: 'Open tasks', go: 'goTasks' },
-          { icon: Bot, tone: 'orange', value: live.length, label: needYou ? `Agents running · ${needYou} need you` : working ? 'Agents working' : 'Agents running', go: 'goAgents' }
+          { icon: Bot, tone: 'orange', value: live.length, label: needYou ? `Agents open · ${needYou} need you` : working ? `Agents open · ${working} working` : 'Agents open', go: 'goAgents' }
         ].map((s) => (
           <button key={s.label} className="card dash-stat" onClick={() => onShortcut(s.go)} title={withKey(s.label, keyFor(s.go))}>
             <span className={`tile tile-${s.tone}`}>
@@ -290,7 +271,7 @@ export default function HomeView(props: Props) {
         <div className="dash-side">
           <div className="card dash-panel">
             <div className="panel-head">
-              <h2>Running now</h2>
+              <h2>Open agents</h2>
               <button className="panel-link" onClick={() => onShortcut('goAgents')}>
                 View all <ArrowRight size={14} />
               </button>
@@ -298,7 +279,7 @@ export default function HomeView(props: Props) {
             {live.length === 0 ? (
               <div className="running-empty">
                 <Layers size={34} strokeWidth={1.4} />
-                <div className="strong">No agents running</div>
+                <div className="strong">No agents open</div>
                 <div className="muted small">Start a session or a task to begin</div>
                 <Button variant="primary" icon={Plus} onClick={() => onShortcut('newSession')}>
                   Start an agent
@@ -444,7 +425,7 @@ function ProjectCard(props: Props & { project: Project; openTasks: number; runni
           <span className="muted tiny">{p.lastActivity ? `Updated ${timeAgo(p.lastActivity)}` : 'No chats yet'}</span>
         </span>
       </button>
-      {props.running > 0 && <span className="project-card-live" title={`${props.running} running`} />}
+      {props.running > 0 && <span className="project-card-live" title={`${props.running} agent${props.running === 1 ? "" : "s"} open`} />}
       {p.pinned && <Star size={13} className="project-card-star" fill="currentColor" />}
       <MenuButton
         align="right"

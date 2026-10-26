@@ -30,7 +30,7 @@ export function toggleWindow(): void {
 function buildMenu(): Menu {
   const s = deps!.status()
   const summary = [
-    `${s.agents} ${s.agents === 1 ? 'agent' : 'agents'} running`,
+    `${s.agents} ${s.agents === 1 ? 'agent' : 'agents'} open`,
     s.attention ? `${s.attention} need${s.attention === 1 ? 's' : ''} you` : '',
     s.tasks ? `${s.tasks} background ${s.tasks === 1 ? 'task' : 'tasks'}` : ''
   ]
@@ -62,7 +62,7 @@ export function createTray(d: TrayDeps): void {
 export function refreshTray(): void {
   if (!tray || !deps) return
   const s = deps.status()
-  const parts = [`${s.agents} running`]
+  const parts = [`${s.agents} open`]
   if (s.attention) parts.push(`${s.attention} need you`)
   if (s.tasks) parts.push(`${s.tasks} tasks`)
   tray.setToolTip(`Mission Control: ${parts.join(', ')}`)

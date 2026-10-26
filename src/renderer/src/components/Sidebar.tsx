@@ -104,6 +104,13 @@ export default function Sidebar(props: Props) {
   const [activeTags, setActiveTags] = useState<string[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(() => {
+    try {
+      return localStorage.getItem('mc.navMoreOpen') === '1'
+    } catch {
+      return false
+    }
+  })
   const keyFor = useKeyFor()
 
   const toggleGroup = (name: string) => {
@@ -273,6 +280,25 @@ export default function Sidebar(props: Props) {
     { view: 'usage', icon: BarChart3, label: 'Usage & Insights', shortcut: 'goUsage' }
   ]
   const go = (v: View | 'templates') => (v === 'templates' ? props.onOpenTemplates() : props.onNavigate(v))
+  // The first six are used all the time; the rest sit in a "More" group (open while one of them is the current page).
+  const mainNav = navItems.slice(0, 6)
+  const moreNav = navItems.slice(6)
+  const showMore = moreOpen || moreNav.some((n) => n.view === view)
+  const toggleMore = () => {
+    setMoreOpen(!moreOpen)
+    try {
+      localStorage.setItem('mc.navMoreOpen', moreOpen ? '0' : '1')
+    } catch {
+      /* just won't persist */
+    }
+  }
+  const navButton = (n: (typeof navItems)[number]) => (
+    <button key={n.view} className={`nav-item ${view === n.view ? 'active' : ''}`} onClick={() => go(n.view)} title={withKey(n.label, keyFor(n.shortcut))}>
+      <n.icon size={17} strokeWidth={1.9} />
+      <span>{n.label}</span>
+      <span className="nav-end">{n.badge}</span>
+    </button>
+  )
 
   if (props.collapsed) {
     return (
@@ -326,13 +352,12 @@ export default function Sidebar(props: Props) {
       </div>
 
       <nav className="nav">
-        {navItems.map((n) => (
-          <button key={n.view} className={`nav-item ${view === n.view ? 'active' : ''}`} onClick={() => go(n.view)} title={withKey(n.label, keyFor(n.shortcut))}>
-            <n.icon size={17} strokeWidth={1.9} />
-            <span>{n.label}</span>
-            <span className="nav-end">{n.badge}</span>
-          </button>
-        ))}
+        {mainNav.map(navButton)}
+        <button className="nav-item nav-more" onClick={toggleMore} aria-expanded={showMore} title={moreNav.map((n) => n.label).join(', ')}>
+          <ChevronRight size={17} strokeWidth={1.9} className={showMore ? 'rot90' : ''} />
+          <span>More</span>
+        </button>
+        {showMore && moreNav.map(navButton)}
       </nav>
 
       <div className="section-head">

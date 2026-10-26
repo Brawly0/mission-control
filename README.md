@@ -48,13 +48,13 @@ A Windows desktop hub for **Claude Code**: see all your projects and past chats,
 ## Features (v0.11)
 
 - **New look**:
-  - **Top bar:** search everything (`Ctrl+K`), a **+ New** menu (session, task, project, quick chat, note), theme, settings and your initials.
-  - **Sidebar:** grouped pages, compact project rows and a live **Claude Code · Connected** card. It shows whether Claude Code is installed and logged in, and your plan.
+  - **Top bar:** search everything (`Ctrl+K`), a **+ New** menu (session, task, project, quick chat, note), and your initials, which open Settings.
+  - **Sidebar:** the pages you use most, with Notebook, Templates, Knowledge, Skills and Usage under **More**; compact project rows and a live **Claude Code · Connected** card. It shows whether Claude Code is installed and logged in, and your plan.
 - **Home dashboard**:
-  - The greeting with your name (Settings → General) and a clock.
+  - The greeting with your name (Settings → General), the date, and how many agents are open, working or need you.
   - Stats for projects, chats, open tasks and agents.
   - Action cards for New session, New task, New project and Quick chat.
-  - Recent activity, your projects as cards (with quick filters: Active, Favorites, Recent, Archived), Running now, and Upcoming tasks.
+  - Recent activity, your projects as cards (with quick filters: Active, Favorites, Recent, Archived), Open agents, and Upcoming tasks.
   - This week's usage, and your plan limits.
 - **Projects page** (`Ctrl+7`): every project as cards or a list, with search and filters.
 - **Notebook** (`Ctrl+8`): your own notes plus every project's notes in one place, in Markdown, saved as you type (`Ctrl+Shift+J` for a new note).
@@ -99,7 +99,7 @@ A Windows desktop hub for **Claude Code**: see all your projects and past chats,
   - **Interactive** tasks open a normal agent terminal with the prompt.
   - Each task can have its own permission mode (Auto by default), model, budget cap (`--max-budget-usd`) and its own **worktree**, so several tasks can work in parallel without clashing. Review the diff, then merge.
 - **Tray and hotkey**: a tray icon shows what's running and has a menu (New task, Task board, Quit). `Ctrl+Alt+M` shows or hides the window from any app (change it in Settings). Closing the window while agents or tasks run keeps them going in the tray.
-- **Plan limits**: your 5-hour and 7-day plan usage, as reported by Claude Code, in the status bar and on the Usage page.
+- **Plan limits**: your 5-hour and 7-day plan usage, as reported by Claude Code, in the top bar and on the Usage page.
 
 - **Search all chats** (`Ctrl+Shift+F`): full-text search over everything you and Claude wrote in every project, with highlighted snippets, filters for your prompts or Claude's replies, and one-click Open or Resume.
 - **Usage**: estimated cost and tokens per day, project, model and chat, at Anthropic API list prices (an estimate; subscription plans don't pay these). Subagent usage counts toward its parent chat.

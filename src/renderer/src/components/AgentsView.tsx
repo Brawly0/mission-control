@@ -179,7 +179,7 @@ export default function AgentsView(props: Props) {
 
   if (agents.length === 0) {
     return (
-      <EmptyState icon={Bot} title="No agents running">
+      <EmptyState icon={Bot} title="No agents open">
         <p>Start Claude in a project and it runs here, live. Run several side by side in a grid, or open a project’s chats all at once from its Chats tab.</p>
         <Button variant="primary" icon={Plus} onClick={onNew}>
           New session in current project
