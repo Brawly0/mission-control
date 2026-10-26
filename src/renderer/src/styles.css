@@ -1965,3 +1965,9 @@ code {
     grid-template-columns: 280px minmax(0, 1fr);
   }
 }
+
+/* Markdown text shown for a moment while the renderer loads (first use only). */
+.md-loading {
+  white-space: pre-wrap;
+  color: var(--text-2);
+}

@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed } from '../util'
-import TerminalPane from './TerminalPane'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
 import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented } from './ui'
+
+// The terminal (xterm) loads with the first agent, not at startup. Output that comes first is buffered (terminalBus).
+const TerminalPane = lazy(() => import('./TerminalPane'))
 
 interface Props {
   agents: Agent[]
@@ -437,7 +439,9 @@ export default function AgentsView(props: Props) {
                   {a.resumedFrom && !hiddenRecaps.has(a.id) && (
                     <SessionRecap compact sessionId={a.resumedFrom} onClose={() => setHiddenRecaps((cur) => new Set([...cur, a.id]))} />
                   )}
-                  <TerminalPane id={a.id} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />
+                  <Suspense fallback={null}>
+                    <TerminalPane id={a.id} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />
+                  </Suspense>
                 </div>
               )
             })}

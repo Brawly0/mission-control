@@ -1,9 +1,13 @@
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { lazy, Suspense } from 'react'
 
-const plugins = [remarkGfm]
+// The Markdown renderer loads on first use, so it isn't part of startup. Until then the plain text shows.
+const MdRender = lazy(() => import('./MdRender'))
 
 /** Markdown as Claude writes it: tables, task lists and strikethrough included (GitHub flavor). */
 export function Md({ children }: { children: string }) {
-  return <Markdown remarkPlugins={plugins}>{children}</Markdown>
+  return (
+    <Suspense fallback={<p className="md-loading">{children}</p>}>
+      <MdRender>{children}</MdRender>
+    </Suspense>
+  )
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import type {
   GitInfo,
@@ -15,13 +15,9 @@ import type {
   BudgetState,
   PlanRate
 } from '@shared/types'
-import TemplatesDialog from './components/TemplatesDialog'
 import TasksView from './components/TasksView'
 import TaskComposer from './components/TaskComposer'
 import TaskDrawer from './components/TaskDrawer'
-import SettingsDialog from './components/SettingsDialog'
-import SearchView from './components/SearchView'
-import UsageView from './components/UsageView'
 import Sidebar from './components/Sidebar'
 import HomeView from './components/HomeView'
 import ProjectView from './components/ProjectView'
@@ -36,10 +32,7 @@ import { LookContext, makeLookUp } from './projectLook'
 import { ShortcutContext, allowedIn, bindingIndex, comboFromEvent, effectiveKeys } from './shortcuts'
 import ShortcutsDialog from './components/ShortcutsDialog'
 import TopBar from './components/TopBar'
-import SkillsView from './components/SkillsView'
 import ProjectsView from './components/ProjectsView'
-import NotebookView from './components/NotebookView'
-import KnowledgeView from './components/KnowledgeView'
 import NewProjectDialog from './components/NewProjectDialog'
 import InboxView from './components/InboxView'
 import BroadcastDialog from './components/BroadcastDialog'
@@ -53,6 +46,22 @@ import { useAgents } from './app/useAgents'
 import { useTasks } from './app/useTasks'
 import { useWorkspaces } from './app/useWorkspaces'
 import { briefingPrompt, worktreeParent } from '@shared/projectLook'
+
+// Pages and dialogs most sessions never open load on first use, so they aren't part of startup.
+const TemplatesDialog = lazy(() => import('./components/TemplatesDialog'))
+const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
+const SearchView = lazy(() => import('./components/SearchView'))
+const UsageView = lazy(() => import('./components/UsageView'))
+const SkillsView = lazy(() => import('./components/SkillsView'))
+const NotebookView = lazy(() => import('./components/NotebookView'))
+const KnowledgeView = lazy(() => import('./components/KnowledgeView'))
+
+/** Mounts a page the first time it's shown, then keeps it mounted (hidden) like the others, so it keeps its state. */
+function OnceShown({ show, children }: { show: boolean; children: ReactNode }) {
+  const [seen, setSeen] = useState(show)
+  if (show && !seen) setSeen(true)
+  return seen ? <Suspense fallback={null}>{children}</Suspense> : null
+}
 
 export default function App() {
   const toast = useToast()
@@ -169,17 +178,31 @@ export default function App() {
     setGit((prev) => ({ ...prev, ...info }))
   }, [showWorktrees])
 
-  const refreshProjects = useCallback(async () => {
-    setLoading(true)
-    try {
-      const list = await window.mc.listProjects()
-      setProjects(list)
-      projectsRef.current = list
-      setSelectedPath((cur) => (cur && list.some((p) => p.path === cur) ? cur : (list.find((p) => !p.worktree)?.path ?? null)))
-      refreshGit()
-    } finally {
-      setLoading(false)
+  // A refresh asked for while one runs (at startup the app and the index ask at once) waits for it, then runs once more.
+  const projectsRun = useRef<{ running?: Promise<void>; again?: boolean }>({})
+  const refreshProjects = useCallback((): Promise<void> => {
+    const run = projectsRun.current
+    if (run.running) {
+      run.again = true
+      return run.running
     }
+    run.running = (async () => {
+      setLoading(true)
+      try {
+        do {
+          run.again = false
+          const list = await window.mc.listProjects()
+          setProjects(list)
+          projectsRef.current = list
+          setSelectedPath((cur) => (cur && list.some((p) => p.path === cur) ? cur : (list.find((p) => !p.worktree)?.path ?? null)))
+          refreshGit()
+        } while (run.again)
+      } finally {
+        run.running = undefined
+        setLoading(false)
+      }
+    })()
+    return run.running
   }, [refreshGit])
 
   useEffect(() => {
@@ -643,24 +666,28 @@ export default function App() {
             />
           </div>
           <div className={view === 'search' ? 'view-pane' : 'view-pane hidden'}>
-            <SearchView
-              visible={view === 'search'}
-              projects={projects}
-              status={indexStatus}
-              onOpen={openSession}
-              onResume={(h: SearchHit) =>
-                launch({
-                  cwd: h.projectPath,
-                  projectName: h.projectPath.split(/[\\/]/).pop() ?? h.projectPath,
-                  projectPath: h.projectPath,
-                  title: h.title.slice(0, 48),
-                  args: ['--resume', h.sessionId]
-                })
-              }
-            />
+            <OnceShown show={view === 'search'}>
+              <SearchView
+                visible={view === 'search'}
+                projects={projects}
+                status={indexStatus}
+                onOpen={openSession}
+                onResume={(h: SearchHit) =>
+                  launch({
+                    cwd: h.projectPath,
+                    projectName: h.projectPath.split(/[\\/]/).pop() ?? h.projectPath,
+                    projectPath: h.projectPath,
+                    title: h.title.slice(0, 48),
+                    args: ['--resume', h.sessionId]
+                  })
+                }
+              />
+            </OnceShown>
           </div>
           <div className={view === 'usage' ? 'view-pane' : 'view-pane hidden'}>
-            <UsageView visible={view === 'usage'} status={indexStatus} rateLimit={rateLimit} onOpenProject={openProject} onOpenSession={openSession} />
+            <OnceShown show={view === 'usage'}>
+              <UsageView visible={view === 'usage'} status={indexStatus} rateLimit={rateLimit} onOpenProject={openProject} onOpenSession={openSession} />
+            </OnceShown>
           </div>
           <div className={view === 'projects' ? 'view-pane' : 'view-pane hidden'}>
             <ProjectsView
@@ -675,24 +702,30 @@ export default function App() {
             />
           </div>
           <div className={view === 'notebook' ? 'view-pane' : 'view-pane hidden'}>
-            <NotebookView projects={projects} visible={view === 'notebook'} newNoteRequest={newNoteRequest} onOpenProject={openProject} onProjectNotesSaved={() => void refreshProjects()} />
+            <OnceShown show={view === 'notebook'}>
+              <NotebookView projects={projects} visible={view === 'notebook'} newNoteRequest={newNoteRequest} onOpenProject={openProject} onProjectNotesSaved={() => void refreshProjects()} />
+            </OnceShown>
           </div>
           <div className={view === 'skills' ? 'view-pane' : 'view-pane hidden'}>
-            <SkillsView
-              visible={view === 'skills'}
-              eco={appSettings?.eco}
-              projects={projects}
-              projectName={selected && !selected.worktree ? selected.name : undefined}
-              onUse={(id) => void useSkill(id)}
-              onToggleEco={() => void toggleEco()}
-              onEcoSettings={() => {
-                setSettingsTab('spending')
-                setSettingsOpen(true)
-              }}
-            />
+            <OnceShown show={view === 'skills'}>
+              <SkillsView
+                visible={view === 'skills'}
+                eco={appSettings?.eco}
+                projects={projects}
+                projectName={selected && !selected.worktree ? selected.name : undefined}
+                onUse={(id) => void useSkill(id)}
+                onToggleEco={() => void toggleEco()}
+                onEcoSettings={() => {
+                  setSettingsTab('spending')
+                  setSettingsOpen(true)
+                }}
+              />
+            </OnceShown>
           </div>
           <div className={view === 'knowledge' ? 'view-pane' : 'view-pane hidden'}>
-            <KnowledgeView visible={view === 'knowledge'} onStartFromBriefing={(projectPath, file) => void startFromBriefing(projectPath, file)} />
+            <OnceShown show={view === 'knowledge'}>
+              <KnowledgeView visible={view === 'knowledge'} onStartFromBriefing={(projectPath, file) => void startFromBriefing(projectPath, file)} />
+            </OnceShown>
           </div>
           <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
             <TasksView
@@ -794,31 +827,41 @@ export default function App() {
         />
       )}
       {templatesOpen && (
-        <TemplatesDialog
-          templates={templates}
-          projects={projects}
-          onClose={() => setTemplatesOpen(false)}
-          onUse={(tpl) => {
-            setTemplatesOpen(false)
-            setComposerInitial({
-              title: tpl.title,
-              prompt: tpl.prompt,
-              projectPath: tpl.projectPath,
-              mode: tpl.mode,
-              permission: tpl.permission,
-              useWorktree: tpl.useWorktree,
-              budgetUsd: tpl.budgetUsd,
-              model: tpl.model,
-              templateId: tpl.id
-            })
-            setComposerOpen(true)
-          }}
-        />
+        <Suspense fallback={null}>
+          <TemplatesDialog
+            templates={templates}
+            projects={projects}
+            onClose={() => setTemplatesOpen(false)}
+            onUse={(tpl) => {
+              setTemplatesOpen(false)
+              setComposerInitial({
+                title: tpl.title,
+                prompt: tpl.prompt,
+                projectPath: tpl.projectPath,
+                mode: tpl.mode,
+                permission: tpl.permission,
+                useWorktree: tpl.useWorktree,
+                budgetUsd: tpl.budgetUsd,
+                model: tpl.model,
+                templateId: tpl.id
+              })
+              setComposerOpen(true)
+            }}
+          />
+        </Suspense>
       )}
-      {settingsOpen && <SettingsDialog initialTab={settingsTab} onClose={() => {
-        setSettingsOpen(false)
-        setSettingsTab(undefined)
-      }} onOpenShortcuts={() => setShortcutsOpen(true)} />}
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsDialog
+            initialTab={settingsTab}
+            onClose={() => {
+              setSettingsOpen(false)
+              setSettingsTab(undefined)
+            }}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+          />
+        </Suspense>
+      )}
       {newProjectOpen && (
         <NewProjectDialog
           onClose={() => setNewProjectOpen(false)}

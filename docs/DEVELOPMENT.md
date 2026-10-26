@@ -141,6 +141,8 @@ Self-tests run in their own profile, `%APPDATA%\Mission Control (self-test)`, st
 
 `MC_SMOKE_QUIT=<n>` runs only the quit test: n terminals printing as fast as they can, then the window closes. It logs the time of each quit stage (it should reach `process exit` in well under a second). The old in-process terminals hung here on the first try (ADR 0018).
 
+`MC_SMOKE_PERF=1` runs only the speed test, for free. It logs startup times in ms since the process started (main loaded, ready, window created, page loaded, first project shown), how long the project list and git info take, then idle CPU and memory per process with no agents and with 4 shell agents, plus any endless animation still running. `MC_SMOKE_PERF=startup` stops after the startup part. `MC_SMOKE_PERF=fresh` first deletes the test's own index, to time a full build. Single runs are noisy: compare several runs, alternating old and new builds (ADR 0019).
+
 `MC_SMOKE_WS=<empty scratch folder>` checks workspaces and Send to… (about $0.001 of Haiku):
 - Opens two PowerShell agents and one real Claude agent (Haiku) and saves them as a workspace through the dialog.
 - Sends "pong" with Send to… and checks the reply in the chat file.

@@ -131,7 +131,7 @@
 ## v0.19: Make it solid (in progress)
 - [x] Real-use walkthrough: Markdown tables render everywhere, scratch folders hidden, palette groups, cleaner cards, search snippets and model names, DEVELOPMENT.md repaired
 - [x] Code cleanup: App.tsx split into src/app/ hooks (1,349 → 852 lines); main/index.ts split into window, ipc, notify, terminals, docs (795 → 176 lines)
-- [ ] Speed and resource use: startup, idle CPU and memory, indexing, renderer bundle size
+- [x] Speed and resource use (ADR 0019): renderer minified and rarely used code loaded on first use (startup JS 2.2 MB → 437 KB); idle CPU with 4 agents 2.5% → 0.8% (only working agents pulse); fewer git processes; speed self-test MC_SMOKE_PERF
 - [ ] UI simplification: sidebar, top bar, settings
 - [ ] Known-issues backlog
 

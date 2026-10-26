@@ -42,6 +42,80 @@ export const log = (...a: unknown[]) => {
     appendFileSync(process.env.MC_SMOKE_LOG, `[smoke] ${line}\n`)
   }
 }
+/** Startup times for the speed test (MC_SMOKE_PERF), in ms since the process started. */
+const processStart = Date.now() - process.uptime() * 1000
+export const perfMarks: Record<string, number> = {}
+export const perfMark = (name: string) => {
+  perfMarks[name] = Math.round(Date.now() - processStart)
+}
+
+/** CPU (% of one core, averaged since the last call) and memory (MB) of the app's processes, by type. */
+function appUsage(): string {
+  const by: Record<string, { cpu: number; mb: number; n: number }> = {}
+  for (const m of app.getAppMetrics()) {
+    const k = m.type === 'Utility' ? `Utility(${m.serviceName ?? m.name ?? '?'})` : m.type
+    const b = (by[k] ??= { cpu: 0, mb: 0, n: 0 })
+    b.cpu += m.cpu.percentCPUUsage
+    b.mb += m.memory.workingSetSize / 1024
+    b.n++
+  }
+  const total = Object.values(by).reduce((t, b) => ({ cpu: t.cpu + b.cpu, mb: t.mb + b.mb }), { cpu: 0, mb: 0 })
+  return `total ${total.cpu.toFixed(1)}% CPU, ${total.mb.toFixed(0)} MB | ` + Object.entries(by).map(([k, b]) => `${k}${b.n > 1 ? `x${b.n}` : ''} ${b.cpu.toFixed(1)}% ${b.mb.toFixed(0)}MB`).join(', ')
+}
+
+/** MC_SMOKE_PERF=1: startup times, a full index build into an empty index, and idle CPU and memory with 0 and 4 agents. */
+async function perfTour(win: BrowserWindow): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  perfMark('did-finish-load')
+  // The first project in the sidebar: the moment the app is usable.
+  const shown: number = await js(`new Promise((resolve) => {
+    const check = () => document.querySelector('.project-name') ? resolve(Math.round(performance.timeOrigin + performance.now())) : setTimeout(check, 10)
+    check()
+  })`)
+  perfMarks['first project shown'] = Math.round(shown - processStart)
+  const heap = await js('performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1')
+  log('startup (ms since process start):', JSON.stringify(perfMarks), `| renderer JS heap ${heap} MB`)
+  const t0 = Date.now()
+  for (let i = 0; i < 1200 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(250)
+  const idx = await js('window.mc.indexStatus()')
+  log(`index ${process.env.MC_SMOKE_PERF === 'fresh' ? 'build from empty' : 'first run'}: ${Date.now() - t0}ms after load (${idx.sessions} chats, ${idx.messages} messages)`)
+  const timed = async (label: string, code: string) => {
+    const ms = await js(`(async () => { const t = performance.now(); await ${code}; return Math.round(performance.now() - t) })()`)
+    return `${label} ${ms}ms`
+  }
+  log('calls:', [
+    await timed('listProjects', 'window.mc.listProjects()'),
+    await timed('listProjects again', 'window.mc.listProjects()'),
+    await timed('gitInfoMany', 'window.mc.listProjects().then(l => window.mc.gitInfoMany(l.map(p => p.path)))')
+  ].join(', '))
+  // MC_SMOKE_PERF=startup stops here (MC_SMOKE_PERF=fresh deletes the speed test's index first, to time a full build).
+  if (process.env.MC_SMOKE_PERF !== '1') return
+  const idle = async (label: string) => {
+    await sleep(10_000)
+    appUsage() // starts the CPU averaging window
+    await sleep(30_000)
+    // Endless animations keep the GPU busy while nothing happens; list what's running.
+    const anims = await js(`[...new Set(document.getAnimations().map(a => (a.animationName || 'anim') + ' on ' + (a.effect && a.effect.target ? a.effect.target.className.toString().slice(0, 40) : '?')))].join('; ')`)
+    log(`idle, ${label}:`, appUsage(), `| animations: ${anims || 'none'}`)
+  }
+  await idle('no agents, Home')
+  for (let i = 0; i < 4; i++) await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(process.cwd())}, projectName: 'perf', title: 'perf ${i + 1}', kind: 'shell' })`)
+  await js(`window.__mcSmoke.setView('agents')`)
+  await idle('4 shell agents, Agents view')
+  await js(`window.__mcSmoke.setView('home')`)
+  await idle('4 shell agents, Home')
+  for (const a of await js('window.__mcSmoke.agents().map(a => a.id)')) await js(`window.__mcSmoke.closeAgent(${JSON.stringify(a)})`)
+}
+
+/** Opens a page and waits until it has rendered: some pages load on first visit. */
+async function openView(win: BrowserWindow, view: string): Promise<void> {
+  await win.webContents.executeJavaScript(`window.__mcSmoke.setView(${JSON.stringify(view)})`)
+  for (let i = 0; i < 50; i++) {
+    if (await win.webContents.executeJavaScript(`(document.querySelector('.view-pane:not(.hidden)')?.childElementCount ?? 1) > 0`)) return
+    await sleep(100)
+  }
+}
+
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, '').trim()
 
 /** Runs a claude terminal to completion through the real launch path; returns its output and hook events. */
@@ -96,10 +170,10 @@ async function uiTour(win: BrowserWindow, outFile: string, repo: string): Promis
   // Wait for the chat index, then show Usage and a search.
   for (let i = 0; i < 120 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
   log('index:', JSON.stringify(await js('window.mc.indexStatus()')))
-  await js(`window.__mcSmoke.setView('usage')`)
+  await openView(win, 'usage')
   await sleep(800)
   await shot('usage')
-  await js(`window.__mcSmoke.setView('search')`)
+  await openView(win, 'search')
   await js(`(() => {
     const input = document.querySelector('.search-box input')
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
@@ -444,7 +518,7 @@ async function briefTour(win: BrowserWindow, outFile: string, folder: string): P
   win.show()
   win.focus()
   win.webContents.setBackgroundThrottling(false)
-  await js(`window.__mcSmoke.setView('knowledge')`)
+  await openView(win, 'knowledge')
   await sleep(800)
   await js(`[...document.querySelectorAll('.kn-list .segmented button')].find(b => b.textContent.includes('Session briefings'))?.click()`)
   await sleep(1500)
@@ -595,7 +669,7 @@ async function skillsTour(win: BrowserWindow, outFile: string): Promise<void> {
     await sleep(400)
     await js(`document.querySelector('.overlay')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`)
     await sleep(400)
-    await js(`window.__mcSmoke.setView('skills')`)
+    await openView(win, 'skills')
     await js(`window.__mcSmoke.runShortcut('refresh')`)
     await shot('page', 2500)
     log('rows:', await js(`document.querySelectorAll('.skill-row').length`), 'eco card on:', await js(`!!document.querySelector('.eco-card.on')`), 'top bar eco on:', await js(`!!document.querySelector('.eco-toggle.on')`))
@@ -911,7 +985,7 @@ async function inboxTour(win: BrowserWindow, outFile: string): Promise<void> {
     await sleep(500)
     log('dismiss:', before, '->', await js(`document.querySelectorAll('.inbox-item').length`), '| header buttons:', await js(`[...document.querySelectorAll('.inbox-head-actions button')].map(b => b.textContent).join(', ')`))
 
-    await js(`window.__mcSmoke.setView('usage')`)
+    await openView(win, 'usage')
     await shot('usage', 2500)
     log('plan cost card:', await js(`document.querySelector('.plan-cost')?.textContent?.slice(0, 500) ?? 'missing'`))
     log('usage shares shown:', await js(`document.querySelectorAll('.plan-share').length`))
@@ -994,10 +1068,10 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
     }
   }
   for (const view of ['projects', 'notebook', 'knowledge', 'tasks', 'agents', 'usage']) {
-    await js(`window.__mcSmoke.setView('${view}')`)
+    await openView(win, view)
     await shot(view, 1200)
   }
-  await js(`window.__mcSmoke.setView('search')`)
+  await openView(win, 'search')
   await js(`(() => {
     const input = document.querySelector('.search-box input')
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
@@ -1052,7 +1126,7 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
   log('shortcut Ctrl+Shift+L switches theme:', await js(`document.documentElement.dataset.theme`))
   await js(`window.__mcSmoke.setView('home')`)
   await shot('light-home', 1200)
-  await js(`window.__mcSmoke.setView('knowledge')`)
+  await openView(win, 'knowledge')
   await shot('light-knowledge', 1200)
   if (project) {
     await js(`window.__mcSmoke.selectProject(${JSON.stringify(project.path)}); window.__mcSmoke.setView('project')`)
@@ -1061,7 +1135,7 @@ async function shotsTour(win: BrowserWindow, outFile: string, folder: string): P
     key('O', ['alt'])
     await shot('light-overview', 1200)
   }
-  await js(`window.__mcSmoke.setView('usage')`)
+  await openView(win, 'usage')
   await shot('light-usage', 1200)
   await js(`window.__mcSmoke.openSettings?.()`)
   await shot('light-settings')
@@ -1369,6 +1443,11 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
       }
       await sleep(2500)
       log(`quit test: closing the window with ${quitTest} terminals printing`)
+      win.close()
+      return
+    }
+    if (process.env.MC_SMOKE_PERF) {
+      await perfTour(win)
       win.close()
       return
     }

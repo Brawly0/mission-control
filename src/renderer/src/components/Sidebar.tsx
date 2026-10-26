@@ -121,12 +121,13 @@ export default function Sidebar(props: Props) {
   }
 
   const runningByProject = useMemo(() => {
-    const counts = new Map<string, { running: number; attention: number }>()
+    const counts = new Map<string, { running: number; working: number; attention: number }>()
     for (const a of agents) {
       if (a.exited) continue
       const key = a.projectPath.toLowerCase()
-      const c = counts.get(key) ?? { running: 0, attention: 0 }
+      const c = counts.get(key) ?? { running: 0, working: 0, attention: 0 }
       c.running++
+      if (a.hookStatus === 'working') c.working++
       if (a.hookStatus === 'needs-input') c.attention++
       counts.set(key, c)
     }
@@ -194,8 +195,9 @@ export default function Sidebar(props: Props) {
           </div>
           <div className="project-item-end">
             {counts ? (
-              <span className={`run-pill ${counts.attention ? 'attention' : ''}`} title={`${counts.running} running`}>
-                <span className={`dot ${counts.attention ? 'needs-input' : 'working'}`} />
+              <span className={`run-pill ${counts.attention ? 'attention' : ''}`} title={`${counts.running} open${counts.working ? `, ${counts.working} working` : ''}${counts.attention ? `, ${counts.attention} need you` : ''}`}>
+                {/* Only a working agent pulses: an endless animation keeps the GPU busy. */}
+                <span className={`dot ${counts.attention ? 'needs-input' : counts.working ? 'working' : 'ready'}`} />
                 {counts.running}
               </span>
             ) : (

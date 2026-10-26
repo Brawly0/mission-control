@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { flushTasks, initTasks, runningTaskCount, stopAllTasks } from './tasks'
 import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
@@ -12,7 +12,7 @@ import { startHookServer, stopHookServer } from './hookServer'
 import { killAllTerminals } from './pty'
 import { loadStore } from './store'
 import { saveNewBriefings } from './briefings'
-import { log as smokeLog, runSmoke } from './smoke'
+import { log as smokeLog, perfMark, runSmoke } from './smoke'
 import { startPlanUsage, stopPlanUsage } from './planUsage'
 import { stopVaultWatch } from './vault'
 import { coachPrompt } from './eco'
@@ -37,7 +37,9 @@ if (process.env.MC_SMOKE) {
     /* no settings yet */
   }
   app.setPath('userData', own)
+  if (process.env.MC_SMOKE_PERF === 'fresh') for (const ext of ['', '-wal', '-shm']) rmSync(join(own, `index-perf.db${ext}`), { force: true })
 }
+perfMark('main loaded')
 
 app.setAppUserModelId('com.brawly0.missioncontrol') // needed for Windows toast notifications
 
@@ -49,6 +51,7 @@ if (!process.env.MC_SMOKE && !app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
+  perfMark('ready')
   await startHookServer(
     (event) => {
       sendToWindow('hook:event', event)
@@ -84,6 +87,7 @@ app.whenReady().then(async () => {
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
+  perfMark('window created')
   setFolderSource((ids) => queryIndex('sessionFolders', ids))
   // Due-date reminders and the daily digest, checked every minute.
   setInterval(() => {

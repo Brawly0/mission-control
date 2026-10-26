@@ -34,7 +34,11 @@ export function startIndexer(onStatus: (s: IndexStatus) => void): void {
 function spawnWorker(onStatus: (s: IndexStatus) => void): void {
   worker = new Worker(workerPath, {
     // Self-tests keep their own index, so they never write to the file a running installed copy uses.
-    workerData: { dbPath: join(app.getPath('userData'), process.env.MC_SMOKE ? 'index-smoke.db' : 'index.db'), projectsDir: claudeProjectsDir }
+    // The speed test starts from an empty one (index.ts deletes it) to time a full build.
+    workerData: {
+      dbPath: join(app.getPath('userData'), process.env.MC_SMOKE_PERF ? 'index-perf.db' : process.env.MC_SMOKE ? 'index-smoke.db' : 'index.db'),
+      projectsDir: claudeProjectsDir
+    }
   })
   worker.on('message', (msg: any) => {
     if (msg.type === 'status') {

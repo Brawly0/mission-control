@@ -25,19 +25,38 @@ function git(cwd: string, args: string[], allowExit1 = false): Promise<string> {
 
 const infoCache = new Map<string, { at: number; info: GitInfo }>()
 const INFO_TTL_MS = 5000
+/** Lookups still running, so two callers asking at once (e.g. at startup) share one set of git processes. */
+const infoInFlight = new Map<string, Promise<GitInfo>>()
+let infoGeneration = 0
 
-export async function gitInfo(path: string): Promise<GitInfo> {
+/** After git changes something: cached and running lookups are out of date. */
+function forgetGitInfo(): void {
+  infoCache.clear()
+  infoInFlight.clear()
+  infoGeneration++
+}
+
+export function gitInfo(path: string): Promise<GitInfo> {
   const cached = infoCache.get(path)
-  if (cached && Date.now() - cached.at < INFO_TTL_MS) return cached.info
+  if (cached && Date.now() - cached.at < INFO_TTL_MS) return Promise.resolve(cached.info)
+  const running = infoInFlight.get(path)
+  if (running) return running
+  const p = readGitInfo(path).finally(() => infoInFlight.get(path) === p && infoInFlight.delete(path))
+  infoInFlight.set(path, p)
+  return p
+}
 
+async function readGitInfo(path: string): Promise<GitInfo> {
+  const generation = infoGeneration
   let info: GitInfo = { isRepo: false }
   if (existsSync(path)) {
     try {
-      const [top, commonDir, status] = await Promise.all([
-        git(path, ['rev-parse', '--show-toplevel']),
-        git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
+      // Two git processes per project: they are slow to start on Windows.
+      const [revParse, status] = await Promise.all([
+        git(path, ['rev-parse', '--show-toplevel', '--path-format=absolute', '--git-common-dir']),
         git(path, ['status', '--porcelain=v1', '-b'])
       ])
+      const [top = '', commonDir = ''] = revParse.split('\n')
       const lines = status.split('\n').filter(Boolean)
       const head = lines[0]?.startsWith('## ') ? lines.shift()!.slice(3) : ''
       // "## main...origin/main [ahead 1, behind 2]" or "## HEAD (no branch)" or "## No commits yet on main"
@@ -58,7 +77,7 @@ export async function gitInfo(path: string): Promise<GitInfo> {
       info = { isRepo: false }
     }
   }
-  infoCache.set(path, { at: Date.now(), info })
+  if (generation === infoGeneration) infoCache.set(path, { at: Date.now(), info })
   return info
 }
 
@@ -110,7 +129,7 @@ export async function createWorktree(projectPath: string, opts: { fromBranch?: s
   }
 
   await git(repoRoot, ['worktree', 'add', '-b', branch, path, opts.fromBranch ?? base])
-  infoCache.clear()
+  forgetGitInfo()
   return { path, branch, base, repoRoot }
 }
 
@@ -120,7 +139,7 @@ export async function commitIfDirty(path: string, message: string): Promise<stri
   if (!status.trim()) return null
   await git(path, ['add', '-A'])
   await git(path, ['commit', '-m', message])
-  infoCache.clear()
+  forgetGitInfo()
   return (await git(path, ['rev-parse', '--short', 'HEAD'])).trim()
 }
 
@@ -250,7 +269,7 @@ export async function initGit(folder: string): Promise<{ commit: string; files: 
   await git(folder, ['add', '-A'])
   const files = (await git(folder, ['diff', '--cached', '--name-only'])).split('\n').filter(Boolean).length
   await git(folder, ['commit', '-q', '-m', 'Initial commit (set up by Mission Control)'])
-  infoCache.clear()
+  forgetGitInfo()
   return { commit: (await git(folder, ['rev-parse', '--short', 'HEAD'])).trim(), files }
 }
 
@@ -327,7 +346,7 @@ export async function getChanges(path: string, base?: string): Promise<GitChange
 export async function commitAll(path: string, message: string): Promise<void> {
   await git(path, ['add', '-A'])
   await git(path, ['commit', '-m', message])
-  infoCache.clear()
+  forgetGitInfo()
 }
 
 /** Merges a worktree's branch into its base branch in the main checkout. */
@@ -341,7 +360,7 @@ export async function mergeWorktree(wt: WorktreeInfo): Promise<string> {
   const mainStatus = (await git(wt.repoRoot, ['status', '--porcelain'])).trim()
   if (mainStatus) throw new Error('The main checkout has uncommitted changes. Commit or stash them first.')
   const out = await git(wt.repoRoot, ['merge', '--no-ff', '--no-edit', wt.branch, '-m', `Merge ${wt.branch} into ${wt.base}`])
-  infoCache.clear()
+  forgetGitInfo()
   return out.trim()
 }
 
@@ -371,5 +390,5 @@ export async function removeWorktree(wt: WorktreeInfo): Promise<void> {
   } catch {
     /* branch already gone */
   }
-  infoCache.clear()
+  forgetGitInfo()
 }

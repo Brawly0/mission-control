@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -28,7 +28,6 @@ import type { BudgetState, GitInfo, Project, SessionSummary, UsageTotals } from 
 import type { LaunchOptions } from '../types'
 import { errorMessage, formatBytes, formatCost, shortPath, timeAgo } from '../util'
 import SessionViewer from './SessionViewer'
-import VaultView from './VaultView'
 import ChangesPanel from './ChangesPanel'
 import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
@@ -38,6 +37,9 @@ import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
 import { PlanShare } from '../planRate'
 import { unclearTitle } from '@shared/projectLook'
 import { useToast } from '../toast'
+
+// The docs vault (with its graph) loads when its tab is first opened.
+const VaultView = lazy(() => import('./VaultView'))
 
 interface Props {
   project: Project
@@ -518,7 +520,11 @@ export default function ProjectView({ project, projects, git, visible, groups, f
           />
         )}
         {tab === 'changes' && git?.isRepo && <ChangesPanel path={project.path} visible={visible && tab === 'changes'} onChanged={onChanged} />}
-        {tab === 'docs' && <VaultView project={project} onChanged={onChanged} />}
+        {tab === 'docs' && (
+          <Suspense fallback={null}>
+            <VaultView project={project} onChanged={onChanged} />
+          </Suspense>
+        )}
       </div>
     </div>
   )

@@ -17,7 +17,14 @@ window.mc.onPtyData((id, data) => {
   else pending.set(id, [...(pending.get(id) ?? []), data])
 })
 
-window.mc.onPtyExit((id, code) => exitHandlers.get(id)?.(code))
+/** An exit that came before the pane subscribed (the terminal code loads on first use). */
+const pendingExit = new Map<string, number>()
+
+window.mc.onPtyExit((id, code) => {
+  const handler = exitHandlers.get(id)
+  if (handler) handler(code)
+  else pendingExit.set(id, code)
+})
 
 export function subscribe(id: string, onData: DataHandler, onExit: ExitHandler): () => void {
   dataHandlers.set(id, onData)
@@ -26,6 +33,11 @@ export function subscribe(id: string, onData: DataHandler, onExit: ExitHandler):
   if (buffered) {
     pending.delete(id)
     buffered.forEach(onData)
+  }
+  const exited = pendingExit.get(id)
+  if (exited !== undefined) {
+    pendingExit.delete(id)
+    onExit(exited)
   }
   return () => {
     dataHandlers.delete(id)
