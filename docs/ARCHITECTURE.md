@@ -24,7 +24,7 @@ src/
     indexer.ts     starts the index worker and relays queries to it
     indexWorker.ts worker thread: SQLite full-text index + token usage of every chat
     pricing.ts     API list prices per model, for cost estimates
-    tasks.ts       task board data + headless runner (claude -p, stream-json)
+    tasks.ts       task board data + headless runner (claude -p, stream-json) + live terminal text per run
     tray.ts        tray icon, tray menu, global show/hide hotkey
     templates.ts   task templates, {{variables}}, scheduler for recurring templates
     updater.ts     auto-update via electron-updater (public releases repo)
@@ -50,6 +50,7 @@ src/
     skills.ts       skill uses in transcripts, coach levels and wording (pure, unit-tested)
     codex.ts        Codex rollout lines: prompts, replies, commands, patched files, recap, token totals, plan limits, OSC 7501 states (pure, unit-tested)
     handoff.ts      the handoff file and prompt (pure, unit-tested)
+    taskConsole.ts  background task JSON lines as CLI-like terminal text (pure, unit-tested; ADR 0030)
     vault.ts        frontmatter, [[wikilinks]], link resolution, headings, the vault prompts (pure, unit-tested)
     projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
@@ -62,7 +63,7 @@ src/
     src/app/shortcutActions.ts what each keyboard shortcut does
     src/inbox.ts             the "Needs you" inbox worked out from live state (pure, unit-tested)
     src/planRate.tsx         plan-cost context and the PlanShare label ("≈0.4% wk")
-    src/terminalBus.ts       routes PTY output to the right terminal pane
+    src/terminalBus.ts       routes PTY output to every pane showing it (history replay, one input owner)
     src/agentStatus.ts       hook event -> agent status, and what each status looks like
     src/toast.tsx            in-app messages (useToast)
     src/projectLook.tsx      icon components and LookContext: any project path or name -> name, icon, color
@@ -71,7 +72,7 @@ src/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
       Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, VaultView (VaultGraph, NoteMarkdown), PlanMeter, SkillsView
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
-      SearchView, UsageView, TasksView, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
+      SearchView, UsageView, TasksView, TaskTerminals, TaskConsole, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
       TopBar, ProjectsView, NotebookView, KnowledgeView, DocViewer, NewProjectDialog
     src/organize.css         styles for groups, tags, overview, search and usage
     src/tasks.css            styles for the task board, dialogs, task drawer, meters
@@ -104,6 +105,8 @@ The prompt goes in on **stdin**, so no shell quoting is involved, and the proces
 When the process exits, the task moves to **Review**, whether it succeeded, failed or was stopped (the card says which), and a Windows notification fires if the window isn't focused. **Stop** kills the whole process tree (`taskkill /T`). Runs don't survive an app restart; on startup, unfinished runs are marked "Stopped when Mission Control closed" and moved to Review, where **Continue in terminal** resumes the session (`--resume <id>`).
 
 **Interactive run.** The main process prepares the folder and returns the launch arguments (the prompt is claude's first message). The UI opens a normal agent and links it to the task (`run.agentId`). The card mirrors that agent's hook status, and closing the agent moves the task to Review.
+
+**Live terminals (ADR 0030).** Tasks → Terminals and the drawer's Terminal tab show each run live. For background runs, `shared/taskConsole.ts` turns every JSON line into CLI-like text. `tasks.ts` keeps it per task for the app session (`getTaskOutput`) and streams it (`tasks:output`) to a read-only xterm (`TaskConsole`). Interactive runs show the agent's own PTY (`TerminalPane`). `terminalBus` replays a terminal's history to every pane showing it and lets only one pane send input.
 
 ## Templates, schedules and the queue
 

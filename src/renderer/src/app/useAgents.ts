@@ -183,7 +183,7 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
         }
         setAgents((a) => [...a, agent])
         setActiveAgent(info.id)
-        setView('agents')
+        if (!opts.stayInView) setView('agents')
         return info
       } catch (e) {
         toast('error', 'Could not start the agent', errorMessage(e))

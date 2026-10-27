@@ -29,6 +29,7 @@ import { elapsed, errorMessage, formatCost } from '../util'
 import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
 import TaskTeamPanel from './TaskTeamPanel'
+import { TaskTerminal } from './TaskTerminals'
 import { Avatar, Button, IconButton, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 import { dueFrom, dueInputs, dueLabel } from '../due'
@@ -76,7 +77,7 @@ function statusIcon(t: Task) {
 export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
   const look = useLook()
   const toast = useToast()
-  const [tab, setTab] = useState<'activity' | 'changes'>('activity')
+  const [tab, setTab] = useState<'activity' | 'terminal' | 'changes'>(task.column === 'running' && !task.team ? 'terminal' : 'activity')
   const [prompt, setPrompt] = useState(task.prompt)
   const [title, setTitle] = useState(task.title)
   const [followUp, setFollowUp] = useState('')
@@ -85,6 +86,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
   const running = task.column === 'running'
   const managed = !!task.team || !!task.teamParentId
   const editable = task.column === 'todo' && !managed
+  const canTerminal = !!run && !task.team
   const canChanges = !!task.worktree && (!task.team || task.team.phase === 'review')
   const deps = dependencyState(task, all)
   const before = (task.dependsOn ?? []).map((id) => all.find((t) => t.id === id)).filter((t): t is Task => !!t)
@@ -119,7 +121,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
   useEffect(() => {
     setPrompt(task.prompt)
     setTitle(task.title)
-    setTab('activity')
+    setTab(task.column === 'running' && !task.team ? 'terminal' : 'activity')
   }, [task.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -247,12 +249,19 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         <button className={tab === 'activity' ? 'active' : ''} onClick={() => setTab('activity')}>
           Task &amp; activity
         </button>
+        <button className={tab === 'terminal' ? 'active' : ''} onClick={() => setTab('terminal')} disabled={!canTerminal} title={canTerminal ? 'The run’s terminal, live' : task.team ? 'Each agent has its own terminal: open one from the team list, or use Tasks → Terminals.' : 'Start the task to see its terminal'}>
+          Terminal
+        </button>
         <button className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')} disabled={!canChanges} title={task.team && !canChanges ? 'Combined changes become available when integration finishes.' : task.worktree ? '' : 'Only for tasks run in a worktree'}>
           Changes
         </button>
       </nav>
 
-      {tab === 'changes' && canChanges && task.worktree ? (
+      {tab === 'terminal' && canTerminal ? (
+        <div className="drawer-terminal">
+          <TaskTerminal key={task.id} task={task} visible />
+        </div>
+      ) : tab === 'changes' && canChanges && task.worktree ? (
         <div className="drawer-changes">
           <ChangesPanel path={task.worktree.path} worktree={task.worktree} visible onChanged={onGitChanged} />
         </div>
@@ -407,7 +416,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
               </ol>
             </section>
           )}
-          {task.mode === 'interactive' && running && <p className="muted">This task runs in an agent terminal. Open it to follow along.</p>}
+          {task.mode === 'interactive' && running && <p className="muted">This task runs in an agent terminal. Watch it in the Terminal tab or open it in Agents.</p>}
         </div>
       )}
     </aside>

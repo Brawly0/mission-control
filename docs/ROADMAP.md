@@ -189,6 +189,17 @@
 - [x] Final integration, configured checks and one reviewable branch; no automatic merge or release
 - [x] Mocked lifecycle tests and a free native UI/IPC/process smoke test in both themes
 
+## Home dashboard redesign
+- [x] Reference layout with five launch cards, five workspace metrics and six compact panels
+- [x] Combined Claude/Codex activity heatmaps and estimated active-time charts from the local index
+- [x] Provider-specific launch buttons, project actions, task/team filters and responsive dark/light styles
+
+## Live task terminals
+- [x] Tasks → Terminals: a live terminal for every running task, team agent and interactive run
+- [x] CLI-style output for background runs (tool calls, output, replies, result) and the real PTY for interactive ones
+- [x] Terminal tab in the task drawer; Start on the Tasks page brings the task's terminal up
+- [x] One terminal shown in several panes with history replay and a single input owner
+
 ## Next ideas
 - [ ] "Run this for me" for commands an agent can't run (works for both agents)
 - [ ] Prompt snippets you can insert into any agent

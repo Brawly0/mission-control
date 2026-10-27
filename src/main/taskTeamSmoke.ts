@@ -26,6 +26,13 @@ export async function taskTeamSmoke(win: BrowserWindow, outFile: string, log: (.
   const fixture = join(bin, 'agent.cjs')
   writeFileSync(fixture, `const fs = require('node:fs');
 if (process.argv.includes('--version')) { console.log('fixture 1.0.0'); process.exit(0); }
+if (process.stdin.isTTY) {
+  // Interactive task: a tiny TUI that echoes each key once, so doubled input would show.
+  console.log('INTERACTIVE_FIXTURE ready');
+  process.stdin.setRawMode(true); process.stdin.setEncoding('utf8');
+  process.stdin.on('data', s => { if (s === 'q') process.exit(0); process.stdout.write('[key:' + s + ']'); });
+  return;
+}
 let input = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', s => input += s);
 process.stdin.on('end', () => {
   let result, delay = 50;
@@ -36,7 +43,7 @@ process.stdin.on('end', () => {
   } else if (input.includes('Your assignment:\\nFIXTURE_BACKEND') || input.includes('Your assignment:\\nFIXTURE_FRONTEND')) {
     if (!process.cwd().toLowerCase().startsWith(${JSON.stringify(join(repo, '.claude', 'worktrees').toLowerCase())} + require('node:path').sep)) process.exit(3);
     const file = input.includes('Your assignment:\\nFIXTURE_BACKEND') ? 'backend.txt' : 'frontend.txt';
-    fs.writeFileSync(file, 'Implemented by the scoped fixture worker.\\n'); result = 'Completed ' + file; delay = 1600;
+    fs.writeFileSync(file, 'Implemented by the scoped fixture worker.\\n'); result = 'Completed ' + file; delay = 3500;
   } else result = 'Fixture idle';
   console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'Working on the assigned scope'}]}}));
   setTimeout(() => console.log(JSON.stringify({type:'result',subtype:'success',result,total_cost_usd:0.01,num_turns:1})), delay);
@@ -86,12 +93,43 @@ process.stdin.on('end', () => {
     await click('.team-panel-actions button', 'Start 2 agents')
     await until(() => listTasks().filter(t => t.teamParentId === root.id && t.teamRole === 'worker' && t.column === 'running').length === 2)
     await shot('running')
+    // Tasks → Terminals: each background agent's live CLI output, side by side.
+    const termText = `[...document.querySelectorAll('.task-term')].map(t => t.querySelector('.xterm-rows')?.textContent ?? '')`
+    await js('window.__mcSmoke.openTask(null)')
+    await js(`[...document.querySelectorAll('.tasks-layout-switch button')].find(b => b.textContent.startsWith('Terminals')).click()`)
+    await until(() => js(`${termText}.filter(t => t.includes('Working on the assigned scope') && t.includes('claude -p')).length >= 2`))
+    await shot('terminals-running')
+    await js(`window.__mcSmoke.openTask(${JSON.stringify(root.id)})`)
     await until(() => root.team?.phase === 'review')
     if (!root.worktree || !existsSync(join(root.worktree.path, 'backend.txt')) || !existsSync(join(root.worktree.path, 'frontend.txt'))) throw new Error('Combined worker files missing')
     if (existsSync(join(repo, 'backend.txt')) || existsSync(join(repo, 'frontend.txt'))) throw new Error('Workers edited the main checkout')
     if (root.run?.checks?.status !== 'passed' || !root.run.commit) throw new Error('Final checks/commit did not complete')
     await until(() => js(`document.querySelector('.team-phase')?.textContent.includes('Ready for your review')`))
     await shot('review')
+    await js('window.__mcSmoke.openTask(null)')
+    await until(() => js(`${termText}.filter(t => t.includes('✓ Done') && t.includes('process exited with code 0')).length >= 3`))
+    await shot('terminals-done')
+    // An interactive task: its real PTY shows in Tasks → Terminals and takes input once.
+    const live = createTask({ title: 'Interactive terminal check', prompt: 'Say hello.', tool: 'claude', projectPath: repo, projectName: 'Team test', mode: 'interactive', permission: 'auto', useWorktree: false })
+    await until(() => js(`window.__mcSmoke.tasks().some(t => t.id === ${JSON.stringify(live.id)})`))
+    await js(`window.__mcSmoke.startTask(window.__mcSmoke.tasks().find(t => t.id === ${JSON.stringify(live.id)}))`)
+    const liveTerm = `document.querySelector('.task-term[data-task-id="${live.id}"]')`
+    const liveText = `(${liveTerm}?.querySelector('.xterm-rows')?.textContent ?? '')`
+    await until(() => js(`${liveText}.includes('INTERACTIVE_FIXTURE ready')`))
+    if (!(await js(`!!document.querySelector('.view-pane:not(.hidden) .tasks-view')`))) throw new Error('Starting an interactive task left the Tasks page')
+    await js(`${liveTerm}.querySelector('.xterm-helper-textarea').focus()`)
+    win.webContents.sendInputEvent({ type: 'char', keyCode: 'x' })
+    await until(() => js(`${liveText}.includes('[key:x]')`))
+    await pause(400)
+    const echoes = await js(`${liveText}.split('[key:x]').length - 1`)
+    if (echoes !== 1) throw new Error(`Interactive task input arrived ${echoes} times`)
+    await shot('terminals-interactive')
+    const agentId = listTasks().find(t => t.id === live.id)?.run?.agentId
+    if (!agentId) throw new Error('Interactive task has no agent')
+    await js(`window.__mcSmoke.closeAgent(${JSON.stringify(agentId)})`)
+    await until(() => listTasks().find(t => t.id === live.id)?.column === 'review')
+    await js(`window.__mcSmoke.openTask(${JSON.stringify(root.id)})`)
+    await until(() => js(`!!document.querySelector('.team-members')`))
     await js(`document.querySelector('.team-members li:last-child button').click()`)
     await until(() => js(`!!document.querySelector('.team-parent-link')`))
     await js('document.querySelector(".team-parent-link").click()')
@@ -101,7 +139,7 @@ process.stdin.on('end', () => {
     await shot('composer')
     const composerOverflow = await js(`(() => { const d = document.querySelector('.composer'); return d.scrollWidth - d.clientWidth })()`)
     if (composerOverflow > 1) throw new Error('Task composer overflows')
-    log('agent team: PASS — real IPC, fixture planner/workers, shared worktree, integration/checks/commit, parent navigation, dark/light at 1440/960, composer')
+    log('agent team: PASS — real IPC, fixture planner/workers, shared worktree, integration/checks/commit, live task terminals (background + interactive, single input), parent navigation, dark/light at 1440/960, composer')
   } finally {
     process.env.PATH = oldPath
     updateStore(s => Object.assign(s, before))

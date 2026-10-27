@@ -22,7 +22,7 @@ import {
   Square,
   SquareTerminal,
   Users,
-  Zap, CalendarClock } from 'lucide-react'
+  Zap, CalendarClock, LayoutGrid, TerminalSquare } from 'lucide-react'
 import type { Project, QueueStatus, Task, TaskColumn } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
@@ -33,6 +33,9 @@ import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
 import { useLook } from '../projectLook'
 import { PlanShare } from '../planRate'
+import TaskTerminals from './TaskTerminals'
+
+export type TasksLayout = 'board' | 'terminals'
 
 interface Props {
   tasks: Task[]
@@ -50,6 +53,13 @@ interface Props {
   onStop: (task: Task) => void
   onMove: (task: Task, column: TaskColumn) => void
   onOpenAgent: (agentId: string) => void
+  visible: boolean
+  /** Board of cards, or the live terminals of running tasks. */
+  layout: TasksLayout
+  onLayout: (layout: TasksLayout) => void
+  /** Shows one task's live terminal. */
+  onShowTerminal: (task: Task) => void
+  terminalFocus: string | null
 }
 
 const COLUMNS: { id: TaskColumn; title: string; icon: typeof Circle; hint: string }[] = [
@@ -68,8 +78,9 @@ function TaskCard({
   onStart,
   onStop,
   onOpenAgent,
-  onToggleQueued
-}: { task: Task; all: Task[]; agent?: Agent; queuePos?: number } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent' | 'onToggleQueued'>) {
+  onToggleQueued,
+  onShowTerminal
+}: { task: Task; all: Task[]; agent?: Agent; queuePos?: number } & Pick<Props, 'onOpen' | 'onStart' | 'onStop' | 'onOpenAgent' | 'onToggleQueued' | 'onShowTerminal'>) {
   const look = useLook()
   const run = task.run
   const running = task.column === 'running'
@@ -203,6 +214,11 @@ function TaskCard({
             {deps.kind === 'blocked' ? 'Blocked' : 'Waiting'}
           </Button>
         )}
+        {!task.team && running && (task.mode === 'headless' || run?.agentId) && (
+          <Button size="sm" variant="secondary" icon={TerminalSquare} onClick={() => onShowTerminal(task)} title="Watch its terminal live">
+            Terminal
+          </Button>
+        )}
         {!task.team && running && task.mode === 'headless' && (
           <Button size="sm" variant="ghost" icon={Square} onClick={() => onStop(task)}>
             Stop
@@ -228,6 +244,7 @@ export default function TasksView(props: Props) {
     [tasks, projectFilter]
   )
   const projectOptions = projects.filter((p) => !p.worktree)
+  const runningCount = tasks.filter((t) => t.column === 'running' && !t.team).length
   // Queue positions across all projects, in the order the queue will run them.
   const queueOrder = useMemo(
     () =>
@@ -256,9 +273,20 @@ export default function TasksView(props: Props) {
       <header className="tasks-head">
         <div>
           <h1>Tasks</h1>
-          <p className="muted">Queue work for Claude or Codex. Headless tasks run in the background; you review the result.</p>
+          <p className="muted">Queue work for Claude or Codex and watch every run live in Terminals; you review the result.</p>
         </div>
         <div className="toolbar">
+          <div className="segmented tasks-layout-switch" role="group" aria-label="Tasks layout">
+            <button type="button" aria-pressed={props.layout === 'board'} className={props.layout === 'board' ? 'active' : ''} onClick={() => props.onLayout('board')} title="Task board">
+              <LayoutGrid size={14} strokeWidth={2} />
+              <span>Board</span>
+            </button>
+            <button type="button" aria-pressed={props.layout === 'terminals'} className={props.layout === 'terminals' ? 'active' : ''} onClick={() => props.onLayout('terminals')} title="Live terminals of running tasks">
+              <TerminalSquare size={14} strokeWidth={2} />
+              <span>Terminals</span>
+              {runningCount > 0 && <span className="count-pill">{runningCount}</span>}
+            </button>
+          </div>
           {props.queue && (
             <div className={`queue-control ${props.queue.enabled ? 'on' : ''}`} title={props.queue.heldBecause ?? 'Queued tasks start by themselves'}>
               <label className="switch" title={props.queue.enabled ? 'Pause the queue' : 'Run queued tasks automatically'}>
@@ -304,7 +332,20 @@ export default function TasksView(props: Props) {
         </div>
       </header>
 
-      {tasks.length === 0 ? (
+      {/* Kept mounted on the board too, so terminals and dismissals survive switching. */}
+      <div className={props.layout === 'terminals' ? 'task-terminals-pane' : 'task-terminals-pane hidden'}>
+        <TaskTerminals
+          tasks={tasks}
+          agents={agents}
+          visible={props.visible && props.layout === 'terminals'}
+          projectFilter={projectFilter}
+          focusId={props.terminalFocus}
+          onOpen={props.onOpen}
+          onStop={props.onStop}
+          onOpenAgent={props.onOpenAgent}
+        />
+      </div>
+      {props.layout === 'terminals' ? null : tasks.length === 0 ? (
         <EmptyState icon={ClipboardList} title="No tasks yet">
           <p>Write down what you want done, pick a project, and press Start. You can run several at once, each in its own worktree.</p>
           <Button variant="primary" icon={Plus} onClick={props.onNew}>
@@ -350,6 +391,7 @@ export default function TasksView(props: Props) {
                       onStop={props.onStop}
                       onOpenAgent={props.onOpenAgent}
                       onToggleQueued={props.onToggleQueued}
+                      onShowTerminal={props.onShowTerminal}
                     />
                   ))}
                   {items.length === 0 && <div className="col-empty muted small">{col.hint}</div>}

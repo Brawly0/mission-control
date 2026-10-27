@@ -109,6 +109,7 @@ const api: MissionControlApi = {
   setProjectMeta: (path, patch) => ipcRenderer.invoke('projects:setMeta', path, patch),
   search: (query, opts) => ipcRenderer.invoke('index:search', query, opts),
   usageReport: (since) => ipcRenderer.invoke('index:usage', since),
+  dashboardActivity: () => ipcRenderer.invoke('index:dashboard'),
   sessionUsage: (key) => ipcRenderer.invoke('index:sessionUsage', key),
   indexStatus: () => ipcRenderer.invoke('index:status'),
   reindex: () => ipcRenderer.send('index:run'),
@@ -127,6 +128,12 @@ const api: MissionControlApi = {
   startTask: (id) => ipcRenderer.invoke('tasks:start', id),
   stopTask: (id) => ipcRenderer.invoke('tasks:stop', id),
   setTaskRun: (id, patch, column) => ipcRenderer.invoke('tasks:setRun', id, patch, column),
+  getTaskOutput: (id) => ipcRenderer.invoke('tasks:output', id),
+  onTaskOutput: (cb) => {
+    const handler = (_e: unknown, id: string, chunk: string) => cb(id, chunk)
+    ipcRenderer.on('tasks:output', handler)
+    return () => ipcRenderer.removeListener('tasks:output', handler)
+  },
   onTasksChanged: (cb) => {
     const handler = (_e: unknown, tasks: Task[]) => cb(tasks)
     ipcRenderer.on('tasks:changed', handler)

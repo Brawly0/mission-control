@@ -38,4 +38,6 @@ export interface LaunchOptions {
   kind?: AgentTool | 'shell'
   args?: string[]
   worktree?: WorktreeInfo
+  /** Open it without switching to the Agents page (task runs show in Tasks → Terminals). */
+  stayInView?: boolean
 }

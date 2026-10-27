@@ -2,6 +2,7 @@ import { briefingContext } from './projectBriefing'
 import { randomUUID } from 'node:crypto'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
 import { codexStates } from '../shared/codex'
+import { codexLaunchArgs } from './codexLaunch'
 import { findNewCodexSession } from './codexData'
 import { hookSettingsFor, removeHookSettings } from './hookServer'
 import { spawnTerminal } from './pty'
@@ -69,6 +70,7 @@ export function launchTerminal(spec: TerminalSpec): TerminalInfo {
     sessionId = args[1]
     codexSessions.set(id, sessionId)
   }
+  if (codex) args = codexLaunchArgs(spec.cwd, args)
   // An OSC sequence can be split across two chunks; keep the unfinished end for the next one.
   let carry = ''
   live.add(id)

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import { RotateCcw, X } from 'lucide-react'
 import type {
   AgentTool,
+  Task,
   CodexUsage,
   GitInfo,
   IndexStatus,
@@ -89,6 +90,8 @@ export default function App() {
   const [composerOpen, setComposerOpen] = useState(false)
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const [taskFilter, setTaskFilter] = useState('')
+  const [tasksLayout, setTasksLayout] = useState<'board' | 'terminals'>('board')
+  const [terminalFocus, setTerminalFocus] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'general' | 'spending' | undefined>()
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
@@ -223,6 +226,7 @@ export default function App() {
       if (ui.showWorktrees) setShowWorktrees(true)
       if (ui.sidebarCollapsed) setSidebarCollapsed(true)
       if (ui.inboxDismissed) setInboxDismissed(ui.inboxDismissed)
+      if (ui.tasksLayout) setTasksLayout(ui.tasksLayout)
       setUiLoaded(true)
       refreshProjects()
     })
@@ -230,8 +234,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (uiLoaded) window.mc.setUiState({ selectedPath: selectedPath ?? undefined, view, layout, showWorktrees, sidebarCollapsed })
-  }, [uiLoaded, selectedPath, view, layout, showWorktrees, sidebarCollapsed])
+    if (uiLoaded) window.mc.setUiState({ selectedPath: selectedPath ?? undefined, view, layout, showWorktrees, sidebarCollapsed, tasksLayout })
+  }, [uiLoaded, selectedPath, view, layout, showWorktrees, sidebarCollapsed, tasksLayout])
 
   // Keep git badges fresh: on an interval and whenever the window regains focus.
   useEffect(() => {
@@ -244,7 +248,17 @@ export default function App() {
     }
   }, [refreshGit])
 
-  const { tasks, tasksRef, startTask, saveAsTemplate, continueTask } = useTasks({ agents, launch, toast })
+  const { tasks, tasksRef, startTask: runTask, saveAsTemplate, continueTask } = useTasks({ agents, launch, toast })
+  /** Shows a task's live terminal in Tasks → Terminals. */
+  const showTaskTerminal = useCallback((task: Task) => {
+    setTasksLayout('terminals')
+    setTerminalFocus(task.id)
+  }, [])
+  // Starting a task from the Tasks page brings its terminal up, so you can watch it work.
+  const startTask = useCallback(async (task: Task) => {
+    await runTask(task)
+    if (view === 'tasks' && !task.team) showTaskTerminal(task)
+  }, [runTask, showTaskTerminal, view])
   const boardTasks = useMemo(() => tasks.filter(t => !t.teamParentId), [tasks])
 
   const launchWorktree = useCallback(
@@ -639,10 +653,18 @@ export default function App() {
                 setView('tasks')
                 setOpenTaskId(id)
               }}
-              onTaskDone={(id) => {
-                void window.mc.updateTask(id, { column: 'done' })
-                toast('success', 'Marked done')
+              onTaskDone={async (id) => {
+                try { await window.mc.updateTask(id, { column: 'done' }); toast('success', 'Marked done') }
+                catch (e) { toast('error', 'Could not complete the task', errorMessage(e)) }
               }}
+              onChat={async (tool) => {
+                try {
+                  const path = selected?.path ?? await window.mc.quickChatFolder()
+                  const name = selected?.name ?? 'Quick chat'
+                  await launch({ kind: tool, cwd: path, projectPath: path, projectName: name, title: `${name} · ${tool === 'codex' ? 'Codex' : 'Claude'}` })
+                } catch (e) { toast('error', 'Could not start the chat', errorMessage(e)) }
+              }}
+              onRunScript={() => { if (selected) { setView('project'); openDock('run') } }}
               onTogglePin={(p) => void window.mc.togglePin(p.path).then(refreshProjects)}
               onOpenAgent={focusAgent}
               onOpenProject={openProject}
@@ -823,6 +845,14 @@ export default function App() {
               onStop={(t) => window.mc.stopTask(t.id)}
               onMove={(t, column) => window.mc.updateTask(t.id, { column, order: Date.now() })}
               onOpenAgent={focusAgent}
+              visible={view === 'tasks'}
+              layout={tasksLayout}
+              onLayout={(l) => {
+                setTasksLayout(l)
+                setTerminalFocus(null)
+              }}
+              onShowTerminal={showTaskTerminal}
+              terminalFocus={terminalFocus}
             />
           </div>
         </div>

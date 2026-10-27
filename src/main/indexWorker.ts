@@ -13,6 +13,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { costOf } from './pricing'
+import { readDashboardActivity } from './dashboardData'
 import { titleFromPrompt, windowsPath } from '../shared/projectLook'
 import { skillUsesIn } from '../shared/skills'
 import { codexIdFromFile, codexPrompt, codexReply } from '../shared/codex'
@@ -722,6 +723,7 @@ function dayDigest(from: number, to: number): unknown {
 // ---------------------------------------------------------------- messages
 
 const handlers: Record<string, (...args: any[]) => unknown> = {
+  dashboardActivity: () => readDashboardActivity(db),
   search,
   usageReport,
   sessionUsage,

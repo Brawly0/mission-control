@@ -37,6 +37,7 @@ import {
   rerunChecks,
   getRateLimit,
   listTasks,
+  getTaskOutput,
   pumpQueue,
   queueStatus,
   setTaskRun,
@@ -285,6 +286,7 @@ export function registerIpc(): void {
   ipcMain.handle('index:search', async (_e, query: string, opts?: object) =>
     ownTitles((await queryIndex('search', query, opts ?? {})) as SearchHit[])
   )
+  ipcMain.handle('index:dashboard', () => queryIndex('dashboardActivity'))
   ipcMain.handle('index:usage', async (_e, since: number) => {
     const report = (await queryIndex('usageReport', since)) as UsageReport
     // Chats shown under another project (started from C:\, or moved by you) count toward that project.
@@ -313,6 +315,7 @@ export function registerIpc(): void {
   ipcMain.on('index:run', () => reindex())
 
   ipcMain.handle('tasks:list', () => listTasks())
+  ipcMain.handle('tasks:output', (_e, id: string) => getTaskOutput(id))
   ipcMain.handle('tasks:create', (_e, t: NewTask) => createTask(t))
   ipcMain.handle('tasks:team:plan', (_e, id: string) => planTaskTeam(id))
   ipcMain.handle('tasks:team:start', (_e, id: string) => startTaskTeam(id))

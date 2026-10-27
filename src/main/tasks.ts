@@ -13,6 +13,7 @@ import { commitIfDirty, createWorktree, gitInfo } from './git'
 import { agentEnv, whichSync } from './pty'
 import { loadStore, updateStore } from './store'
 import { addEvent, applyStreamEvent } from './streamParser'
+import { formatClaudeEvent, formatCodexEvent, formatEvents, formatNote, formatStart } from '../shared/taskConsole'
 import { defaultModelFor, launchArgs } from './spend'
 import { markEcoSession } from './planCost'
 import { assignmentsOverlap, parseTeamPlan, teamPlannerPrompt } from '../shared/teamPlan'
@@ -38,6 +39,8 @@ interface Hooks {
   onQueueStatus: (status: QueueStatus) => void
   /** An interactive task's dependencies all succeeded; it needs you to open it. */
   onReady: (task: Task) => void
+  /** Terminal text from a background run, for the live task terminals. */
+  onOutput?: (id: string, chunk: string) => void
 }
 
 let tasks: Task[] = []
@@ -52,6 +55,24 @@ let queueTimer: ReturnType<typeof setInterval> | undefined
 let queueStart: ReturnType<typeof setTimeout> | undefined
 const teamOperations = new Set<string>()
 let lastRateLimit: RateLimitInfo | null = null
+
+/** Live terminal text of each background run in this app session (capped; not saved). */
+const outputs = new Map<string, string>()
+const OUTPUT_CHARS = 400_000
+
+function appendOutput(id: string, chunk: string): void {
+  if (!chunk) return
+  const next = (outputs.get(id) ?? '') + chunk
+  // Trim from a line start so a cut never lands inside an escape sequence.
+  const cut = next.length > OUTPUT_CHARS ? next.indexOf('\n', next.length - OUTPUT_CHARS) + 1 : 0
+  outputs.set(id, cut > 0 ? next.slice(cut) : next)
+  hooks?.onOutput?.(id, chunk)
+}
+
+/** A task's terminal text so far; runs from before this app session are rebuilt from their saved events. */
+export function getTaskOutput(id: string): string {
+  return outputs.get(id) ?? formatEvents(tasks.find((t) => t.id === id)?.run?.events ?? [])
+}
 
 let saveTimer: NodeJS.Timeout | null = null
 let emitTimer: NodeJS.Timeout | null = null
@@ -496,6 +517,7 @@ export function deleteTask(id: string): void {
   stopTask(id)
   stopChecks(id)
   tasks = tasks.filter((t) => t.id !== id)
+  outputs.delete(id)
   // Tasks that waited on it no longer do (they don't start by themselves because of this).
   for (const t of tasks) {
     if (t.dependsOn?.includes(id)) {
@@ -635,6 +657,10 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
   if (!codex && budget && !t.budgetUsd) addEvent(run, 'info', `Default budget ${budget} applies`)
   if (!codex) markEcoSession(session.resume ?? session.sessionId)
 
+  // A follow-up continues the same terminal; a new run starts a clean one.
+  if (session.resume && outputs.has(t.id)) appendOutput(t.id, '\r\n' + formatNote(`── Follow-up ${'─'.repeat(40)}\n${prompt}`) + '\r\n')
+  else outputs.delete(t.id)
+  appendOutput(t.id, formatStart(cwd, `${codex ? 'codex' : 'claude'} ${args.slice(prefix.length).join(' ')}`))
   const child = spawn(file, args, { cwd, env: agentEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   procs.set(t.id, child)
 
@@ -658,6 +684,7 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
       } catch {
         continue
       }
+      appendOutput(t.id, codex ? formatCodexEvent(e) : formatClaudeEvent(e))
       if (codex) { if (applyCodexTaskEvent(run, e, (kind, text) => addEvent(run, kind, text))) sawResult = true; continue }
       const out = applyStreamEvent(run, e, t.permission)
       if (out.final) sawResult = true
@@ -669,6 +696,7 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
   child.stderr.setEncoding('utf8')
   child.stderr.on('data', (chunk: string) => {
     stderr = (stderr + chunk).slice(-2000)
+    appendOutput(t.id, formatNote(chunk, 'error'))
   })
 
   const finish = async (code: number | null, spawnError?: Error) => {
@@ -685,6 +713,7 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
     }
     if (run.error) addEvent(run, 'error', run.error)
     run.activity = run.error ? 'Stopped' : 'Finished'
+    appendOutput(t.id, '\r\n' + formatNote(run.error ? `[${run.error.split('\n')[0]}]` : `[process exited with code ${code ?? 0}]`, run.error ? 'error' : 'dim'))
 
     if (!run.error) {
       try { await afterSuccess(t, cwd) }

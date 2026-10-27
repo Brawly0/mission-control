@@ -8,9 +8,11 @@ interface Props {
   id: string
   visible: boolean
   onExit: (code: number) => void
+  /** Focus the terminal when it's shown (off for a terminal mirrored somewhere else). */
+  autoFocus?: boolean
 }
 
-const theme = {
+export const terminalTheme = {
   background: '#080c18',
   foreground: '#e1e6f5',
   cursor: '#22d3ee',
@@ -19,10 +21,11 @@ const theme = {
   brightBlack: '#5c6370'
 }
 
-export default function TerminalPane({ id, visible, onExit }: Props) {
+export default function TerminalPane({ id, visible, onExit, autoFocus = true }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const busRef = useRef<ReturnType<typeof subscribe> | null>(null)
   const onExitRef = useRef(onExit)
   onExitRef.current = onExit
 
@@ -33,7 +36,7 @@ export default function TerminalPane({ id, visible, onExit }: Props) {
       cursorBlink: true,
       scrollback: 10000,
       allowProposedApi: true,
-      theme
+      theme: terminalTheme
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -56,8 +59,7 @@ export default function TerminalPane({ id, visible, onExit }: Props) {
       return true
     })
 
-    const input = term.onData((data) => window.mc.ptyWrite(id, data))
-    const unsubscribe = subscribe(
+    const bus = subscribe(
       id,
       (data) => term.write(data),
       (code) => {
@@ -65,6 +67,12 @@ export default function TerminalPane({ id, visible, onExit }: Props) {
         onExitRef.current(code)
       }
     )
+    busRef.current = bus
+    const input = term.onData((data) => {
+      // Typing in a pane makes it the one that talks to the terminal.
+      if (hostRef.current?.contains(document.activeElement)) bus.claimInput()
+      if (bus.ownsInput()) window.mc.ptyWrite(id, data)
+    })
 
     const resize = () => {
       const el = hostRef.current
@@ -83,13 +91,15 @@ export default function TerminalPane({ id, visible, onExit }: Props) {
     return () => {
       observer.disconnect()
       input.dispose()
-      unsubscribe()
+      bus.unsubscribe()
+      busRef.current = null
       term.dispose()
     }
   }, [id])
 
   useEffect(() => {
     if (!visible) return
+    busRef.current?.claimInput()
     requestAnimationFrame(() => {
       try {
         fitRef.current?.fit()
@@ -97,9 +107,9 @@ export default function TerminalPane({ id, visible, onExit }: Props) {
       } catch {
         /* ignore */
       }
-      termRef.current?.focus()
+      if (autoFocus) termRef.current?.focus()
     })
-  }, [visible, id])
+  }, [visible, id, autoFocus])
 
   return <div className="terminal-host" ref={hostRef} onMouseDown={() => termRef.current?.focus()} />
 }

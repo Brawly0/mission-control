@@ -28,7 +28,7 @@ export function useTasks({ agents, launch, toast }: TasksOptions) {
         const res = await window.mc.startTask(task.id)
         if (res.interactive) {
           const { cwd, args, worktree } = res.interactive
-          const info = await launch({ cwd, projectName: task.projectName, projectPath: task.projectPath, title: task.title.slice(0, 48), kind: task.tool ?? 'claude', args, worktree })
+          const info = await launch({ cwd, projectName: task.projectName, projectPath: task.projectPath, title: task.title.slice(0, 48), kind: task.tool ?? 'claude', args, worktree, stayInView: true })
           if (info) {
             await window.mc.setTaskRun(
               task.id,

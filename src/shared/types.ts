@@ -130,6 +130,22 @@ export interface UsageReport {
   topSessions: (UsageTotals & { sessionId: string; projectKey: string; projectPath: string; title: string; updated: number })[]
 }
 
+export interface DashboardDay {
+  day: string
+  tool: AgentTool
+  sessions: number
+  events: number
+  /** Estimated active chat minutes; gaps over 15 minutes are excluded. */
+  activeMinutes: number
+}
+
+export interface DashboardActivity {
+  days: DashboardDay[]
+  sessions: number
+  activeDays: number
+  activeMinutes: number
+}
+
 export interface SearchHit {
   sessionId: string
   projectKey: string
@@ -392,6 +408,8 @@ export interface UiState {
   sidebarCollapsed?: boolean
   /** Inbox items you dismissed (their keys change when something new happens). */
   inboxDismissed?: string[]
+  /** Tasks page: the board, or the live terminals of running tasks. */
+  tasksLayout?: 'board' | 'terminals'
 }
 
 export interface RecentSession extends SessionSummary {
@@ -955,6 +973,7 @@ export interface MissionControlApi {
   setProjectMeta(path: string, patch: Partial<ProjectMeta>): Promise<void>
   search(query: string, opts?: { projectKey?: string | string[]; projectPath?: string; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
   usageReport(sinceMs: number): Promise<UsageReport>
+  dashboardActivity(): Promise<DashboardActivity>
   /** Per-session estimated cost and tokens for one project (from the index). */
   sessionUsage(projectKey: string | string[]): Promise<Record<string, UsageTotals>>
   indexStatus(): Promise<IndexStatus>
@@ -1004,6 +1023,10 @@ export interface MissionControlApi {
   /** Records the interactive agent a task runs in (or its finish). */
   setTaskRun(id: string, patch: Partial<TaskRun>, column?: TaskColumn): Promise<void>
   onTasksChanged(cb: (tasks: Task[]) => void): () => void
+  /** A background task's terminal text so far (rebuilt from saved events for runs before this app session). */
+  getTaskOutput(id: string): Promise<string>
+  /** New terminal text from a running background task. */
+  onTaskOutput(cb: (id: string, chunk: string) => void): () => void
   onRateLimit(cb: (info: RateLimitInfo) => void): () => void
   getRateLimit(): Promise<RateLimitInfo | null>
   /** Every installed skill (personal, plugins, projects, Mission Control's own). */

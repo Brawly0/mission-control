@@ -1539,6 +1539,11 @@ async function updateCheck(): Promise<void> {
  */
 export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeDeps): Promise<void> {
   try {
+    if (process.env.MC_SMOKE_HOME) {
+      const { homeDashboardSmoke } = await import('./homeDashboardSmoke')
+      await homeDashboardSmoke(win, outFile, log)
+      return
+    }
     if (process.env.MC_SMOKE_TEAM) {
       const { taskTeamSmoke } = await import('./taskTeamSmoke')
       await taskTeamSmoke(win, outFile, log)

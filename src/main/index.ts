@@ -83,7 +83,8 @@ app.whenReady().then(async () => {
             : 'Task finished. Ready for review.'
       notifyTasks(task.title, body)
     },
-    onReady: (task) => notifyTasks(`Ready: ${task.title}`, 'The tasks it waited on succeeded. Open it to start (it runs interactively).')
+    onReady: (task) => notifyTasks(`Ready: ${task.title}`, 'The tasks it waited on succeeded. Open it to start (it runs interactively).'),
+    onOutput: (id, chunk) => sendToWindow('tasks:output', id, chunk)
   })
   // Budget warnings: now and then, and after every task (above).
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
