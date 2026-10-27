@@ -49,7 +49,9 @@
       "buildResources": "build"
     },
     "files": [
-      "out/**/*",
+      "out/main/**/*",
+      "out/preload/**/*",
+      "out/renderer/**/*",
       "build/icon.png"
     ],
     "asarUnpack": [
