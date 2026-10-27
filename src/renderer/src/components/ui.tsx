@@ -91,6 +91,7 @@ export function EmptyState({ icon: Icon, title, children }: { icon: LucideIcon; 
 }
 
 export interface MenuItem {
+  id?: string
   label: string
   icon?: LucideIcon
   hint?: string
@@ -123,7 +124,7 @@ export function MenuButton({ trigger, items, align = 'left', portal = false }: {
     <div ref={menuRef} className={`menu menu-${align}`} role="menu"
       style={portal && rect ? { position: 'fixed', top: Math.min(rect.bottom + 4, window.innerHeight - 240), left: Math.max(8, Math.min(rect.right - 260, window.innerWidth - 268)), right: 'auto', minWidth: 0, width: 260, zIndex: 1000 } : undefined}>
       {items.map((item) => (
-        <button key={item.label} className="menu-item" role="menuitem" disabled={item.disabled}
+        <button key={item.id ?? item.label} className="menu-item" role="menuitem" disabled={item.disabled}
           onClick={() => { setOpen(false); item.onSelect() }}>
           {item.icon && <item.icon size={15} strokeWidth={1.9} />}
           <span className="menu-label">{item.label}{item.hint && <span className="menu-hint">{item.hint}</span>}</span>

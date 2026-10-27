@@ -161,8 +161,15 @@
 - [x] Review workflow: checks and read-only agent findings beside the diff, human review and checks tied to the current source snapshot before merge
 - [x] Measure startup/idle CPU/memory; remove app-wide idle ticking and closed-menu layout reads, defer new tabs and hidden transcript reads
 
+## v0.24: Workspace UI
+- [x] Resizable bottom Terminal / Run dock with live shell scrollback preserved while collapsed or on other pages; actual folder and worktree context (ADR 0025)
+- [x] Project navigation ordered Overview, Chats, Run, Changes, Briefing, Docs
+- [x] Agent tabs grouped by project, provider labels, overflow switcher and static needs-you indicators
+- [x] Review status cards for diff, checks and agent review; stale results called out and long outputs collapsed
+- [x] Brand palette (Deep Space Navy, Midnight Slate, Electric Cyan, Signal Blue, Soft Violet) in dark/light themes; orbital terminal logo in the sidebar and Windows icon
+
 ## Next ideas
-- [ ] Project terminal dock and "Run this for me" for commands an agent can't run (works for both agents)
+- [ ] "Run this for me" for commands an agent can't run (works for both agents)
 - [ ] Prompt snippets you can insert into any agent
 - [ ] Code signing so Windows SmartScreen stops warning
 - [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches

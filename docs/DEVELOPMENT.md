@@ -69,7 +69,7 @@ It also checks shared briefing preview/save/refresh, preserving manual decisions
 
 ### Projects and connections test
 
-`MC_SMOKE_WORKSPACE=1` checks the sidebar's agent connections (both checked, via `claude` and `codex login status`), renaming a project from its right-click menu, drag-sorting on the Projects page and in the sidebar (both saved), and the Agents bar's **Terminal** button (PowerShell in the active agent's folder). It needs the claude-hub project in your project list and puts the project names and order back afterwards. Screenshots `<MC_SMOKE>-connections/project-menu/projects/sidebar-rename/terminal.png`. No model calls.
+`MC_SMOKE_WORKSPACE=1` checks the sidebar's agent connections, project rename and drag sorting, and the Agents bar's **Terminal** button. It verifies the dock opens PowerShell in the active folder, keeps the same shell alive while collapsed or on another page, resizes and closes, and fits dark/light and narrow layouts. It also checks grouping across two projects and selecting tabs through the overflow menu. It needs the claude-hub project in your list and restores project metadata and theme afterwards. Screenshots use `<MC_SMOKE>-connections/project-menu/projects/sidebar-rename/dock-dark/dock-light/dock-narrow/agent-switcher.png`. No model calls.
 
 ### UI tour and worktree test
 

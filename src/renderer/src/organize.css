@@ -69,7 +69,7 @@
   color: var(--text);
 }
 .tag.on {
-  border-color: rgba(217, 119, 87, 0.4);
+  border-color: rgba(var(--accent-rgb), 0.4);
   background: var(--accent-soft);
   color: var(--accent-text);
 }

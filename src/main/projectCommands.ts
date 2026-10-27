@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import type { ProjectCommand, ProjectCommandRun } from '../shared/types'
 import { normalizePath } from './claudeData'
@@ -25,10 +25,12 @@ function changed(run: ProjectCommandRun) {
 export function projectRuns(path: string) {
   return [...runs.values()].filter(r => normalizePath(r.projectPath) === normalizePath(path))
 }
-export function startProjectCommand(path: string, commandId: string): ProjectCommandRun {
+export function startProjectCommand(path: string, commandId: string, cwd = path): ProjectCommandRun {
   const command = loadStore().projectMeta[normalizePath(path)]?.commands?.find(c => c.id === commandId)
   if (!command?.command.trim()) throw new Error('Save a command first.')
-  return startConfiguredCommand(path, command)
+  const root = normalizePath(resolve(path)), target = normalizePath(resolve(cwd))
+  if (target !== root && !target.startsWith(root + '\\')) throw new Error('Choose a command folder inside this project.')
+  return startConfiguredCommand(cwd, command)
 }
 export function startConfiguredCommand(path: string, command: ProjectCommand): ProjectCommandRun {
   const commandId = command.id

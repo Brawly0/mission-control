@@ -42,7 +42,7 @@
 }
 .switch input:checked + span::after {
   transform: translateX(14px);
-  background: #1c0f09;
+  background: var(--on-accent);
 }
 .switch input:focus-visible + span {
   outline: 2px solid var(--accent);
@@ -61,7 +61,7 @@
   background: var(--surface);
 }
 .queue-control.on {
-  border-color: rgba(217, 119, 87, 0.4);
+  border-color: rgba(var(--accent-rgb), 0.4);
 }
 .queue-label {
   display: flex;

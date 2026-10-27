@@ -83,7 +83,7 @@ export function registerIpc(): void {
   ipcMain.handle('projectBriefing:save', (_e, path: string, markdown: string) => saveProjectBriefing(path, markdown))
   ipcMain.handle('projectRuns:report', (_e, id: string) => projectCommandReport(id))
   ipcMain.handle('projectRuns:list', (_e, path: string) => projectRuns(path))
-  ipcMain.handle('projectRuns:start', (_e, path: string, id: string) => startProjectCommand(path, id))
+  ipcMain.handle('projectRuns:start', (_e, path: string, id: string, cwd?: string) => startProjectCommand(path, id, cwd))
   ipcMain.handle('projectRuns:stop', (_e, id: string) => stopProjectCommand(id))
   ipcMain.handle('sessions:move', (_e, id: string, path: string) => moveSession(id, path))
   ipcMain.handle('spend:context', (_e, ids: string[]) => contextUsage(ids))

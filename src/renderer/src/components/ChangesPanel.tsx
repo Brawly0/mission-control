@@ -58,6 +58,11 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
   const approvalKey = review ? `${review.fingerprint}:${review.check?.id ?? ''}:${review.check?.state ?? ''}:${review.review?.id ?? ''}:${review.review?.run?.finishedAt ?? ''}` : ''
   const approvedNow = !!review && approved === approvalKey
   const canMerge = approvedNow && checksPassed && files.length === 0 && !!changes?.commits.length
+  const checkTone = !review?.checkCommand ? 'neutral' : review.checkStale ? 'warning' : review.check?.state === 'passed' ? 'success' : review.check?.state === 'failed' ? 'danger' : review.check?.state === 'running' || review.check?.state === 'stopping' ? 'info' : 'neutral'
+  const checkLabel = !review?.checkCommand ? 'Not configured' : review.checkStale ? 'Out of date' : !review.check ? 'Not run' : { running: 'Running', stopping: 'Stopping', passed: 'Passed', failed: 'Failed', stopped: 'Stopped' }[review.check.state]
+  const agentTone = review?.reviewStale ? 'warning' : review?.review?.run?.error ? 'danger' : review?.review ? 'info' : 'neutral'
+  const agentLabel = review?.reviewStale ? 'Out of date' : review?.review?.column === 'running' ? 'In progress' : review?.review?.run?.error ? 'Failed' : review?.review?.run?.finishedAt ? 'Complete' : 'Optional'
+
 
   const run = async (label: string, fn: () => Promise<unknown>, success: string) => {
     setBusy(true)
@@ -66,15 +71,17 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
       toast('success', success)
       await load()
       onChanged?.()
+      return true
     } catch (e) {
       toast('error', `${label} failed`, errorMessage(e))
+      return false
     } finally {
       setBusy(false)
     }
   }
 
   const commit = () =>
-    run('Commit', () => window.mc.commitAll(path, commitMsg!.trim()), 'Changes committed').then(() => setCommitMsg(null))
+    run('Commit', () => window.mc.commitAll(path, commitMsg!.trim()), 'Changes committed').then(ok => { if (ok) setCommitMsg(null) })
 
   return (
     <div className="changes">
@@ -141,19 +148,25 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
         </div>
       </div>
 
-      {review && <section className="review-summary">
-        <div className="run-toolbar"><strong>{worktree && canMerge ? 'Ready to merge' : approvedNow ? 'Diff reviewed' : 'Changes to review'}</strong><span className="muted small">{files.filter(f => f.status === '?' || f.status === 'A').length} added · {files.filter(f => f.status === 'M').length} modified · {files.filter(f => f.status === 'D').length} deleted</span></div>
-        <div className="run-actions review-check-command">
-          <input className="text-input mono" aria-label="Project check command" placeholder="Check command, e.g. npm test" value={checkDraft ?? review.checkCommand} onChange={e => setCheckDraft(e.target.value)} />
-          {checkDraft !== null && <Button size="sm" disabled={busy} onClick={() => void run('Save checks', () => window.mc.setProjectMeta(review.projectPath, { checkCommand: checkDraft.trim() }), 'Check command saved').then(() => setCheckDraft(null))}>Save</Button>}
+      {review && <section className="review-summary" aria-label="Review status">
+        <div className="review-summary-heading"><strong>{worktree && canMerge ? 'Ready to merge' : approvedNow ? 'Diff reviewed' : files.length || changes?.commits.length ? 'Review changes' : 'Working tree clean'}</strong><span className="muted small">{files.length} {files.length === 1 ? 'file' : 'files'} · <span className="tone-green">+{totals.add}</span> <span className="tone-red">−{totals.del}</span></span></div>
+        <div className="review-status-grid" aria-live="polite">
+          <div className={`review-status-card tone-${approvedNow ? 'success' : 'neutral'}`}><span className="review-step">01 / Diff</span><strong>{approvedNow ? 'Reviewed' : files.length || changes?.commits.length ? 'Needs review' : 'Clean'}</strong><span>{approvedNow ? 'Current snapshot' : 'Inspect the files below'}</span></div>
+          <div className={`review-status-card tone-${checkTone}`}><span className="review-step">02 / Checks</span><strong>{checkLabel}</strong><span>{review.checkStale ? 'Rerun on current files' : review.check?.exitCode !== undefined ? `Exit code ${review.check.exitCode}` : review.checkCommand ? 'Project verification' : 'Set up a command'}</span></div>
+          <div className={`review-status-card tone-${agentTone}`}><span className="review-step">03 / Agent review</span><strong>{agentLabel}</strong><span>{review.review ? `${review.review.tool === 'codex' ? 'Codex' : 'Claude'} / read-only` : 'Get a second opinion'}</span></div>
+        </div>
+        <div className="review-primary-actions">
           <Button size="sm" disabled={busy || !review.checkCommand || review.check?.state === 'running' || review.check?.state === 'stopping'} onClick={() => void run('Checks', () => window.mc.startReviewChecks(path, worktree?.base), 'Checks started')}>Run checks</Button>
           {review.check?.state === 'running' && <Button size="sm" onClick={() => void window.mc.stopProjectCommand(review.check!.id).then(load)}>Stop checks</Button>}
-          <MenuButton align="right" trigger={toggle => <Button size="sm" disabled={busy || review.review?.column === 'running'} onClick={toggle}>Agent review</Button>} items={(['codex', 'claude'] as const).map(tool => ({label: `Review with ${tool === 'codex' ? 'Codex' : 'Claude'}`, onSelect: () => void run('Review', () => window.mc.startCodeReview(path, worktree?.base, tool), 'Read-only review started')}))} />
+          <MenuButton portal align="right" trigger={toggle => <Button size="sm" disabled={busy || review.review?.column === 'running'} onClick={toggle}>Agent review</Button>} items={(['codex', 'claude'] as const).map(tool => ({ label: `Review with ${tool === 'codex' ? 'Codex' : 'Claude'}`, onSelect: () => void run('Review', () => window.mc.startCodeReview(path, worktree?.base, tool), 'Read-only review started') }))} />
+          <label className="review-approval"><input type="checkbox" checked={approvedNow} onChange={e => setApproved(e.target.checked ? approvalKey : null)} /> Reviewed this diff and results</label>
         </div>
-        <div className="run-actions small"><span className={review.check?.state === 'failed' ? 'tone-red' : 'muted'}>{!review.checkCommand ? 'Checks not configured' : !review.check ? 'Checks not run' : review.checkStale ? 'Checks stale — files or command changed; rerun' : `Checks ${review.check.state}${review.check.exitCode !== undefined ? ` (exit ${review.check.exitCode})` : ''}`}</span>
-          <label><input type="checkbox" checked={approvedNow} onChange={e => setApproved(e.target.checked ? approvalKey : null)} /> I reviewed this diff and the results</label></div>
-        {review.check?.output && <details><summary className="small">Check output</summary><pre className="review-check-output">{review.check.output}</pre></details>}
-        {review.review && <details open={review.review.column === 'running' || !!review.review.run?.error}><summary className="small">{review.reviewStale ? 'Agent review stale — files changed' : review.review.column === 'running' ? 'Agent reviewing…' : 'Agent review result — your decision is still required'}</summary><div className="review-agent-result">{review.review.run?.error || review.review.run?.activity}{review.review.run?.result && <Md>{review.review.run.result}</Md>}</div></details>}
+        <details className="review-config" open={!review.checkCommand}><summary>Check setup <code className="ellipsis">{review.checkCommand || 'Choose a verification command'}</code></summary><div className="review-check-command run-actions">
+          <input className="text-input mono" aria-label="Project check command" placeholder="e.g. npm test" value={checkDraft ?? review.checkCommand} onChange={e => setCheckDraft(e.target.value)} />
+          {checkDraft !== null && <Button size="sm" disabled={busy} onClick={() => void run('Save checks', () => window.mc.setProjectMeta(review.projectPath, { checkCommand: checkDraft.trim() }), 'Check command saved').then(ok => { if (ok) setCheckDraft(null) })}>Save</Button>}
+        </div></details>
+        {review.check?.output && <details className="review-output"><summary>Check output <span className={`review-state-badge tone-${checkTone}`}>{checkLabel}</span></summary><pre className="review-check-output">{review.check.output}</pre></details>}
+        {review.review && <details className="review-output"><summary>Agent findings <span className={`review-state-badge tone-${agentTone}`}>{agentLabel}</span></summary><div className="review-agent-result">{review.review.run?.error || (review.review.run?.result ? <Md>{review.review.run.result}</Md> : review.review.run?.activity)}</div></details>}
       </section>}
 
       {commitMsg !== null && (

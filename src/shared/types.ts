@@ -825,7 +825,7 @@ export interface MissionControlApi {
   draftProjectBriefing(path: string): Promise<{ file: string; markdown: string }>
   saveProjectBriefing(path: string, markdown: string): Promise<void>
   projectRuns(projectPath: string): Promise<ProjectCommandRun[]>
-  startProjectCommand(projectPath: string, commandId: string): Promise<ProjectCommandRun>
+  startProjectCommand(projectPath: string, commandId: string, cwd?: string): Promise<ProjectCommandRun>
   stopProjectCommand(runId: string): Promise<void>
   projectCommandReport(runId: string): Promise<{ cwd: string; prompt: string }>
   onProjectRunChanged(cb: (run: ProjectCommandRun) => void): () => void

@@ -13,6 +13,7 @@ import './skills.css'
 import './inbox.css'
 import './agents.css'
 import './codex.css'
+import './workspace.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

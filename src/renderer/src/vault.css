@@ -303,7 +303,7 @@
 .markdown a.note-link {
   color: var(--accent-text);
   text-decoration: none;
-  border-bottom: 1px solid rgba(217, 119, 87, 0.35);
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.35);
 }
 .markdown a.note-link:hover {
   border-bottom-color: var(--accent-text);
@@ -347,8 +347,8 @@
   height: 52px;
   border-radius: 14px;
   background: var(--accent-grad);
-  color: #fff;
-  box-shadow: 0 6px 20px rgba(217, 119, 87, 0.3);
+  color: var(--on-accent);
+  box-shadow: 0 6px 20px rgba(var(--accent-rgb), 0.3);
 }
 .vault-hero-card h2 {
   margin: 4px 0 0;

@@ -3,12 +3,16 @@
    the Codex plan meter and the Codex usage card.
    ============================================================ */
 :root {
-  --codex: #34c79b;
-  --codex-soft: rgba(52, 199, 155, 0.14);
+  --claude: #b4a1fb;
+  --claude-soft: rgba(139, 92, 246, 0.16);
+  --codex: #7fb0fb;
+  --codex-soft: rgba(59, 130, 246, 0.16);
 }
 :root[data-theme='light'] {
-  --codex: #0b8a65;
-  --codex-soft: rgba(11, 138, 101, 0.1);
+  --claude: #6d28d9;
+  --claude-soft: rgba(139, 92, 246, 0.11);
+  --codex: #1d4ed8;
+  --codex-soft: rgba(59, 130, 246, 0.11);
 }
 
 .tool-badge {
@@ -28,11 +32,11 @@
   background: var(--codex-soft);
 }
 .tool-claude {
-  color: var(--accent-text);
-  background: var(--accent-soft);
+  color: var(--claude);
+  background: var(--claude-soft);
 }
 :root[data-theme='light'] .tool-claude {
-  color: var(--accent);
+  color: var(--claude);
 }
 .session-title .tool-badge,
 .session-viewer-name .tool-badge {

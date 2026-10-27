@@ -2,25 +2,28 @@
    Mission Control: design tokens
    ============================================================ */
 :root {
-  --bg: #0c0e13;
-  --bg-sidebar: #10131a;
-  --surface: #141821;
-  --surface-2: #1a1f2a;
-  --surface-3: #212734;
+  --bg: #0b1020;
+  --bg-sidebar: #0d1326;
+  --surface: #121a2e;
+  --surface-2: #1a2238;
+  --surface-3: #222c47;
   --hover: rgba(255, 255, 255, 0.045);
   --active: rgba(255, 255, 255, 0.075);
-  --border: #222836;
-  --border-strong: #2e3546;
-  --text: #e7e9ef;
-  --text-2: #b4bacb;
-  --muted: #858ca0;
-  --faint: #5b6275;
-  --term-bg: #0a0c10;
+  --border: #232d48;
+  --border-strong: #323e60;
+  --text: #e8ecf8;
+  --text-2: #b9c1da;
+  --muted: #8e97b6;
+  --faint: #646d8c;
+  --term-bg: #080c18;
 
-  --accent: #d97757;
-  --accent-hover: #e48a6c;
-  --accent-soft: rgba(217, 119, 87, 0.14);
-  --accent-text: #f0a487;
+  /* Brand palette: Electric Cyan #22d3ee, Signal Blue #3b82f6, Soft Violet #8b5cf6. */
+  --accent: #22d3ee;
+  --accent-rgb: 34, 211, 238;
+  --on-accent: #061423;
+  --accent-hover: #5ee3f5;
+  --accent-soft: rgba(34, 211, 238, 0.12);
+  --accent-text: #67e8f9;
 
   --green: #4ade80;
   --orange: #fb923c;
@@ -29,7 +32,7 @@
   --yellow: #facc15;
 
   --radius-sm: 6px;
-  --radius: 8px;
+  --radius: 10px;
   --radius-lg: 12px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -194,7 +197,7 @@ code {
 }
 .btn-primary {
   background: var(--accent);
-  color: #1c0f09;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .btn-primary:hover:not(:disabled) {
@@ -227,7 +230,7 @@ code {
 .btn.is-on {
   background: var(--accent-soft);
   color: var(--accent-text);
-  border-color: rgba(217, 119, 87, 0.35);
+  border-color: rgba(var(--accent-rgb), 0.35);
 }
 .icon-btn {
   display: inline-flex;
@@ -337,7 +340,7 @@ code {
 }
 .chip-accent {
   color: var(--accent-text);
-  border-color: rgba(217, 119, 87, 0.3);
+  border-color: rgba(var(--accent-rgb), 0.3);
   background: var(--accent-soft);
 }
 
@@ -590,9 +593,8 @@ code {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: linear-gradient(140deg, #e8916f, #c05f3f);
-  color: #2a120a;
-  box-shadow: 0 2px 10px rgba(217, 119, 87, 0.35);
+  background: transparent;
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.35);
 }
 .brand-name {
   font-family: var(--font-display);
@@ -820,7 +822,7 @@ code {
   gap: 10px;
   padding: 8px 12px 8px 16px;
   background: var(--accent-soft);
-  border-bottom: 1px solid rgba(217, 119, 87, 0.3);
+  border-bottom: 1px solid rgba(var(--accent-rgb), 0.3);
   color: var(--accent-text);
 }
 .restore-banner span {
@@ -1023,7 +1025,7 @@ code {
 }
 .session-resume:hover {
   background: var(--accent);
-  color: #1c0f09;
+  color: var(--on-accent);
 }
 .chat-pane {
   min-width: 0;

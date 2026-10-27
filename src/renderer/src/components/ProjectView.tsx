@@ -361,9 +361,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
         </div>
       </header>
 
-      <nav className="page-tabs">
-        <button className={tab === 'briefing' ? 'active' : ''} onClick={() => setTab('briefing')}><FileText size={15} /> Briefing</button>
-        <button className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}><Terminal size={15} /> Run</button>
+      <nav className="page-tabs" aria-label="Project navigation">
         <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')} title={withKey('Overview', keyFor('tabOverview'))}>
           <LayoutDashboard size={15} /> Overview
           {project.meta.status && <span className={`tab-count status-${project.meta.status}`}>{project.meta.status}</span>}
@@ -371,9 +369,11 @@ export default function ProjectView({ project, projects, git, visible, groups, f
         <button className={tab === 'chats' ? 'active' : ''} onClick={() => setTab('chats')} title={withKey('Chats', keyFor('tabChats'))}>
           <MessagesSquare size={15} /> Chats <span className="tab-count">{sessions.length}</span>
         </button>
+        <button className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}><Terminal size={15} /> Run</button>
         <button className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')} disabled={!git?.isRepo} title={git?.isRepo ? '' : 'Not a git repository'}>
           <GitBranch size={15} /> Changes {!!git?.dirty && <span className="tab-count warn">{git.dirty}</span>}
         </button>
+        <button className={tab === 'briefing' ? 'active' : ''} onClick={() => setTab('briefing')}><FileText size={15} /> Briefing</button>
         <button className={tab === 'docs' ? 'active' : ''} onClick={() => setTab('docs')} title={withKey('Docs', keyFor('tabDocs'))}>
           <FileText size={15} /> Docs
         </button>

@@ -35,6 +35,7 @@ import { LookContext, makeLookUp } from './projectLook'
 import { ShortcutContext, allowedIn, bindingIndex, comboFromEvent, effectiveKeys } from './shortcuts'
 import ShortcutsDialog from './components/ShortcutsDialog'
 import TopBar from './components/TopBar'
+import BottomDock, { type DockRequest, type DockContext } from './components/BottomDock'
 import ProjectsView from './components/ProjectsView'
 import NewProjectDialog from './components/NewProjectDialog'
 import InboxView from './components/InboxView'
@@ -70,6 +71,9 @@ function OnceShown({ show, children }: { show: boolean; children: ReactNode }) {
 
 export default function App() {
   const toast = useToast()
+  const [dockRequest, setDockRequest] = useState<DockRequest>()
+  const dockNonce = useRef(0)
+  const openDock = (tab: DockRequest['tab']) => setDockRequest({ tab, nonce: ++dockNonce.current })
   const [projects, setProjects] = useState<Project[]>([])
   const lookUp = useMemo(() => makeLookUp(projects), [projects])
   const [git, setGit] = useState<Record<string, GitInfo>>({})
@@ -323,20 +327,24 @@ export default function App() {
 
   const selected = projects.find((p) => p.path === selectedPath) ?? null
   const openTask = tasks.find((t) => t.id === openTaskId) ?? null
+  const terminalAgent = agents.find(a => a.id === activeAgent)
+  const sessionProject = view === 'agents' && terminalAgent ? projects.find(p => p.path.toLowerCase() === terminalAgent.projectPath.toLowerCase()) : selected
   const newInSelected = useCallback(() => {
-    if (selected) launch({ kind: selected.meta.preferredAgent ?? 'claude', cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · new` })
-  }, [selected, launch])
+    if (sessionProject) launch({ kind: sessionProject.meta.preferredAgent ?? 'claude', cwd: sessionProject.path, projectName: sessionProject.name, projectPath: sessionProject.path, title: `${sessionProject.name} · new` })
+  }, [sessionProject, launch])
 
   const openProjectTerminal = (p?: Project) => {
     const project = p ?? selected
-    if (project) void launch({ cwd: project.path, projectPath: project.path, projectName: project.name, title: project.name + ' - terminal', kind: 'shell' })
-    else toast('info', 'Select a project first', 'Choose a project, then open a terminal there.')
+    if (!project) return toast('info', 'Select a project first', 'Choose a project, then open a terminal there.')
+    if (p || (view !== 'project' && view !== 'agents')) openProject(project.path)
+    openDock('terminal')
   }
-  const terminalAgent = agents.find(a => a.id === activeAgent)
-  const openAgentTerminal = () => {
-    if (terminalAgent) void launch({ cwd: terminalAgent.cwd, projectPath: terminalAgent.projectPath, projectName: terminalAgent.projectName, title: terminalAgent.projectName + ' - terminal', kind: 'shell' })
-    else openProjectTerminal()
-  }
+  const openAgentTerminal = () => openDock('terminal')
+  const dockAgent = view === 'agents' ? terminalAgent : undefined
+  const dockProject = dockAgent ? projects.find(p => p.path.toLowerCase() === dockAgent.projectPath.toLowerCase()) : selected
+  const dockContext: DockContext | undefined = dockAgent
+    ? { cwd: dockAgent.cwd, name: dockProject?.name ?? dockAgent.projectName, project: dockProject ?? undefined, worktree: dockAgent.worktree }
+    : selected ? { cwd: selected.path, name: selected.name, project: selected } : undefined
 
   const resumeRecent = useCallback(
     (s: RecentSession) =>
@@ -587,7 +595,7 @@ export default function App() {
         }}
       />
       <main className="main">
-        <TopBar userName={userName} currentProject={selected?.name}
+        <TopBar userName={userName} currentProject={sessionProject?.name}
           rateLimit={rateLimit}
           codexLimits={codexUsage?.limits ?? null}
           update={update}
@@ -719,6 +727,7 @@ export default function App() {
               onLayout={setLayout}
               onNew={newInSelected}
               onTerminal={openAgentTerminal}
+              onRun={() => openDock('run')}
               terminalFolder={terminalAgent?.cwd ?? selected?.path}
               onGitChanged={refreshGit}
               onHandOff={(a) => a.kind !== 'shell' && void handOff(a.projectPath, a.kind, a.kind === 'claude' ? 'codex' : 'claude', a.sessionId, a.worktree)}
@@ -812,6 +821,7 @@ export default function App() {
             />
           </div>
         </div>
+        <BottomDock context={dockContext} request={dockRequest} visible={view === 'project' || view === 'agents'} onChanged={refreshProjects} onLaunch={launch} />
         {openTask && view === 'tasks' && (
           <TaskDrawer
             task={openTask}

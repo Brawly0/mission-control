@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, MoreHorizontal, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, ListFilter, Maximize2, Minimize2, MoreHorizontal, Minus, Play, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
+import { useLook } from '../projectLook'
 import { displayStatus } from '../agentStatus'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
@@ -32,6 +33,7 @@ interface Props {
   onLayout: (layout: AgentLayout) => void
   onNew: () => void
   onTerminal: () => void
+  onRun: () => void
   terminalFolder?: string
   onGitChanged: () => void
   /** Grid columns ('auto' or '1'–'4'), kept by App so workspaces can save and restore them. */
@@ -125,6 +127,21 @@ function TabTitle({ agent, onRename, editRequest }: { agent: Agent; onRename: (t
 
 export default function AgentsView(props: Props) {
   const { agents, activeId, layout, maximized, onMaximize, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew, onHandOff } = props
+  const look = useLook()
+  const tabStripRef = useRef<HTMLDivElement>(null)
+  const groups = useMemo(() => {
+    const map = new Map<string, { path: string; name: string; agents: Agent[] }>()
+    for (const a of agents) {
+      const key = a.projectPath.toLowerCase()
+      const group = map.get(key) ?? { path: a.projectPath, name: a.projectName, agents: [] }
+      group.agents.push(a); map.set(key, group)
+    }
+    return [...map.values()]
+  }, [agents])
+  useEffect(() => {
+    const el = [...(tabStripRef.current?.querySelectorAll<HTMLElement>('[data-agent-id]') ?? [])].find(e => e.dataset.agentId === activeId)
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeId])
   const [reviewOpen, setReviewOpen] = useState(false)
   const [renameRequest, setRenameRequest] = useState(0)
   const [minimized, setMinimized] = useState<Set<string>>(new Set())
@@ -265,40 +282,35 @@ export default function AgentsView(props: Props) {
   return (
     <div className="agents">
       <div className="agent-bar">
-        <div className="agent-tabs">
-          {agents.map((a, i) => {
-            const st = displayStatus(a, lastOutput[a.id])
-            const jump = i < 9 ? keyFor(`agent${i + 1}`) : ''
-            const isMin = minimized.has(a.id)
-            return (
-              <div
-                key={a.id}
-                className={`agent-tab ${a.id === active?.id && !isMin ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''} ${isMin ? 'minimized' : ''}`}
-                onClick={() => select(a.id)}
-                title={`${a.cwd}\n${st.label}${isMin ? '\nMinimized: click to bring it back' : ''}${jump ? `\n${jump} switches here` : ''}`}
-              >
-                <span className={`dot ${st.cls}`} />
-                {a.kind === 'shell' && <Terminal size={12} className="muted" />}
-                {a.kind !== 'shell' && <ToolBadge tool={a.kind} />}
-                {a.worktree && <GitBranch size={12} className="tone-accent" />}
-                <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} editRequest={a.id === active?.id ? renameRequest : undefined} />
-                <button
-                  className="tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClose(a.id)
-                  }}
-                  title="Close (stops the process)"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            )
-          })}
+        <div className="agent-navigation">
+          <div className="agent-tabs" ref={tabStripRef}>
+            {groups.map(group => <div className="agent-tab-group" key={group.path} role="group" aria-label={look(group.path)?.name ?? group.name}>
+              <span className="agent-group-label" title={group.path}><Avatar name={group.name} path={group.path} size={18} /><span className="ellipsis">{look(group.path)?.name ?? group.name}</span></span>
+              {group.agents.map(a => {
+                const st = displayStatus(a, lastOutput[a.id]), i = agents.indexOf(a), isMin = minimized.has(a.id)
+                const jump = i < 9 ? keyFor(`agent${i + 1}`) : ''
+                return <div key={a.id} data-agent-id={a.id} role="button" tabIndex={0} aria-pressed={a.id === active?.id && !isMin}
+                  className={`agent-tab ${a.id === active?.id && !isMin ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''} ${isMin ? 'minimized' : ''}`}
+                  onClick={() => select(a.id)} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(a.id) } }}
+                  title={`${look(group.path)?.name ?? group.name} / ${a.kind === 'shell' ? 'Terminal' : a.kind === 'codex' ? 'Codex' : 'Claude'} / ${a.title}\n${a.cwd}\n${st.label}${isMin ? '\nMinimized: click to restore' : ''}${jump ? '\n' + jump : ''}`}>
+                  <span className={`dot ${st.cls}`} />
+                  {a.kind === 'shell' ? <Terminal size={12} /> : <ToolBadge tool={a.kind} />}
+                  <TabTitle agent={a} onRename={t => onRename(a.id, t)} editRequest={a.id === active?.id ? renameRequest : undefined} />
+                  {st.cls === 'needs-input' && <span className="agent-needs-label">Needs you</span>}
+                  <button className="tab-close" title="Close (stops the process)" onClick={e => { e.stopPropagation(); onClose(a.id) }}><X size={12} /></button>
+                </div>
+              })}
+            </div>)}
+          </div>
+          <MenuButton portal align="right" trigger={toggle => <Button size="sm" variant="ghost" icon={ListFilter} onClick={toggle} title="Switch to any open agent">Agents {agents.length}</Button>}
+            items={agents.map(a => ({ id: a.id, label: a.title, hint: `${look(a.projectPath)?.name ?? a.projectName} / ${a.kind === 'shell' ? 'Terminal' : a.kind === 'codex' ? 'Codex' : 'Claude'} / ${displayStatus(a, lastOutput[a.id]).label}`, onSelect: () => select(a.id) }))} />
           <IconButton icon={Plus} label="New session in current project" size={15} onClick={onNew} />
         </div>
         <div className="agent-bar-end">
+          <span className="agent-current-context ellipsis" title={active?.cwd}>{active ? look(active.projectPath)?.name ?? active.projectName : 'Agents'}{active && (active.worktree?.branch || git[active.projectPath]?.branch) ? ' / ' + (active.worktree?.branch || git[active.projectPath]?.branch) : ''}</span>
+          {agents.some(a => a.hookStatus === 'needs-input' && !a.exited) && <button className="agent-needs-action" onClick={() => { const next = agents.find(a => a.hookStatus === 'needs-input' && !a.exited); if (next) select(next.id) }}>{agents.filter(a => a.hookStatus === 'needs-input' && !a.exited).length} need you</button>}
           <Button size="sm" variant="ghost" icon={Terminal} onClick={props.onTerminal} disabled={!props.terminalFolder} title={`Open PowerShell in ${props.terminalFolder ?? 'a selected project'}`}>Terminal</Button>
+          <Button size="sm" variant="ghost" icon={Play} onClick={props.onRun} disabled={!props.terminalFolder}>Run</Button>
           {layout === 'grid' && (
             <>
               {customSized && <IconButton icon={Columns3} label="Even out the sizes (or double-click a divider)" size={14} onClick={evenOut} />}

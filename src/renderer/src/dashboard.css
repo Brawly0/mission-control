@@ -9,9 +9,10 @@
   --tile-purple: rgba(167, 139, 250, 0.16);
   --tile-orange: rgba(251, 146, 60, 0.16);
   --purple: #a78bfa;
-  --accent-grad: linear-gradient(120deg, #f08a63, #e0663f 55%, #d4562f);
+  --accent-grad: linear-gradient(120deg, #22d3ee, #3b82f6);
 }
 :root[data-theme='light'] {
+  --accent-grad: linear-gradient(120deg, #0e7490, #2563eb 60%, #6d28d9);
   --tile-green: rgba(22, 163, 74, 0.12);
   --tile-blue: rgba(37, 99, 235, 0.11);
   --tile-purple: rgba(124, 58, 237, 0.11);
@@ -118,7 +119,7 @@
   margin-right: 6px;
   background: var(--accent-grad);
   border: 0;
-  box-shadow: 0 4px 14px rgba(217, 119, 87, 0.3);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.3);
 }
 .topbar-avatar {
   width: 36px;
@@ -146,11 +147,11 @@
   font-size: 13.5px;
 }
 .sidebar .nav-item.active {
-  background: linear-gradient(90deg, rgba(217, 119, 87, 0.22), rgba(217, 119, 87, 0.08));
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-rgb), 0.08));
   color: var(--text);
 }
 :root[data-theme='light'] .sidebar .nav-item.active {
-  background: linear-gradient(90deg, rgba(201, 98, 63, 0.16), rgba(201, 98, 63, 0.05));
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.16), rgba(var(--accent-rgb), 0.05));
 }
 .sidebar .project-item {
   padding: 6px 10px;
@@ -250,9 +251,9 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(120% 140% at 100% 0%, rgba(217, 119, 87, 0.42), transparent 55%),
+    radial-gradient(120% 140% at 100% 0%, rgba(var(--accent-rgb), 0.42), transparent 55%),
     radial-gradient(80% 120% at 85% 120%, rgba(167, 139, 250, 0.18), transparent 60%),
-    linear-gradient(120deg, transparent 40%, rgba(217, 119, 87, 0.08));
+    linear-gradient(120deg, transparent 40%, rgba(var(--accent-rgb), 0.08));
   pointer-events: none;
 }
 .hero-text {
@@ -317,8 +318,8 @@
 .dash-action.primary {
   background: var(--accent-grad);
   border-color: transparent;
-  color: #fff;
-  box-shadow: 0 8px 24px rgba(217, 119, 87, 0.28);
+  color: var(--on-accent);
+  box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.28);
 }
 .dash-action.primary .small {
   color: rgba(255, 255, 255, 0.85);
@@ -409,7 +410,7 @@
 }
 .activity-resume:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .project-cards {
@@ -621,7 +622,7 @@
 .chip-btn.on {
   background: var(--accent-grad);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
 }
 .week-body {
   display: flex;

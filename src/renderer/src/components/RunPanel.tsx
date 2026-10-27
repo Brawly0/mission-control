@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Copy, Pencil, Play, Plus, Square, Terminal, Trash2 } from 'lucide-react'
-import type { AgentTool, Project, ProjectCommand, ProjectCommandRun } from '@shared/types'
+import type { AgentTool, Project, ProjectCommand, ProjectCommandRun, WorktreeInfo } from '@shared/types'
 import type { LaunchOptions } from '../types'
 import { Button, EmptyState, IconButton } from './ui'
 import { useToast } from '../toast'
 import { errorMessage } from '../util'
 
-export default function RunPanel({ project, onChanged, onLaunch }: { project: Project; onChanged: () => void; onLaunch: (opts: LaunchOptions) => void }) {
+export default function RunPanel({ project, onChanged, onLaunch, cwd = project.path, worktree }: { project: Project; onChanged: () => void; onLaunch: (opts: LaunchOptions) => void; cwd?: string; worktree?: WorktreeInfo }) {
   const toast = useToast()
   const [runs, setRuns] = useState<ProjectCommandRun[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -20,13 +20,13 @@ export default function RunPanel({ project, onChanged, onLaunch }: { project: Pr
   const current = runs.find(r => r.commandId === activeId)
   const live = (r?: ProjectCommandRun) => r?.state === 'running' || r?.state === 'stopping'
   useEffect(() => {
-    const filter = (list: ProjectCommandRun[]) => setRuns(list.filter(r => r.projectPath.toLowerCase() === project.path.toLowerCase()))
+    const filter = (list: ProjectCommandRun[]) => setRuns(list.filter(r => r.projectPath.toLowerCase() === cwd.toLowerCase()))
     const off = window.mc.onProjectRunChanged(run => {
-      if (run.projectPath.toLowerCase() === project.path.toLowerCase()) setRuns(list => [...list.filter(r => r.commandId !== run.commandId), run])
+      if (run.projectPath.toLowerCase() === cwd.toLowerCase()) setRuns(list => [...list.filter(r => r.commandId !== run.commandId), run])
     })
-    window.mc.projectRuns(project.path).then(filter).catch(e => toast('error', 'Could not load command output', errorMessage(e)))
+    window.mc.projectRuns(cwd).then(filter).catch(e => toast('error', 'Could not load command output', errorMessage(e)))
     return off
-  }, [project.path, toast])
+  }, [cwd, toast])
   useEffect(() => { if (follow && outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight }, [current?.output, follow])
   const save = async () => {
     if (!draft?.name.trim() || !draft.command.trim()) return
@@ -40,7 +40,7 @@ export default function RunPanel({ project, onChanged, onLaunch }: { project: Pr
   const start = async (id: string) => {
     setSelected(id); setStarting(id); setFollow(true)
     try {
-      const run = await window.mc.startProjectCommand(project.path, id)
+      const run = await window.mc.startProjectCommand(project.path, id, cwd)
       setRuns(list => [...list.filter(r => r.commandId !== id), run])
     } catch (e) { toast('error', 'Could not run command', errorMessage(e)) } finally { setStarting(null) }
   }
@@ -55,12 +55,12 @@ export default function RunPanel({ project, onChanged, onLaunch }: { project: Pr
     if (!current) return
     try {
       const report = await window.mc.projectCommandReport(current.id)
-      onLaunch({ cwd: report.cwd, projectPath: project.path, projectName: project.name, title: project.name + ' - ' + current.name, kind: tool, args: [report.prompt] })
+      onLaunch({ cwd: report.cwd, projectPath: project.path, projectName: project.name, title: project.name + ' - ' + current.name, kind: tool, args: [report.prompt], worktree })
     } catch (e) { toast('error', 'Could not prepare command report', errorMessage(e)) }
   }
   return <div className="run-panel">
     <header className="run-toolbar">
-      <div><strong>Project commands</strong><div className="muted small">PowerShell · {project.path}</div></div>
+      <div><strong>Project commands</strong><div className="muted small">PowerShell · {cwd}</div></div>
       <Button size="sm" icon={Plus} onClick={() => setDraft({ id: crypto.randomUUID(), name: '', command: '' })}>Add command</Button>
     </header>
     {draft && <form className="run-editor" onSubmit={e => { e.preventDefault(); void save() }}>

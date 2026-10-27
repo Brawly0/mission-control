@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
+import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
+import BrandMark from './BrandMark'
 import AgentConnections from './AgentConnections'
 import { useProjectActions } from './useProjectActions'
 import { orderedProjects } from '@shared/projectOrder'
@@ -270,7 +271,7 @@ export default function Sidebar(props: Props) {
     return (
       <aside className="sidebar rail">
         <button className="brand-mark rail-brand" title={withKey('Show sidebar', keyFor('toggleSidebar'))} onClick={props.onToggleCollapsed}>
-          <PanelLeftOpen size={17} />
+          <BrandMark size={34} />
         </button>
         <button className="rail-item" title={withKey('Command palette', keyFor('palette'))} onClick={props.onOpenPalette}>
           <Search size={17} />
@@ -308,9 +309,7 @@ export default function Sidebar(props: Props) {
     <aside className="sidebar">
       <div className="brand">
         <div className="brand-mark">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-            <path d="M12 2 L14.2 9.8 L22 12 L14.2 14.2 L12 22 L9.8 14.2 L2 12 L9.8 9.8 Z" fill="currentColor" />
-          </svg>
+          <BrandMark />
         </div>
         <div className="brand-text">
           <div className="brand-name">Mission Control</div>
