@@ -1536,6 +1536,11 @@ async function updateCheck(): Promise<void> {
  */
 export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeDeps): Promise<void> {
   try {
+    if (process.env.MC_SMOKE_WORKSPACE) {
+      const { workspaceUiSmoke } = await import('./workspaceUiSmoke')
+      await workspaceUiSmoke(win, outFile, log)
+      return
+    }
     // MC_SMOKE_QUIT=<n>: only the quit test, with n terminals printing as fast as they can (0: none).
     const quitTest = Number(process.env.MC_SMOKE_QUIT || -1)
     if (quitTest >= 0) {

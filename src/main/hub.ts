@@ -140,6 +140,28 @@ export async function claudeStatus(force = false): Promise<ClaudeStatus> {
   return status
 }
 
+let codexStatusCache: { at: number; status: ClaudeStatus } | null = null
+
+/** Check the CLI itself, never infer authentication from old chat files. */
+export async function codexStatus(force = false): Promise<ClaudeStatus> {
+  if (!force && codexStatusCache && Date.now() - codexStatusCache.at < 300_000) return codexStatusCache.status
+  const path = whichSync('codex')
+  const status: ClaudeStatus = { installed: !!path, loggedIn: false }
+  if (path) {
+    status.version = (await run(path, ['--version'])).trim()
+    status.loggedIn = await new Promise<boolean>((resolve, reject) => {
+      execFile(path, ['login', 'status'], { env: agentEnv(), windowsHide: true, timeout: 15000, shell: /\.(cmd|bat)$/i.test(path) }, (err, stdout, stderr) => {
+        const text = String(stdout) + String(stderr)
+        if (/not logged in/i.test(text)) resolve(false)
+        else if (!err && /logged in/i.test(text)) resolve(true)
+        else reject(new Error('Could not check Codex login status'))
+      })
+    })
+  }
+  codexStatusCache = { at: Date.now(), status }
+  return status
+}
+
 let windowsName: string | null = null
 
 /** Your first name for the greeting: the one in Settings, else the first word of your Windows account's full name. */

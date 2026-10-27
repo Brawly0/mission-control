@@ -49,7 +49,7 @@ import { loadStore, updateStore } from './store'
 import { worktreeParent } from '../shared/projectLook'
 import { contextUsage, startupReport } from './spend'
 import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing } from './briefings'
-import { claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
+import { codexStatus, claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { refreshPlanUsage } from './planUsage'
 import { planRate } from './planCost'
 import { buildDigest } from './digest'
@@ -136,6 +136,15 @@ export function registerIpc(): void {
   ipcMain.handle('knowledge:list', () => knowledgeDocs(listDocs))
   ipcMain.handle('knowledge:search', (_e, q: string) => searchKnowledge(q, listDocs))
   ipcMain.handle('claude:status', (_e, force?: boolean) => claudeStatus(!!force))
+  ipcMain.handle('codex:status', (_e, force?: boolean) => codexStatus(!!force))
+  ipcMain.handle('projects:reorder', (_e, paths: string[]) => {
+    if (!Array.isArray(paths) || paths.some(p => typeof p !== 'string')) throw new Error('Invalid project order')
+    updateStore(s => {
+      [...new Set(paths.map(normalizePath))].forEach((path, sortOrder) => {
+        s.projectMeta[path] = { ...(s.projectMeta[path] ?? { tags: [], notes: '' }), sortOrder }
+      })
+    })
+  })
   ipcMain.handle('user:name', () => userName())
   ipcMain.handle('briefings:list', () => listBriefings())
   ipcMain.handle('briefings:save', (_e, id: string, at: number) => saveBriefing(id, at))

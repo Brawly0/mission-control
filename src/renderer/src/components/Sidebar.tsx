@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, PanelLeftOpen, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
-import type { ClaudeStatus } from '@shared/types'
+import AgentConnections from './AgentConnections'
+import { useProjectActions } from './useProjectActions'
+import { orderedProjects } from '@shared/projectOrder'
 import type { BudgetState, GitInfo, Project } from '@shared/types'
 import type { Agent, View } from '../types'
 import { timeAgo } from '../util'
@@ -21,6 +23,7 @@ interface Props {
   onOpenPalette: () => void
   onRefresh: () => void
   onAdd: () => void
+  onTerminal: (project?: Project) => void
   taskCounts: { running: number; review: number }
   /** Inbox items waiting on you (not counting "good to know" ones). */
   inbox: { total: number; urgent: number }
@@ -34,11 +37,11 @@ interface Props {
 
 /**
  * Projects in the order the sidebar shows them: pinned, then groups by name, then the rest,
- * finished ones last in each section. Alt+Up/Down follow the same order.
+ * saved order within each section. Alt+Up/Down follow the same order.
  */
 export function sidebarOrder(projects: Project[], showWorktrees: boolean): Project[] {
   const visible = projects.filter((p) => showWorktrees || !p.worktree)
-  const ordered = [...visible].sort((a, b) => Number(a.meta.status === 'done') - Number(b.meta.status === 'done'))
+  const ordered = orderedProjects(visible)
   const groupNames = [...new Set(ordered.filter((p) => !p.pinned).map((p) => p.meta.group || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b))
   return [
     ...ordered.filter((p) => p.pinned),
@@ -50,44 +53,6 @@ export function sidebarOrder(projects: Project[], showWorktrees: boolean): Proje
 /** Shows a combination like "Ctrl+Shift+F" as compact key caps text. */
 function keyCaps(combo: string): string {
   return combo.replace(/\+/g, ' ').replace('Shift', '⇧')
-}
-
-/** Claude Code installed and logged in? Checked on start and every 5 minutes; click to check now. */
-function ClaudeStatusCard() {
-  const [status, setStatus] = useState<ClaudeStatus | null>(null)
-  const load = (force = false) => window.mc.claudeStatus(force).then(setStatus).catch(() => undefined)
-  useEffect(() => {
-    void load()
-    const timer = setInterval(() => void load(), 300_000)
-    return () => clearInterval(timer)
-  }, [])
-  const ok = !!status?.installed && status.loggedIn
-  const label = !status ? 'Checking…' : !status.installed ? 'Not installed' : status.loggedIn ? 'Connected' : 'Not logged in'
-  const plan = status?.plan ? `${status.plan[0].toUpperCase()}${status.plan.slice(1)} plan` : ''
-  return (
-    <button
-      className={`claude-status ${ok ? 'ok' : status ? 'bad' : ''}`}
-      onClick={() => void load(true)}
-      title={
-        !status?.installed
-          ? 'Install Claude Code, then click to check again'
-          : status.loggedIn
-            ? `Claude Code ${status.version ?? ''} · ${plan || 'logged in'}. Click to check again.`
-            : 'Run "claude auth login" in a terminal, then click to check again'
-      }
-    >
-      <span className="claude-status-ring">
-        <span />
-      </span>
-      <span className="claude-status-text">
-        <span className="strong">Claude Code</span>
-        <span className="claude-status-state">
-          <span className="dot" /> {label}
-          {ok && plan && <span className="muted"> · {plan}</span>}
-        </span>
-      </span>
-    </button>
-  )
 }
 
 function loadCollapsed(): Set<string> {
@@ -153,8 +118,9 @@ export default function Sidebar(props: Props) {
       (!q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q) || p.meta.tags.some((t) => t.toLowerCase().includes(q))) &&
       activeTags.every((t) => p.meta.tags.includes(t))
   )
-  // Finished projects sink to the bottom of their section.
-  const ordered = [...visible].sort((a, b) => Number(a.meta.status === 'done') - Number(b.meta.status === 'done'))
+  const actions = useProjectActions(projects, props.onRefresh, props.onSelect, props.onTerminal, true, visible)
+  // Saved order within each section; new projects follow the defaults.
+  const ordered = orderedProjects(visible)
   const pinned = ordered.filter((p) => p.pinned)
   const groups = new Map<string, Project[]>()
   for (const p of ordered.filter((x) => !x.pinned)) {
@@ -170,7 +136,7 @@ export default function Sidebar(props: Props) {
     const g = git[p.path]
     const selected = view === 'project' && p.path === selectedPath
     return (
-      <li key={p.path}>
+      <li key={p.path} {...actions.events(p)}>
         <button
           className={`project-item ${selected ? 'selected' : ''} ${p.meta.status === 'done' ? 'is-done' : ''}`}
           onClick={() => props.onSelect(p.path)}
@@ -323,6 +289,7 @@ export default function Sidebar(props: Props) {
           {sidebarOrder(projects, showWorktrees).map((p) => (
             <button
               key={p.path}
+              {...actions.events(p)}
               className={`rail-project ${view === 'project' && p.path === selectedPath ? 'active' : ''}`}
               title={[p.name, p.description].filter(Boolean).join(' · ')}
               onClick={() => props.onSelect(p.path)}
@@ -332,6 +299,7 @@ export default function Sidebar(props: Props) {
             </button>
           ))}
         </div>
+        {actions.overlay}
       </aside>
     )
   }
@@ -346,7 +314,7 @@ export default function Sidebar(props: Props) {
         </div>
         <div className="brand-text">
           <div className="brand-name">Mission Control</div>
-          <div className="brand-sub">for Claude Code</div>
+          <div className="brand-sub">for Claude &amp; Codex</div>
         </div>
         <IconButton icon={PanelLeftClose} label={withKey('Hide sidebar', keyFor('toggleSidebar'))} size={15} className="brand-collapse" onClick={props.onToggleCollapsed} />
       </div>
@@ -403,7 +371,8 @@ export default function Sidebar(props: Props) {
           Show worktrees &amp; scratch ({hiddenCount})
         </label>
       )}
-      <ClaudeStatusCard />
+      <AgentConnections onUsage={() => props.onNavigate('usage')} onTerminal={() => props.onTerminal()} />
+      {actions.overlay}
     </aside>
   )
 }

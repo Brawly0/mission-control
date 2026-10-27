@@ -147,6 +147,12 @@
 - [x] Visible Claude / Codex selector beside New session, saved per project; new sessions, shortcuts, worktrees and briefing starts use the choice
 - [x] Always label Claude and Codex chats and agents; simplify project and agent headers with secondary actions in menus (ADR 0021)
 
+## v0.22: Projects, connections and a terminal button
+- [x] Agent connections in the sidebar: Claude and Codex each show installed / signed in / version and plan, with setup commands, Usage, a terminal and refresh (ADR 0022)
+- [x] Rename projects (display name only, the folder stays), drag to sort and right-click actions, in the sidebar and on the Projects page; the order is saved
+- [x] Terminal button on the Agents bar: opens PowerShell in the active agent's folder (its worktree too), or the selected project
+- [x] Self-test MC_SMOKE_WORKSPACE (no model calls)
+
 ## Next ideas
 - [ ] Codex in tasks: headless runs (`codex exec --json`), chains (Claude builds, Codex reviews) and the queue
 - [ ] Codex chats in full-text search; Send to several agents for Codex

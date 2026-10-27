@@ -31,6 +31,8 @@ interface Props {
   onExit: (id: string, code: number) => void
   onLayout: (layout: AgentLayout) => void
   onNew: () => void
+  onTerminal: () => void
+  terminalFolder?: string
   onGitChanged: () => void
   /** Grid columns ('auto' or '1'–'4'), kept by App so workspaces can save and restore them. */
   cols: string
@@ -185,6 +187,7 @@ export default function AgentsView(props: Props) {
         <Button variant="primary" icon={Plus} onClick={onNew}>
           New session in current project
         </Button>
+        <Button size="sm" icon={Terminal} onClick={props.onTerminal} disabled={!props.terminalFolder}>Open terminal</Button>
         {props.workspaces.length > 0 && (
           <div className="empty-workspaces">
             <span className="muted small">Or open a workspace</span>
@@ -295,6 +298,7 @@ export default function AgentsView(props: Props) {
           <IconButton icon={Plus} label="New session in current project" size={15} onClick={onNew} />
         </div>
         <div className="agent-bar-end">
+          <Button size="sm" variant="ghost" icon={Terminal} onClick={props.onTerminal} disabled={!props.terminalFolder} title={`Open PowerShell in ${props.terminalFolder ?? 'a selected project'}`}>Terminal</Button>
           {layout === 'grid' && (
             <>
               {customSized && <IconButton icon={Columns3} label="Even out the sizes (or double-click a divider)" size={14} onClick={evenOut} />}

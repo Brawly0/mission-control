@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { FolderPlus, LayoutGrid, List, Play, Search, Star } from 'lucide-react'
+import { FolderPlus, LayoutGrid, List, Play, Search, Star, MoreHorizontal } from 'lucide-react'
 import type { GitInfo, Project, Task } from '@shared/types'
 import type { Agent } from '../types'
+import { orderedProjects } from '@shared/projectOrder'
+import { useProjectActions } from './useProjectActions'
 import { timeAgo } from '../util'
 import { useKeyFor, withKey } from '../shortcuts'
 import { matchesFilter } from './HomeView'
@@ -18,6 +20,8 @@ interface Props {
   onOpen: (path: string) => void
   onNewSession: (p: Project) => void
   onNewProject: () => void
+  onChanged: () => void
+  onTerminal: (p: Project) => void
 }
 
 function remembered<T extends string>(key: string, fallback: T): T {
@@ -29,7 +33,7 @@ function remembered<T extends string>(key: string, fallback: T): T {
 }
 
 /** Every project as cards or a list, with filters and search. */
-export default function ProjectsView({ projects, tasks, agents, git, showWorktrees, onOpen, onNewSession, onNewProject }: Props) {
+export default function ProjectsView({ projects, tasks, agents, git, showWorktrees, onOpen, onNewSession, onNewProject, onChanged, onTerminal }: Props) {
   const keyFor = useKeyFor()
   const [filter, setFilter] = useState<Filter>(() => remembered('mc.projectsFilter', 'all'))
   const [layout, setLayout] = useState<'grid' | 'list'>(() => remembered('mc.projectsLayout', 'grid'))
@@ -43,19 +47,21 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
   }
 
   const q = query.trim().toLowerCase()
-  const list = projects
+  const list = orderedProjects(projects)
     .filter((p) => (showWorktrees || !p.worktree) && matchesFilter(p, filter))
     .filter((p) => !q || `${p.name} ${p.folderName} ${p.description ?? ''} ${p.meta.tags.join(' ')} ${p.meta.group ?? ''}`.toLowerCase().includes(q))
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
+
+  const actions = useProjectActions(projects, onChanged, onOpen, onTerminal, false, list)
   const openTasks = (p: Project) => tasks.filter((t) => t.projectPath.toLowerCase() === p.path.toLowerCase() && t.column !== 'done').length
   const running = (p: Project) => agents.filter((a) => !a.exited && a.projectPath.toLowerCase() === p.path.toLowerCase()).length
 
   return (
     <div className="page projects-page scroll">
+      {actions.overlay}
       <header className="page-header">
         <div>
           <h1>Projects</h1>
-          <p className="muted">{projects.filter((p) => !p.worktree).length} projects found from your Claude Code chats and the folders you added.</p>
+          <p className="muted">{projects.filter((p) => !p.worktree).length} projects. Drag to reorder, or right-click for project actions.</p>
         </div>
         <Button variant="primary" icon={FolderPlus} onClick={onNewProject} title={withKey('New project', keyFor('newProject'))}>
           New project
@@ -98,7 +104,7 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
             const n = openTasks(p)
             const live = running(p)
             return (
-              <div key={p.path} className={`card big-project ${layout}`}>
+              <div key={p.path} className={`card big-project ${layout}`} {...actions.events(p)}>
                 <button className="big-project-main" onClick={() => onOpen(p.path)} title={p.path}>
                   <Avatar name={p.name} path={p.path} size={layout === 'grid' ? 44 : 32} />
                   <span className="big-project-text">
@@ -127,9 +133,12 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
                     ))}
                   </div>
                 )}
-                <Button size="sm" variant="secondary" icon={Play} className="big-project-go" onClick={() => onNewSession(p)} title="New Claude session here">
+                <div className="big-project-actions">
+                <Button size="sm" variant="secondary" icon={Play} className="big-project-go" onClick={() => onNewSession(p)} title={`New ${p.meta.preferredAgent === 'codex' ? 'Codex' : 'Claude'} session here`}>
                   New session
                 </Button>
+                <IconButton icon={MoreHorizontal} label={`Actions for ${p.name}`} onClick={(e) => actions.show(p, e)} />
+                </div>
               </div>
             )
           })}

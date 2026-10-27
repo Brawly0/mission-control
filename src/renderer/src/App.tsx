@@ -320,6 +320,17 @@ export default function App() {
     if (selected) launch({ kind: selected.meta.preferredAgent ?? 'claude', cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · new` })
   }, [selected, launch])
 
+  const openProjectTerminal = (p?: Project) => {
+    const project = p ?? selected
+    if (project) void launch({ cwd: project.path, projectPath: project.path, projectName: project.name, title: project.name + ' - terminal', kind: 'shell' })
+    else toast('info', 'Select a project first', 'Choose a project, then open a terminal there.')
+  }
+  const terminalAgent = agents.find(a => a.id === activeAgent)
+  const openAgentTerminal = () => {
+    if (terminalAgent) void launch({ cwd: terminalAgent.cwd, projectPath: terminalAgent.projectPath, projectName: terminalAgent.projectName, title: terminalAgent.projectName + ' - terminal', kind: 'shell' })
+    else openProjectTerminal()
+  }
+
   const resumeRecent = useCallback(
     (s: RecentSession) =>
       launch({ cwd: s.cwd || s.projectPath, projectName: s.projectName, projectPath: s.projectPath, title: s.title.slice(0, 48), kind: s.tool ?? 'claude', args: resumeArgs(s.tool ?? 'claude', s.id) }),
@@ -558,6 +569,7 @@ export default function App() {
         onOpenPalette={openPalette}
         onRefresh={refreshProjects}
         onAdd={addProject}
+        onTerminal={openProjectTerminal}
         onOpenTemplates={() => setTemplatesOpen(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
@@ -699,6 +711,8 @@ export default function App() {
               onExit={markExited}
               onLayout={setLayout}
               onNew={newInSelected}
+              onTerminal={openAgentTerminal}
+              terminalFolder={terminalAgent?.cwd ?? selected?.path}
               onGitChanged={refreshGit}
               onHandOff={(a) => a.kind !== 'shell' && void handOff(a.projectPath, a.kind, a.kind === 'claude' ? 'codex' : 'claude', a.sessionId, a.worktree)}
             />
@@ -729,6 +743,8 @@ export default function App() {
           </div>
           <div className={view === 'projects' ? 'view-pane' : 'view-pane hidden'}>
             <ProjectsView
+              onChanged={refreshProjects}
+              onTerminal={openProjectTerminal}
               projects={projects}
               tasks={tasks}
               agents={agents}

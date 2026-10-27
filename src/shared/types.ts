@@ -30,6 +30,7 @@ export type ProjectStatus = 'active' | 'paused' | 'done'
 
 /** The user's own organization of a project, kept in the app's store. */
 export interface ProjectMeta {
+  sortOrder?: number
   /** Agent selected for new interactive sessions. */
   preferredAgent?: AgentTool
   /** Your own name for the project; replaces the automatic one. */
@@ -817,6 +818,8 @@ export interface MissionControlApi {
   knowledgeDocs(): Promise<KnowledgeDoc[]>
   searchKnowledge(query: string): Promise<KnowledgeHit[]>
   claudeStatus(force?: boolean): Promise<ClaudeStatus>
+  codexStatus(force?: boolean): Promise<ClaudeStatus>
+  reorderProjects(paths: string[]): Promise<void>
   /** Your first name for the greeting ('' if unknown). */
   userName(): Promise<string>
   listBriefings(): Promise<Briefing[]>

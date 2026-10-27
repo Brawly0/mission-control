@@ -57,6 +57,10 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 
 `MC_SMOKE_CODEX=<scratch git repo with a CLAUDE.md>` opens a Codex agent there with a short read-only prompt and checks: the status lights (working, then done), the chat id the app finds, the chat in the project's list, its recap, Codex usage and limits, the chat viewer, and the agent's **→ Claude** button (it writes the handoff and starts Claude). Screenshots `<MC_SMOKE>-codex-*.png`. Uses one short Codex turn and starts one Claude agent. The folder is trusted for that run only (`-c projects=…`), so nothing is saved to `~/.codex`. Claude will show its own "trust this folder" screen for a new scratch folder; that's expected.
 
+### Projects and connections test
+
+`MC_SMOKE_WORKSPACE=1` checks the sidebar's agent connections (both checked, via `claude` and `codex login status`), renaming a project from its right-click menu, drag-sorting on the Projects page and in the sidebar (both saved), and the Agents bar's **Terminal** button (PowerShell in the active agent's folder). It needs the claude-hub project in your project list and puts the project names and order back afterwards. Screenshots `<MC_SMOKE>-connections/project-menu/projects/sidebar-rename/terminal.png`. No model calls.
+
 ### UI tour and worktree test
 
 `MC_SMOKE_UI=<git repo with at least one commit>` screenshots Home, the project tabs, the command palette and the Agents grid with the review panel (as `<MC_SMOKE>-<name>.png`). It also runs the worktree flow on that repo: create, change a file, commit, merge into the base branch, stop the agent, delete. Use a throwaway repo, because the test merges into it. The repo is shown as a project only while the test runs.
