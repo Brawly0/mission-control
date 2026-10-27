@@ -10,6 +10,7 @@ import { handoffGitState } from './git'
 import { invalidateKnowledge } from './hub'
 import { sessionRecap } from './recap'
 import { findSessionFile } from './spend'
+import { briefingContext } from './projectBriefing'
 
 /**
  * Hands a project from one agent to the other (ADR 0020): Mission Control writes what the last chat
@@ -60,7 +61,7 @@ export async function writeHandoff(projectPath: string, from: AgentTool, to: Age
   const file = join(dir, briefingFileName(at, `handoff ${from} to ${to}`))
   writeFileSync(file, markdown, 'utf8')
   invalidateKnowledge()
-  return { file, prompt: handoffPrompt(file, from), sessionId: chat.id, title: chat.title, cwd }
+  return { file, prompt: briefingContext(cwd, handoffPrompt(file, from)), sessionId: chat.id, title: chat.title, cwd }
 }
 
 export function rulesFiles(projectPath: string): { claude: boolean; agents: boolean } {

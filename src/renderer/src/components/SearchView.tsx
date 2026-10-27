@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Play, RefreshCw, TextSearch } from 'lucide-react'
 import type { IndexStatus, Project, SearchHit } from '@shared/types'
 import { basename, errorMessage, timeAgo } from '../util'
-import { Avatar, Button, EmptyState, IconButton, Segmented } from './ui'
+import { Avatar, Button, EmptyState, IconButton, Segmented, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 
 interface Props {
@@ -52,7 +52,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
     }
     const timer = setTimeout(() => {
       window.mc
-        .search(q, { role: role === 'all' ? undefined : role, projectKey: projects.find((p) => p.key === projectKey)?.keys ?? (projectKey || undefined), limit: 150 })
+        .search(q, { role: role === 'all' ? undefined : role, projectKey: projects.find((p) => p.path === projectKey)?.keys ?? (projectKey || undefined), projectPath: projectKey || undefined, limit: 150 })
         .then((h) => {
           setHits(h)
           setError(null)
@@ -69,7 +69,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
     return [...map.values()]
   }, [hits])
 
-  const indexedProjects = projects.filter((p) => p.keys.length && !p.worktree)
+  const indexedProjects = projects.filter((p) => !p.worktree)
 
   return (
     <div className="search-view">
@@ -97,7 +97,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
           <select className="select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)} aria-label="Project">
             <option value="">All projects</option>
             {indexedProjects.map((p) => (
-              <option key={p.key} value={p.key}>
+              <option key={p.path} value={p.path}>
                 {p.name}
               </option>
             ))}
@@ -133,7 +133,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
               <div className="result-head">
                 <Avatar name={name} path={first.projectPath} size={26} />
                 <button className="result-title" onClick={() => onOpen(first.projectPath, first.sessionId)}>
-                  <div className="ellipsis strong">{first.title}</div>
+                  <div className="ellipsis strong"><ToolBadge tool={first.projectKey === 'codex' ? 'codex' : 'claude'} /> {first.title}</div>
                   <div className="muted small">
                     {name}
                     {first.timestamp > 0 && ` · ${timeAgo(first.timestamp)}`} · {group.length} {group.length === 1 ? 'match' : 'matches'}
@@ -149,7 +149,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
               <ul className="result-snippets">
                 {group.slice(0, 3).map((h, i) => (
                   <li key={i}>
-                    <span className={`who who-${h.role}`}>{h.role === 'user' ? 'You' : 'Claude'}</span>
+                    <span className={`who who-${h.role}`}>{h.role === 'user' ? 'You' : h.projectKey === 'codex' ? 'Codex' : 'Claude'}</span>
                     <span className="snippet">
                       <Snippet text={h.snippet} />
                     </span>

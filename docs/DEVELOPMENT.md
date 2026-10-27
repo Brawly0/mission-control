@@ -53,6 +53,16 @@ Expected output: `[smoke] projects: N`, the session count of one project, the Cl
 
 `MC_SMOKE_HOOKS=<empty folder>` makes the smoke test also send one tiny real prompt (`claude -p`) from that folder and list the hook events that reached the app. Expected: `SessionStart`, `UserPromptSubmit`, `Stop`, `SessionEnd`, all with the session id the app assigned. This uses a small amount of your Claude usage and needs `claude` to be logged in. Set `MC_SMOKE_MODEL=haiku` to use a cheaper model.
 
+### Project commands test
+
+`MC_SMOKE_RUN=1` exercises the Run tab using a temporary project and real PowerShell commands, with no model calls. It checks saving a command, streamed output, duplicate prevention, results across page changes, exit codes, stopping, bounded output and a diagnostic report for an agent. Use `MC_SMOKE=<output.png>` as usual. Project metadata is restored in the isolated self-test profile.
+
+It also checks shared briefing preview/save/refresh, preserving manual decisions, check freshness after source edits, and guarded merges in a temporary git worktree. Final UI checks exercise the review summary, Codex task controls and the shell working-to-idle transition.
+
+`MC_SMOKE_CODEX_TASKS=1` runs a short real Codex background task and resumes its session, then checks dependencies, mixed-agent templates, rejection of unsupported USD caps, and incremental Codex full-text indexing using fixtures. Use `MC_SMOKE_CODEX_TASKS=fixtures` to run the UI/template/search portion without model calls. Existing sessions/configuration are read-only; the CLI creates its own ordinary task session files.
+
+`MC_SMOKE_CODEX_TASKS=review` runs a real read-only Codex review against a tiny temporary git diff, checking tool activity, the final result and that the reviewer leaves source unchanged.
+
 ### Codex test
 
 `MC_SMOKE_CODEX=<scratch git repo with a CLAUDE.md>` opens a Codex agent there with a short read-only prompt and checks: the status lights (working, then done), the chat id the app finds, the chat in the project's list, its recap, Codex usage and limits, the chat viewer, and the agent's **→ Claude** button (it writes the handoff and starts Claude). Screenshots `<MC_SMOKE>-codex-*.png`. Uses one short Codex turn and starts one Claude agent. The folder is trusted for that run only (`-c projects=…`), so nothing is saved to `~/.codex`. Claude will show its own "trust this folder" screen for a new scratch folder; that's expected.

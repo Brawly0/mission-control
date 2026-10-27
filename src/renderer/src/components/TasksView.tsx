@@ -27,7 +27,7 @@ import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { dependencyState, dependentsOf } from '@shared/deps'
 import { elapsed, formatCost, timeAgo } from '../util'
-import { Avatar, Button, EmptyState } from './ui'
+import { Avatar, Button, EmptyState, ToolBadge } from './ui'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
 import { useLook } from '../projectLook'
@@ -91,7 +91,7 @@ function TaskCard({
       onClick={() => onOpen(task)}
     >
       <div className="task-card-top">
-        <span className="task-title">{task.title}</span>
+        <ToolBadge tool={task.tool ?? 'claude'} /><span className="task-title">{task.title}</span>
         {task.queued && queuePos !== undefined && (
           <span className="queue-badge" title="Waiting in the auto-queue">
             <ListOrdered size={11} /> #{queuePos}
@@ -251,7 +251,7 @@ export default function TasksView(props: Props) {
       <header className="tasks-head">
         <div>
           <h1>Tasks</h1>
-          <p className="muted">Queue work for Claude. Headless tasks run in the background; you review the result.</p>
+          <p className="muted">Queue work for Claude or Codex. Headless tasks run in the background; you review the result.</p>
         </div>
         <div className="toolbar">
           {props.queue && (

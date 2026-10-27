@@ -27,7 +27,7 @@ import type { Agent } from '../types'
 import { elapsed, errorMessage, formatCost } from '../util'
 import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
-import { Avatar, Button, IconButton } from './ui'
+import { Avatar, Button, IconButton, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 import { dueFrom, dueInputs, dueLabel } from '../due'
 import { PlanShare } from '../planRate'
@@ -123,7 +123,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         {editable ? (
           <input className="drawer-title-input" value={title} onChange={(e) => setTitle(e.target.value)} onBlur={saveText} />
         ) : (
-          <h2 className="drawer-title">{task.title}</h2>
+          <h2 className="drawer-title"><ToolBadge tool={task.tool ?? 'claude'} /> {task.title}</h2>
         )}
         <IconButton icon={X} label="Close" onClick={onClose} />
       </div>

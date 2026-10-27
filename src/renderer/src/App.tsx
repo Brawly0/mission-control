@@ -177,11 +177,12 @@ export default function App() {
   const refreshGit = useCallback(async () => {
     const paths = new Set<string>()
     for (const p of projectsRef.current) if (!p.worktree || showWorktrees) paths.add(p.path)
+    if (selectedPath) paths.add(selectedPath)
     for (const a of agentsRef.current) paths.add(a.projectPath)
     if (paths.size === 0) return
     const info = await window.mc.gitInfoMany([...paths])
     setGit((prev) => ({ ...prev, ...info }))
-  }, [showWorktrees])
+  }, [showWorktrees, selectedPath])
 
   // A refresh asked for while one runs (at startup the app and the index ask at once) waits for it, then runs once more.
   const projectsRun = useRef<{ running?: Promise<void>; again?: boolean }>({})
@@ -230,6 +231,7 @@ export default function App() {
 
   // Keep git badges fresh: on an interval and whenever the window regains focus.
   useEffect(() => {
+    void refreshGit()
     const timer = setInterval(refreshGit, 15000)
     window.addEventListener('focus', refreshGit)
     return () => {
@@ -283,11 +285,16 @@ export default function App() {
   }, [])
 
   const openSession = useCallback(
-    (projectPath: string, sessionId: string) => {
+    async (projectPath: string, sessionId: string) => {
+      const root = worktreeParent(projectPath)?.parent ?? projectPath
+      if (!projectsRef.current.some(p => p.path.toLowerCase() === root.toLowerCase())) {
+        try { await window.mc.addProjectPath(root); await refreshProjects() }
+        catch (e) { toast('error', 'Could not open project', errorMessage(e)); return }
+      }
       openProject(projectPath)
       setFocusSession({ sessionId, nonce: Date.now() })
     },
-    [openProject]
+    [openProject, refreshProjects, toast]
   )
 
   const openSessionRef = useRef(openSession)
@@ -730,7 +737,8 @@ export default function App() {
                     projectName: h.projectPath.split(/[\\/]/).pop() ?? h.projectPath,
                     projectPath: h.projectPath,
                     title: h.title.slice(0, 48),
-                    args: ['--resume', h.sessionId]
+                    kind: h.projectKey === 'codex' ? 'codex' : 'claude',
+                    args: resumeArgs(h.projectKey === 'codex' ? 'codex' : 'claude', h.sessionId)
                   })
                 }
               />
@@ -845,7 +853,7 @@ export default function App() {
         />
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
-      {broadcastOpen && <BroadcastDialog agents={agents.filter((a) => a.kind === 'claude' && !a.exited)} lastOutput={lastOutput} onClose={() => setBroadcastOpen(false)} />}
+      {broadcastOpen && <BroadcastDialog agents={agents.filter((a) => a.kind !== 'shell' && !a.exited)} lastOutput={lastOutput} onClose={() => setBroadcastOpen(false)} />}
       {workspacesOpen && (
         <WorkspacesDialog
           workspaces={workspaces}

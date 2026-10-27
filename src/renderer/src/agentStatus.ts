@@ -7,7 +7,7 @@ export interface DisplayStatus {
 }
 
 /** Without hooks (plain shells), output in the last few seconds counts as working. */
-const WORKING_MS = 2500
+export const OUTPUT_WORKING_MS = 2500
 
 export function displayStatus(agent: Agent, lastOutput: number | undefined): DisplayStatus {
   if (agent.exited) return { cls: 'exited', label: `exited (${agent.exitCode ?? '?'})` }
@@ -21,7 +21,7 @@ export function displayStatus(agent: Agent, lastOutput: number | undefined): Dis
     case 'ready':
       return { cls: 'ready', label: 'ready' }
   }
-  if (lastOutput && Date.now() - lastOutput < WORKING_MS) return { cls: 'working', label: 'working' }
+  if (lastOutput && Date.now() - lastOutput < OUTPUT_WORKING_MS) return { cls: 'working', label: 'working' }
   return { cls: 'idle', label: 'idle' }
 }
 

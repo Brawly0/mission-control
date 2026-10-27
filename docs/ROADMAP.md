@@ -153,11 +153,16 @@
 - [x] Terminal button on the Agents bar: opens PowerShell in the active agent's folder (its worktree too), or the selected project
 - [x] Self-test MC_SMOKE_WORKSPACE (no model calls)
 
+## v0.23: Ask, run, review
+- [x] Project Run panel: save commands, stream output, stop process trees, copy output and send a result to either agent (ADR 0023)
+- [x] Shared project briefing: editable preview, recent chats from both agents, tasks, verification and git; new empty sessions and handoffs read the saved context
+- [x] Codex in tasks: headless execution, resume, interactive tasks, queue and mixed-agent pipeline steps; provider labels and honest budget handling (ADR 0024)
+- [x] Codex chats in incremental full-text search; Send to several agents for both tools
+- [x] Review workflow: checks and read-only agent findings beside the diff, human review and checks tied to the current source snapshot before merge
+- [x] Measure startup/idle CPU/memory; remove app-wide idle ticking and closed-menu layout reads, defer new tabs and hidden transcript reads
+
 ## Next ideas
-- [ ] Codex in tasks: headless runs (`codex exec --json`), chains (Claude builds, Codex reviews) and the queue
-- [ ] Codex chats in full-text search; Send to several agents for Codex
 - [ ] Project terminal dock and "Run this for me" for commands an agent can't run (works for both agents)
-- [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent
 - [ ] Code signing so Windows SmartScreen stops warning
 - [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches

@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { execFile } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, promises as fs } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import type { ChangedFile, GitChanges, GitInfo, GitInitPreview, WorktreeInfo } from '../shared/types'
@@ -363,6 +363,16 @@ export async function commitAll(path: string, message: string): Promise<void> {
   await git(path, ['add', '-A'])
   await git(path, ['commit', '-m', message])
   forgetGitInfo()
+}
+
+/** A check/review belongs to this exact checkout and working-tree snapshot. */
+export async function reviewFingerprint(path: string, changes: GitChanges): Promise<string> {
+  const head = await git(path, ['rev-parse', 'HEAD']).catch(() => 'unborn')
+  const stamps = await Promise.all(changes.files.map(async file => {
+    const stat = await fs.stat(join(path, file.path)).catch(() => null)
+    return [file.path, stat?.size, stat?.mtimeMs]
+  }))
+  return createHash('sha256').update(JSON.stringify({ head, changes, stamps })).digest('hex')
 }
 
 /** Merges a worktree's branch into its base branch in the main checkout. */

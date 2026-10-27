@@ -4,6 +4,7 @@ import { refreshPlanUsage } from './planUsage'
 import { checkSoon } from './updater'
 import { terminalCount } from './pty'
 import { runningTaskCount } from './tasks'
+import { runningProjectCommandCount } from './projectCommands'
 import { loadStore, updateStore, type WindowBounds } from './store'
 
 let mainWindow: BrowserWindow | null = null
@@ -84,7 +85,7 @@ export function createWindow(): void {
       s.window = { ...b, maximized: win.isMaximized() }
     })
     // With work still running, closing hides to the tray instead of stopping everything.
-    const busy = terminalCount() > 0 || runningTaskCount() > 0
+    const busy = terminalCount() > 0 || runningTaskCount() > 0 || runningProjectCommandCount() > 0
     if (!quitting && busy && loadStore().settings.closeToTray) {
       e.preventDefault()
       win.hide()
@@ -92,7 +93,7 @@ export function createWindow(): void {
         toldAboutTray = true
         new Notification({
           title: 'Mission Control is still running',
-          body: 'Your agents and tasks keep going. Open it from the tray icon, or quit from its menu.',
+          body: 'Your agents, tasks and project commands keep going. Open it from the tray icon, or quit from its menu.',
           icon: join(__dirname, '../../build/icon.png')
         }).show()
       }

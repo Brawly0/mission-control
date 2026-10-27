@@ -28,8 +28,39 @@ export interface Project {
 
 export type ProjectStatus = 'active' | 'paused' | 'done'
 
+export interface ProjectReview {
+  changes: GitChanges
+  fingerprint: string
+  projectPath: string
+  checkCommand: string
+  check?: ProjectCommandRun
+  checkStale: boolean
+  review?: Task
+  reviewStale: boolean
+}
+
+export interface ProjectCommand {
+  id: string
+  name: string
+  command: string
+}
+
+export interface ProjectCommandRun {
+  id: string
+  commandId: string
+  projectPath: string
+  name: string
+  command: string
+  state: 'running' | 'stopping' | 'passed' | 'failed' | 'stopped'
+  startedAt: number
+  finishedAt?: number
+  exitCode?: number
+  output: string
+}
+
 /** The user's own organization of a project, kept in the app's store. */
 export interface ProjectMeta {
+  commands?: ProjectCommand[]
   sortOrder?: number
   /** Agent selected for new interactive sessions. */
   preferredAgent?: AgentTool
@@ -417,6 +448,7 @@ export interface CheckResult {
 }
 
 export interface Task {
+  tool?: AgentTool
   id: string
   title: string
   /** The prompt given to Claude. */
@@ -530,6 +562,7 @@ export interface Schedule {
 }
 
 export interface TaskTemplate {
+  tool?: AgentTool
   id: string
   name: string
   /** Title and prompt may use {{project}}, {{date}}, {{time}} and {{weekday}}. */
@@ -545,7 +578,7 @@ export interface TaskTemplate {
   model?: string
   schedule?: Schedule
   /** Pipeline: more steps that each run after the previous one succeeds (same project and settings). */
-  steps?: { title: string; prompt: string }[]
+  steps?: { title: string; prompt: string; tool?: AgentTool; permission?: TaskPermission }[]
   createdAt: number
   updatedAt: number
 }
@@ -558,7 +591,7 @@ export type UpdateState =
   | { state: 'ready'; version: string }
   | { state: 'error'; message: string }
 
-export type NewTask = Pick<Task, 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'dueAt' | 'dueHasTime'> & {
+export type NewTask = Pick<Task, 'tool' | 'title' | 'prompt' | 'projectPath' | 'projectName' | 'mode' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'dueAt' | 'dueHasTime'> & {
   queued?: boolean
   templateId?: string
   dependsOn?: string[]
@@ -784,6 +817,18 @@ export interface QueueStatus {
 }
 
 export interface MissionControlApi {
+  projectReview(path: string, base?: string): Promise<ProjectReview>
+  startReviewChecks(path: string, base?: string): Promise<void>
+  startCodeReview(path: string, base?: string, tool?: AgentTool): Promise<void>
+  mergeReviewedWorktree(worktree: WorktreeInfo, fingerprint: string): Promise<string>
+  projectBriefing(path: string): Promise<{ file: string; markdown: string }>
+  draftProjectBriefing(path: string): Promise<{ file: string; markdown: string }>
+  saveProjectBriefing(path: string, markdown: string): Promise<void>
+  projectRuns(projectPath: string): Promise<ProjectCommandRun[]>
+  startProjectCommand(projectPath: string, commandId: string): Promise<ProjectCommandRun>
+  stopProjectCommand(runId: string): Promise<void>
+  projectCommandReport(runId: string): Promise<{ cwd: string; prompt: string }>
+  onProjectRunChanged(cb: (run: ProjectCommandRun) => void): () => void
   listProjects(): Promise<Project[]>
   /** Pass a project's `keys` to include chats from its worktrees. */
   listSessions(projectKey: string | string[], projectPath?: string): Promise<SessionSummary[]>
@@ -807,6 +852,7 @@ export interface MissionControlApi {
   /** Creates AGENTS.md pointing Codex at CLAUDE.md, so both agents follow the same rules. */
   linkRules(projectPath: string): Promise<void>
   addProject(): Promise<string | null>
+  addProjectPath(path: string): Promise<void>
   /** Asks for a folder in a native dialog; null if cancelled. */
   pickFolder(title?: string): Promise<string | null>
   createProject(opts: { parent: string; name: string; claudeMd: boolean; git: boolean }): Promise<string>
@@ -874,7 +920,7 @@ export interface MissionControlApi {
   /** Asks the user in a native dialog first; resolves false if they cancel. */
   removeWorktree(wt: WorktreeInfo): Promise<boolean>
   setProjectMeta(path: string, patch: Partial<ProjectMeta>): Promise<void>
-  search(query: string, opts?: { projectKey?: string | string[]; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
+  search(query: string, opts?: { projectKey?: string | string[]; projectPath?: string; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
   usageReport(sinceMs: number): Promise<UsageReport>
   /** Per-session estimated cost and tokens for one project (from the index). */
   sessionUsage(projectKey: string | string[]): Promise<Record<string, UsageTotals>>

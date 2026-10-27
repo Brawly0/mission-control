@@ -1,3 +1,6 @@
+import { mergeReviewedWorktree, projectReview, startReviewChecks, startCodeReview } from './projectReview'
+import { projectBriefing, draftProjectBriefing, saveProjectBriefing } from './projectBriefing'
+import { projectCommandReport, projectRuns, startProjectCommand, stopProjectCommand } from './projectCommands'
 import { app, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -71,6 +74,17 @@ export const uiSummary = (): { agents: number; attention: number } => summary
 export function registerIpc(): void {
   ipcMain.handle('projects:list', () => listProjects())
   ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
+  ipcMain.handle('review:merge', (_e, wt: WorktreeInfo, fingerprint: string) => mergeReviewedWorktree(wt, fingerprint))
+  ipcMain.handle('review:get', (_e, path: string, base?: string) => projectReview(path, base))
+  ipcMain.handle('review:checks', (_e, path: string, base?: string) => startReviewChecks(path, base))
+  ipcMain.handle('review:agent', (_e, path: string, base?: string, tool?: 'claude' | 'codex') => startCodeReview(path, base, tool))
+  ipcMain.handle('projectBriefing:get', (_e, path: string) => projectBriefing(path))
+  ipcMain.handle('projectBriefing:draft', (_e, path: string) => draftProjectBriefing(path))
+  ipcMain.handle('projectBriefing:save', (_e, path: string, markdown: string) => saveProjectBriefing(path, markdown))
+  ipcMain.handle('projectRuns:report', (_e, id: string) => projectCommandReport(id))
+  ipcMain.handle('projectRuns:list', (_e, path: string) => projectRuns(path))
+  ipcMain.handle('projectRuns:start', (_e, path: string, id: string) => startProjectCommand(path, id))
+  ipcMain.handle('projectRuns:stop', (_e, id: string) => stopProjectCommand(id))
   ipcMain.handle('sessions:move', (_e, id: string, path: string) => moveSession(id, path))
   ipcMain.handle('spend:context', (_e, ids: string[]) => contextUsage(ids))
   ipcMain.on('ui:zoom', (e, factor: number) => e.sender.setZoomFactor(Math.min(1.6, Math.max(0.7, Number(factor) || 1))))
@@ -88,6 +102,10 @@ export function registerIpc(): void {
   ipcMain.handle('handoff:linkRules', (_e, path: string) => linkRules(path))
   ipcMain.handle('codex:usage', (_e, since: number) => codexUsage(since))
 
+  ipcMain.handle('projects:addPath', async (_e, path: string) => {
+    if (!(await fs.stat(path)).isDirectory()) throw new Error('The project folder no longer exists.')
+    updateStore(s => { if (!s.manualProjects.some(p => normalizePath(p) === normalizePath(path))) s.manualProjects.push(path) })
+  })
   ipcMain.handle('projects:add', async () => {
     const result = await dialog.showOpenDialog(getMainWindow()!, { properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null

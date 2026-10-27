@@ -118,7 +118,7 @@ export function MenuButton({ trigger, items, align = 'left', portal = false }: {
     }
   }, [open])
 
-  const rect = ref.current?.getBoundingClientRect()
+  const rect = open && portal ? ref.current?.getBoundingClientRect() : undefined
   const menu = open && (
     <div ref={menuRef} className={`menu menu-${align}`} role="menu"
       style={portal && rect ? { position: 'fixed', top: Math.min(rect.bottom + 4, window.innerHeight - 240), left: Math.max(8, Math.min(rect.right - 260, window.innerWidth - 268)), right: 'auto', minWidth: 0, width: 260, zIndex: 1000 } : undefined}>
@@ -143,7 +143,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   return (
     <div className="segmented">
       {options.map((o) => (
-        <button key={o.value} aria-pressed={value === o.value} className={value === o.value ? 'active' : ''} onClick={() => onChange(o.value)} title={o.label}>
+        <button type="button" key={o.value} aria-pressed={value === o.value} className={value === o.value ? 'active' : ''} onClick={() => onChange(o.value)} title={o.label}>
           {o.icon && <o.icon size={14} strokeWidth={2} />}
           <span>{o.label}</span>
         </button>

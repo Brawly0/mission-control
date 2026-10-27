@@ -9,6 +9,19 @@ function on<T>(channel: string, cb: (value: T) => void): () => void {
 }
 
 const api: MissionControlApi = {
+  addProjectPath: (path) => ipcRenderer.invoke('projects:addPath', path),
+  mergeReviewedWorktree: (wt, fingerprint) => ipcRenderer.invoke('review:merge', wt, fingerprint),
+  projectReview: (path, base) => ipcRenderer.invoke('review:get', path, base),
+  startReviewChecks: (path, base) => ipcRenderer.invoke('review:checks', path, base),
+  startCodeReview: (path, base, tool) => ipcRenderer.invoke('review:agent', path, base, tool),
+  projectBriefing: (path) => ipcRenderer.invoke('projectBriefing:get', path),
+  draftProjectBriefing: (path) => ipcRenderer.invoke('projectBriefing:draft', path),
+  saveProjectBriefing: (path, markdown) => ipcRenderer.invoke('projectBriefing:save', path, markdown),
+  projectCommandReport: (id) => ipcRenderer.invoke('projectRuns:report', id),
+  projectRuns: (path) => ipcRenderer.invoke('projectRuns:list', path),
+  startProjectCommand: (path, id) => ipcRenderer.invoke('projectRuns:start', path, id),
+  stopProjectCommand: (id) => ipcRenderer.invoke('projectRuns:stop', id),
+  onProjectRunChanged: (cb) => on('projectRun:changed', cb),
   planRate: (force) => ipcRenderer.invoke('plan:rate', force),
   getDigest: (which) => ipcRenderer.invoke('digest:get', which),
   listProjects: () => ipcRenderer.invoke('projects:list'),

@@ -10,6 +10,9 @@ src/
     ipc.ts         every ipcMain handler behind window.mc
     notify.ts      desktop notifications (chat cost, plan limits, digest, due tasks, task results, budgets, briefings)
     terminals.ts   launchTerminal: session ids, hook settings and launch flags for claude terminals; Codex state (OSC 7501) and chat id lookup
+    projectCommands.ts saved project commands: PowerShell processes, bounded live output, stop trees and diagnostic reports (ADR 0023)
+    projectBriefing.ts editable shared context, recent work snapshots and prompts for both agents
+    projectReview.ts checks and agent reviews bound to git snapshots, with freshness validation before merge (ADR 0024)
     codexData.ts   reads ~/.codex (Codex CLI chats): listings, transcripts, recaps, usage and plan limits, finding a new agent's chat (ADR 0020)
     handoff.ts     handoffs between Claude and Codex written to docs/briefings/, and AGENTS.md pointing to CLAUDE.md (ADR 0020)
     docs.ts        listDocs: a project's CLAUDE.md, README, docs/ and .claude/ Markdown

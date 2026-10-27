@@ -1,3 +1,6 @@
+import { briefingContext } from './projectBriefing'
+import { codexUsage } from './codexData'
+import { codexTaskArgs, applyCodexTaskEvent } from '../shared/codexTask'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -105,9 +108,9 @@ function busiestPlanPercent(): number {
 }
 
 /** Why automation shouldn't start a task in this project right now, or null if it may. */
-export async function automationHold(projectPath: string): Promise<string | null> {
+export async function automationHold(projectPath: string, tool: 'claude' | 'codex' = 'claude'): Promise<string | null> {
   const s = loadStore().settings
-  const plan = busiestPlanPercent()
+  const plan = tool === 'codex' ? Math.round(Math.max(0, ...((await codexUsage(0)).limits?.windows.map(w => w.utilization) ?? [])) * 100) : busiestPlanPercent()
   if (s.queuePauseAtPercent > 0 && plan >= s.queuePauseAtPercent) return `Plan usage is at ${plan}% (limit ${s.queuePauseAtPercent}%)`
   const budget = await projectBudget(projectPath)
   if (budget?.over) return `Project is over its monthly budget ($${budget.spent.toFixed(2)} of $${budget.budget})`
@@ -131,7 +134,7 @@ export function queueStatus(): QueueStatus {
   if (!s.queueEnabled) status.heldBecause = 'Auto-run is off'
   else {
     const plan = busiestPlanPercent()
-    if (s.queuePauseAtPercent > 0 && plan >= s.queuePauseAtPercent) status.heldBecause = `Plan usage is at ${plan}% (limit ${s.queuePauseAtPercent}%)`
+    if (!queuedTasks().some(t => t.tool === 'codex') && s.queuePauseAtPercent > 0 && plan >= s.queuePauseAtPercent) status.heldBecause = `Plan usage is at ${plan}% (limit ${s.queuePauseAtPercent}%)`
   }
   return status
 }
@@ -150,7 +153,7 @@ export async function pumpQueue(): Promise<void> {
       if (status.heldBecause || procs.size >= status.parallel) return
       const next = queuedTasks().find((t) => !skipped.has(t.id))
       if (!next) return
-      const hold = await automationHold(next.projectPath)
+      const hold = await automationHold(next.projectPath, next.tool)
       if (hold) {
         skipped.add(next.id)
         continue
@@ -210,7 +213,7 @@ export function createTask(input: NewTask): Task {
   const task: Task = {
     ...input,
     // A task that doesn't pick a model uses its project's default, then the app's (Settings).
-    model: input.model || defaultModelFor(input.projectPath, true),
+    model: input.tool === 'codex' ? input.model || undefined : input.model || defaultModelFor(input.projectPath, true),
     title: input.title.trim() || input.prompt.trim().split('\n')[0].slice(0, 80) || 'Untitled task',
     id,
     column: 'todo',
@@ -279,9 +282,10 @@ export function setTaskRun(id: string, patch: Partial<TaskRun>, column?: TaskCol
 
 // ---------------------------------------------------------------- running
 
-export function claudeCommand(): { file: string; prefix: string[] } {
-  const path = whichSync('claude')
-  if (!path) throw new Error('claude was not found on PATH. Install Claude Code first.')
+export function claudeCommand(): { file: string; prefix: string[] } { return taskCommand('claude') }
+function taskCommand(tool: 'claude' | 'codex') {
+  const path = whichSync(tool)
+  if (!path) throw new Error(tool + ' was not found on PATH. Install the CLI first.')
   if (/\.(cmd|bat)$/i.test(path)) return { file: 'cmd.exe', prefix: ['/c', path] }
   return { file: path, prefix: [] }
 }
@@ -305,24 +309,26 @@ async function prepareFolder(t: Task): Promise<{ cwd: string; worktree?: Worktre
 
 export async function startTask(id: string): Promise<{ interactive?: { cwd: string; args: string[]; worktree?: WorktreeInfo } }> {
   const t = find(id)
-  if (procs.has(id)) throw new Error('This task is already running.')
+  if (procs.has(id) || t.column === 'running') throw new Error('This task is already running.')
+  taskCommand(t.tool ?? 'claude')
+  if (t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a per-task USD cap. Remove the cap before starting.')
   const { cwd, worktree } = await prepareFolder(t)
   if (worktree) emit()
 
   if (t.mode === 'interactive') {
     // The UI opens the agent terminal; the prompt is passed as claude's first message.
-    const args = [...(t.model ? ['--model', t.model] : []), '--permission-mode', t.permission, t.prompt]
+    const args = t.tool === 'codex' ? [...(t.model ? ['--model', t.model] : []), ...(t.permission === 'plan' ? ['-s', 'read-only'] : []), briefingContext(t.projectPath, t.prompt)] : [...(t.model ? ['--model', t.model] : []), '--permission-mode', t.permission, briefingContext(t.projectPath, t.prompt)]
     return { interactive: { cwd, args, worktree } }
   }
 
-  const run: TaskRun = { sessionId: randomUUID(), startedAt: Date.now(), toolCalls: 0, events: [], activity: 'Starting…' }
+  const run: TaskRun = { sessionId: t.tool === 'codex' ? undefined : randomUUID(), startedAt: Date.now(), toolCalls: 0, events: [], activity: 'Starting…' }
   const parent = chainBaseFor(t, tasks)
   addEvent(run, 'start', `Started in ${cwd}${worktree ? ` (branch ${worktree.branch}${parent?.worktree && worktree.branch !== parent.worktree.branch ? `, building on ${parent.worktree.branch}` : ''})` : ''}`)
   t.run = run
   moveTo(t, 'running')
   t.updatedAt = Date.now()
   emit()
-  runHeadless(t, cwd, t.prompt, { sessionId: run.sessionId })
+  runHeadless(t, cwd, briefingContext(t.projectPath, t.permission === 'plan' ? 'Investigate and plan only; do not modify files.\n' + t.prompt : t.prompt), { sessionId: run.sessionId })
   return {}
 }
 
@@ -332,7 +338,8 @@ export function followUpTask(id: string, prompt: string): void {
   const run = t.run
   if (!run?.sessionId) throw new Error('This task has no chat to continue yet.')
   if (procs.has(id) || t.column === 'running') throw new Error('This task is still running.')
-  if (!prompt.trim()) throw new Error('Write what Claude should do next.')
+  if (!prompt.trim()) throw new Error('Write what the agent should do next.')
+  taskCommand(t.tool ?? 'claude')
   const cwd = t.worktree && existsSync(t.worktree.path) ? t.worktree.path : t.projectPath
   run.costBefore = run.costUsd ?? 0
   run.followUps = (run.followUps ?? 0) + 1
@@ -350,9 +357,10 @@ export function followUpTask(id: string, prompt: string): void {
 
 function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?: string; resume?: string }): void {
   const run = t.run!
-  const { file, prefix } = claudeCommand()
+  const codex = t.tool === 'codex'
+  const { file, prefix } = taskCommand(t.tool ?? 'claude')
   const budget = t.budgetUsd ?? (loadStore().settings.defaultTaskBudgetUsd || undefined)
-  const args = [
+  const args = codex ? [...prefix, ...codexTaskArgs(t.permission, t.model, session.resume)] : [
     ...prefix,
     '-p',
     '--output-format',
@@ -366,8 +374,8 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
     // Only the MCP servers this project loads (when you limited them).
     ...launchArgs(cwd, { newChat: false, hasModel: true })
   ]
-  if (budget && !t.budgetUsd) addEvent(run, 'info', `Default budget ${budget} applies`)
-  markEcoSession(session.resume ?? session.sessionId)
+  if (!codex && budget && !t.budgetUsd) addEvent(run, 'info', `Default budget ${budget} applies`)
+  if (!codex) markEcoSession(session.resume ?? session.sessionId)
 
   const child = spawn(file, args, { cwd, env: agentEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   procs.set(t.id, child)
@@ -390,6 +398,7 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
       } catch {
         continue
       }
+      if (codex) { if (applyCodexTaskEvent(run, e, (kind, text) => addEvent(run, kind, text))) sawResult = true; continue }
       const out = applyStreamEvent(run, e, t.permission)
       if (out.final) sawResult = true
       if (out.rateLimit) setRateLimit({ ...out.rateLimit, source: 'task', error: undefined })
@@ -410,8 +419,8 @@ function runHeadless(t: Task, cwd: string, prompt: string, session: { sessionId?
       addEvent(run, 'info', 'Stopped')
     } else if (spawnError) {
       run.error = spawnError.message
-    } else if (!sawResult && !run.error) {
-      run.error = stderr.trim().split('\n').slice(-3).join('\n') || `claude exited with code ${code}`
+    } else if ((!sawResult || code !== 0) && !run.error) {
+      run.error = stderr.trim().split('\n').slice(-3).join('\n') || `${t.tool ?? 'claude'} exited with code ${code}`
     }
     if (run.error) addEvent(run, 'error', run.error)
     run.activity = run.error ? 'Stopped' : 'Finished'

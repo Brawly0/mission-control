@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap, CalendarClock } from 'lucide-react'
-import type { GitInfo, NewTask, Project, Task, TaskMode, TaskPermission } from '@shared/types'
+import type { AgentTool, GitInfo, NewTask, Project, Task, TaskMode, TaskPermission } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 import { dueFrom, dueInputs } from '../due'
 
@@ -20,7 +20,7 @@ interface Props {
 const PERMISSIONS: { value: TaskPermission; label: string; hint: string }[] = [
   { value: 'auto', label: 'Auto (recommended)', hint: 'A safety check approves routine actions and blocks risky ones.' },
   { value: 'acceptEdits', label: 'Accept edits', hint: 'File edits are allowed; other actions that need approval are refused.' },
-  { value: 'plan', label: 'Plan only', hint: 'Read-only: Claude investigates and writes a plan, changes nothing.' },
+  { value: 'plan', label: 'Plan only', hint: 'Read-only: the agent investigates and writes a plan, changes nothing.' },
   { value: 'bypassPermissions', label: 'Bypass all checks', hint: 'Everything is allowed without asking. Only use in a worktree you can discard.' }
 ]
 
@@ -30,10 +30,12 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
   const choices = projects.filter((p) => !p.worktree)
   const startProject = initial?.projectPath ?? defaultProject
   const [projectPath, setProjectPath] = useState(startProject && choices.some((p) => p.path === startProject) ? startProject : (choices[0]?.path ?? ''))
+  const [tool, setTool] = useState<AgentTool>(initial?.tool ?? choices.find(p => p.path === projectPath)?.meta.preferredAgent ?? 'claude')
   const [title, setTitle] = useState(initial?.title ?? '')
   const [prompt, setPrompt] = useState(initial?.prompt ?? '')
   const [mode, setMode] = useState<TaskMode>(initial?.mode ?? 'headless')
-  const [permission, setPermission] = useState<TaskPermission>(initial?.permission ?? 'auto')
+  const [permission, setPermission] = useState<TaskPermission>(tool === 'codex' && initial?.permission === 'acceptEdits' ? 'auto' : initial?.permission ?? 'auto')
+  const permissions = tool === 'codex' ? PERMISSIONS.filter(p => p.value !== 'acceptEdits').map(p => p.value === 'auto' ? { ...p, label: 'Workspace access', hint: 'Can edit project files and run commands inside the workspace sandbox. Background requests needing approval are refused.' } : p) : PERMISSIONS
   const isRepo = !!git[projectPath]?.isRepo
   const [useWorktree, setUseWorktree] = useState(initial?.useWorktree ?? isRepo)
   const [budget, setBudget] = useState(initial?.budgetUsd ? String(initial.budgetUsd) : '')
@@ -61,13 +63,14 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
     const budgetUsd = Number(budget)
     return {
       title: title.trim(),
+      tool,
       prompt: prompt.trim(),
       projectPath: project.path,
       projectName: project.name,
       mode,
       permission,
       useWorktree: isRepo && useWorktree,
-      budgetUsd: mode === 'headless' && budgetUsd > 0 ? budgetUsd : undefined,
+      budgetUsd: tool === 'claude' && mode === 'headless' && budgetUsd > 0 ? budgetUsd : undefined,
       model: model || undefined,
       templateId: initial?.templateId,
       dependsOn: dependsOn.length ? dependsOn : undefined,
@@ -104,8 +107,9 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
         </div>
 
         <div className="dialog-body">
+          <div className="field"><span className="field-label">Agent</span><Segmented<AgentTool> value={tool} onChange={tool => { setTool(tool); setModel(''); if (tool === 'codex' && permission === 'acceptEdits') setPermission('auto') }} options={[{value: 'claude', label: 'Claude'}, {value: 'codex', label: 'Codex'}]} /></div>
           <label className="field">
-            <span className="field-label">What should Claude do?</span>
+            <span className="field-label">What should the agent do?</span>
             <textarea
               ref={promptRef}
               className="prompt-input"
@@ -132,6 +136,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
             </label>
           </div>
 
+          {tool === 'codex' && <p className="field-hint">Codex uses its own model and plan. Background tasks use workspace-write with no interactive approvals; Plan only is read-only. USD spending caps apply to Claude tasks.</p>}
           <div className="field">
             <span className="field-label">How to run it</span>
             <Segmented<TaskMode>
@@ -153,24 +158,24 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
             <label className="field grow">
               <span className="field-label">Permissions</span>
               <select className="select" value={permission} onChange={(e) => setPermission(e.target.value as TaskPermission)}>
-                {PERMISSIONS.map((p) => (
+                {permissions.map((p) => (
                   <option key={p.value} value={p.value}>
                     {p.label}
                   </option>
                 ))}
               </select>
               <span className={`field-hint ${permission === 'bypassPermissions' ? 'warn' : ''}`}>
-                {permission === 'bypassPermissions' && <ShieldAlert size={12} />} {PERMISSIONS.find((p) => p.value === permission)?.hint}
+                {permission === 'bypassPermissions' && <ShieldAlert size={12} />} {permissions.find((p) => p.value === permission)?.hint}
               </span>
             </label>
             <label className="field">
               <span className="field-label">Model</span>
-              <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
+              {tool === 'codex' ? <input className="text-input" placeholder="Codex default model" value={model} onChange={e => setModel(e.target.value)} /> : <select className="select" value={model} onChange={(e) => setModel(e.target.value)}>
                 <option value="">Default</option>
                 <option value="opus">Opus</option>
                 <option value="sonnet">Sonnet</option>
                 <option value="haiku">Haiku</option>
-              </select>
+              </select>}
             </label>
             <div className="field due-field">
               <span className="field-label">
@@ -182,7 +187,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
               </div>
               <span className="field-hint">{dueDate ? `You get a reminder ${dueTime ? 'then' : 'at 9:00 that day'}.` : 'Shows on Home under Upcoming tasks.'}</span>
             </div>
-            {mode === 'headless' && (
+            {tool === 'claude' && mode === 'headless' && (
               <label className="field budget-field">
                 <span className="field-label">Budget (USD)</span>
                 <input className="text-input" type="number" min="0" step="0.5" placeholder="No limit" value={budget} onChange={(e) => setBudget(e.target.value)} />

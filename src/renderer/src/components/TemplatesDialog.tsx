@@ -80,13 +80,14 @@ function TemplateEditor({ initial, id, projects, onDone }: { initial: TemplateIn
           </select>
         </label>
       </div>
+      <label className="field"><span className="field-label">Agent</span><select className="select" value={t.tool ?? 'claude'} onChange={e => set({tool: e.target.value as 'claude' | 'codex', model: undefined, budgetUsd: undefined})}><option value="claude">Claude</option><option value="codex">Codex</option></select></label>
       <label className="field">
         <span className="field-label">Task title</span>
         <input className="text-input" placeholder="e.g. Dependency check for {{project}} on {{date}}" value={t.title} onChange={(e) => set({ title: e.target.value })} />
       </label>
       <label className="field">
         <span className="field-label">Prompt</span>
-        <textarea className="prompt-input" rows={5} placeholder="What Claude should do each time." value={t.prompt} onChange={(e) => set({ prompt: e.target.value })} />
+        <textarea className="prompt-input" rows={5} placeholder="What the agent should do each time." value={t.prompt} onChange={(e) => set({ prompt: e.target.value })} />
         <span className="field-hint">
           You can use <code>{'{{project}}'}</code>, <code>{'{{date}}'}</code>, <code>{'{{time}}'}</code> and <code>{'{{weekday}}'}</code>. They’re filled in when the task is made.
         </span>
@@ -114,12 +115,12 @@ function TemplateEditor({ initial, id, projects, onDone }: { initial: TemplateIn
         </label>
         <label className="field">
           <span className="field-label">Model</span>
-          <select className="select" value={t.model ?? ''} onChange={(e) => set({ model: e.target.value || undefined })}>
+          {t.tool === 'codex' ? <input className="text-input" placeholder="Codex default" value={t.model ?? ''} onChange={e => set({model: e.target.value || undefined})} /> : <select className="select" value={t.model ?? ''} onChange={(e) => set({ model: e.target.value || undefined })}>
             <option value="">Default</option>
             <option value="opus">Opus</option>
             <option value="sonnet">Sonnet</option>
             <option value="haiku">Haiku</option>
-          </select>
+          </select>}
         </label>
         <label className="field budget-field">
           <span className="field-label">Budget (USD)</span>
@@ -129,6 +130,7 @@ function TemplateEditor({ initial, id, projects, onDone }: { initial: TemplateIn
             min="0"
             step="0.5"
             placeholder="No limit"
+            disabled={t.tool === 'codex'}
             value={t.budgetUsd ?? ''}
             onChange={(e) => set({ budgetUsd: Number(e.target.value) > 0 ? Number(e.target.value) : undefined })}
           />
@@ -153,6 +155,8 @@ function TemplateEditor({ initial, id, projects, onDone }: { initial: TemplateIn
           {(t.steps ?? []).map((step, i) => (
             <li key={i} className="step">
               <span className="step-no">{i + 2}.</span>
+              <select aria-label={`Agent for step ${i + 2}`} className="select select-sm" value={step.tool ?? t.tool ?? 'claude'} onChange={e => set({steps: t.steps!.map((s,j) => j === i ? {...s,tool:e.target.value as 'claude'|'codex'} : s)})}><option value="claude">Claude</option><option value="codex">Codex</option></select>
+              <label className="small"><input type="checkbox" checked={step.permission === 'plan'} onChange={e => set({steps:t.steps!.map((s,j) => j === i ? {...s,permission:e.target.checked ? 'plan' : undefined} : s)})} />Review only</label>
               <div className="step-fields">
                 <input
                   className="text-input"

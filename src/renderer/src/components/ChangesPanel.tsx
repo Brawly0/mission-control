@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Trash2, X } from 'lucide-react'
-import type { GitChanges, WorktreeInfo } from '@shared/types'
+import type { GitChanges, ProjectReview, WorktreeInfo } from '@shared/types'
 import { errorMessage } from '../util'
 import { useToast } from '../toast'
 import DiffView, { parseDiff } from './DiffView'
-import { Button, EmptyState, IconButton } from './ui'
+import { Button, EmptyState, IconButton, MenuButton } from './ui'
+import { Md } from './Md'
 
 interface Props {
   path: string
@@ -26,11 +27,15 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
   const [selected, setSelected] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [commitMsg, setCommitMsg] = useState<string | null>(null)
+  const [review, setReview] = useState<ProjectReview | null>(null)
+  const [checkDraft, setCheckDraft] = useState<string | null>(null)
+  const [approved, setApproved] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const c = await window.mc.getChanges(path, worktree?.base)
-      setChanges(c)
+      const snapshot = await window.mc.projectReview(path, worktree?.base)
+      setReview(snapshot)
+      setChanges(snapshot.changes)
       setError(null)
     } catch (e) {
       setError(errorMessage(e))
@@ -49,6 +54,10 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
   const files = changes?.files ?? []
   const activePath = selected && files.some((f) => f.path === selected) ? selected : files[0]?.path
   const totals = fileDiffs.reduce((t, f) => ({ add: t.add + f.added, del: t.del + f.removed }), { add: 0, del: 0 })
+  const checksPassed = !review?.checkCommand || (review.check?.state === 'passed' && !review.checkStale)
+  const approvalKey = review ? `${review.fingerprint}:${review.check?.id ?? ''}:${review.check?.state ?? ''}:${review.review?.id ?? ''}:${review.review?.run?.finishedAt ?? ''}` : ''
+  const approvedNow = !!review && approved === approvalKey
+  const canMerge = approvedNow && checksPassed && files.length === 0 && !!changes?.commits.length
 
   const run = async (label: string, fn: () => Promise<unknown>, success: string) => {
     setBusy(true)
@@ -101,9 +110,9 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
                 size="sm"
                 variant="primary"
                 icon={GitMerge}
-                disabled={busy || !changes || changes.commits.length === 0}
-                title={changes?.commits.length ? `Merge into ${worktree.base}` : 'Nothing committed to merge yet'}
-                onClick={() => run('Merge', () => window.mc.mergeWorktree(worktree), `Merged into ${worktree.base}`)}
+                disabled={busy || !canMerge}
+                title={canMerge ? `Merge into ${worktree.base}` : 'Review the diff, commit changes, and run configured checks before merging'}
+                onClick={() => run('Merge', () => window.mc.mergeReviewedWorktree(worktree, review!.fingerprint), `Merged into ${worktree.base}`)}
               >
                 Merge
               </Button>
@@ -131,6 +140,21 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
           {onClose && <IconButton icon={X} label="Close" size={15} onClick={onClose} />}
         </div>
       </div>
+
+      {review && <section className="review-summary">
+        <div className="run-toolbar"><strong>{worktree && canMerge ? 'Ready to merge' : approvedNow ? 'Diff reviewed' : 'Changes to review'}</strong><span className="muted small">{files.filter(f => f.status === '?' || f.status === 'A').length} added · {files.filter(f => f.status === 'M').length} modified · {files.filter(f => f.status === 'D').length} deleted</span></div>
+        <div className="run-actions review-check-command">
+          <input className="text-input mono" aria-label="Project check command" placeholder="Check command, e.g. npm test" value={checkDraft ?? review.checkCommand} onChange={e => setCheckDraft(e.target.value)} />
+          {checkDraft !== null && <Button size="sm" disabled={busy} onClick={() => void run('Save checks', () => window.mc.setProjectMeta(review.projectPath, { checkCommand: checkDraft.trim() }), 'Check command saved').then(() => setCheckDraft(null))}>Save</Button>}
+          <Button size="sm" disabled={busy || !review.checkCommand || review.check?.state === 'running' || review.check?.state === 'stopping'} onClick={() => void run('Checks', () => window.mc.startReviewChecks(path, worktree?.base), 'Checks started')}>Run checks</Button>
+          {review.check?.state === 'running' && <Button size="sm" onClick={() => void window.mc.stopProjectCommand(review.check!.id).then(load)}>Stop checks</Button>}
+          <MenuButton align="right" trigger={toggle => <Button size="sm" disabled={busy || review.review?.column === 'running'} onClick={toggle}>Agent review</Button>} items={(['codex', 'claude'] as const).map(tool => ({label: `Review with ${tool === 'codex' ? 'Codex' : 'Claude'}`, onSelect: () => void run('Review', () => window.mc.startCodeReview(path, worktree?.base, tool), 'Read-only review started')}))} />
+        </div>
+        <div className="run-actions small"><span className={review.check?.state === 'failed' ? 'tone-red' : 'muted'}>{!review.checkCommand ? 'Checks not configured' : !review.check ? 'Checks not run' : review.checkStale ? 'Checks stale — files or command changed; rerun' : `Checks ${review.check.state}${review.check.exitCode !== undefined ? ` (exit ${review.check.exitCode})` : ''}`}</span>
+          <label><input type="checkbox" checked={approvedNow} onChange={e => setApproved(e.target.checked ? approvalKey : null)} /> I reviewed this diff and the results</label></div>
+        {review.check?.output && <details><summary className="small">Check output</summary><pre className="review-check-output">{review.check.output}</pre></details>}
+        {review.review && <details open={review.review.column === 'running' || !!review.review.run?.error}><summary className="small">{review.reviewStale ? 'Agent review stale — files changed' : review.review.column === 'running' ? 'Agent reviewing…' : 'Agent review result — your decision is still required'}</summary><div className="review-agent-result">{review.review.run?.error || review.review.run?.activity}{review.review.run?.result && <Md>{review.review.run.result}</Md>}</div></details>}
+      </section>}
 
       {commitMsg !== null && (
         <form

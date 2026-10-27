@@ -80,6 +80,7 @@ export async function runTemplate(id: string, then: Schedule['then'], projectPat
     projectPath: path,
     projectName,
     mode: tpl.mode,
+    tool: tpl.tool,
     permission: tpl.permission,
     useWorktree: tpl.useWorktree,
     budgetUsd: tpl.budgetUsd,
@@ -98,6 +99,10 @@ export async function runTemplate(id: string, then: Schedule['then'], projectPat
     if (!step.prompt.trim()) continue
     previous = createTask({
       ...common,
+      tool: step.tool ?? tpl.tool,
+      permission: step.permission ?? common.permission,
+      model: step.tool && step.tool !== tpl.tool ? undefined : common.model,
+      budgetUsd: step.tool === 'codex' ? undefined : common.budgetUsd,
       title: fillVariables(step.title || `${tpl.name}: next step`, projectName),
       prompt: fillVariables(step.prompt, projectName),
       dependsOn: [previous.id],

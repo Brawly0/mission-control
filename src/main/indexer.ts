@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { app } from 'electron'
 import { Worker } from 'node:worker_threads'
 import { join } from 'node:path'
@@ -37,6 +38,7 @@ function spawnWorker(onStatus: (s: IndexStatus) => void): void {
     // The speed test starts from an empty one (index.ts deletes it) to time a full build.
     workerData: {
       dbPath: join(app.getPath('userData'), process.env.MC_SMOKE_PERF ? 'index-perf.db' : process.env.MC_SMOKE ? 'index-smoke.db' : 'index.db'),
+      codexSessionsDir: process.env.MC_SMOKE_CODEX_SEARCH || join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions'),
       projectsDir: claudeProjectsDir
     }
   })

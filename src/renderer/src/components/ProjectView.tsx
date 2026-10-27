@@ -45,6 +45,8 @@ import { useToast } from '../toast'
 
 // The docs vault (with its graph) loads when its tab is first opened.
 const VaultView = lazy(() => import('./VaultView'))
+const RunPanel = lazy(() => import('./RunPanel'))
+const ProjectBriefingPanel = lazy(() => import('./ProjectBriefingPanel'))
 
 interface Props {
   project: Project
@@ -68,7 +70,7 @@ interface Props {
   onChanged: () => void
 }
 
-type Tab = 'overview' | 'chats' | 'changes' | 'docs'
+type Tab = 'overview' | 'chats' | 'changes' | 'docs' | 'run' | 'briefing'
 
 export default function ProjectView({ project, projects, git, visible, groups, focus, budget, onLaunch, onOpenMany, openSessions, onLaunchWorktree, onStartFromBriefing, onHandOff, onChanged }: Props) {
   const toast = useToast()
@@ -102,7 +104,8 @@ export default function ProjectView({ project, projects, git, visible, groups, f
   // Codex chats aren't in project.keys or sessionCount (those come from ~/.claude), so the list is
   // always read, and read again when the page comes back into view.
   useEffect(() => {
-    if (!visible && sessions.length) return
+    // The hidden project pane should not parse its newest transcript during app startup.
+    if (!visible) return
     setLoading(!sessions.length)
     loadSessions().finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -359,6 +362,8 @@ export default function ProjectView({ project, projects, git, visible, groups, f
       </header>
 
       <nav className="page-tabs">
+        <button className={tab === 'briefing' ? 'active' : ''} onClick={() => setTab('briefing')}><FileText size={15} /> Briefing</button>
+        <button className={tab === 'run' ? 'active' : ''} onClick={() => setTab('run')}><Terminal size={15} /> Run</button>
         <button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')} title={withKey('Overview', keyFor('tabOverview'))}>
           <LayoutDashboard size={15} /> Overview
           {project.meta.status && <span className={`tab-count status-${project.meta.status}`}>{project.meta.status}</span>}
@@ -375,6 +380,8 @@ export default function ProjectView({ project, projects, git, visible, groups, f
       </nav>
 
       <div className="page-body">
+        {tab === 'briefing' && <Suspense fallback={<div className="muted pad">Loading briefing…</div>}><ProjectBriefingPanel project={project} onLaunch={onLaunch} /></Suspense>}
+        {tab === 'run' && <Suspense fallback={<div className="muted pad">Loading commands…</div>}><RunPanel project={project} onChanged={onChanged} onLaunch={onLaunch} /></Suspense>}
         {tab === 'chats' && (
           <div className="chats">
             <section className="session-list">

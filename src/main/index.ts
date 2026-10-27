@@ -1,3 +1,4 @@
+import { stopAllProjectCommands } from './projectCommands'
 import { app, BrowserWindow } from 'electron'
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -161,6 +162,7 @@ app.on('before-quit', () => {
   quitStage('before-quit')
   setQuitting()
   stopAllTasks()
+  stopAllProjectCommands()
   flushTasks()
   // Stops the agents' programs and terminates the terminal host (ADR 0018); quick even with busy terminals.
   killAllTerminals()

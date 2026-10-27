@@ -66,6 +66,8 @@ function appUsage(): string {
 
 /** MC_SMOKE_PERF=1: startup times, a full index build into an empty index, and idle CPU and memory with 0 and 4 agents. */
 async function perfTour(win: BrowserWindow): Promise<void> {
+  // Startup probes use timers; keep Windows occlusion from delaying them by seconds.
+  win.webContents.setBackgroundThrottling(false)
   const js = (code: string) => win.webContents.executeJavaScript(code)
   perfMark('did-finish-load')
   // The first project in the sidebar: the moment the app is usable.
@@ -1536,6 +1538,16 @@ async function updateCheck(): Promise<void> {
  */
 export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeDeps): Promise<void> {
   try {
+    if (process.env.MC_SMOKE_CODEX_TASKS) {
+      const { codexTasksSmoke } = await import('./codexTasksSmoke')
+      await codexTasksSmoke(win, outFile, log)
+      return
+    }
+    if (process.env.MC_SMOKE_RUN) {
+      const { projectCommandsSmoke } = await import('./projectCommandsSmoke')
+      await projectCommandsSmoke(win, outFile, log)
+      return
+    }
     if (process.env.MC_SMOKE_WORKSPACE) {
       const { workspaceUiSmoke } = await import('./workspaceUiSmoke')
       await workspaceUiSmoke(win, outFile, log)

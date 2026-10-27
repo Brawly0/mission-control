@@ -5,10 +5,10 @@ import { briefingFileName, writeBriefingPrompt } from '@shared/projectLook'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { useToast } from '../toast'
-import { Avatar, Button, IconButton } from './ui'
+import { Avatar, Button, IconButton, ToolBadge } from './ui'
 
 interface Props {
-  /** Live Claude agents. */
+  /** Live Claude and Codex agents. */
   agents: Agent[]
   lastOutput: Record<string, number>
   onClose: () => void
@@ -110,7 +110,7 @@ export default function BroadcastDialog({ agents, lastOutput, onClose }: Props) 
                 <li key={a.id}>
                   <label className="check-row">
                     <input type="checkbox" checked={picked.has(a.id)} onChange={() => toggle(a.id)} />
-                    <Avatar name={a.projectName} path={a.projectPath} size={18} />
+                    {a.kind !== 'shell' && <ToolBadge tool={a.kind} />}<Avatar name={a.projectName} path={a.projectPath} size={18} />
                     <span className="ellipsis">{a.title}</span>
                     <span className={`status-pill status-${st.cls}`}>
                       <span className={`dot ${st.cls}`} />

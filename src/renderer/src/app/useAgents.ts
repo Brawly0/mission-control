@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ContextUsage, SavedAgent } from '@shared/types'
 import type { Agent, LaunchOptions, View } from '../types'
 import { onActivity } from '../terminalBus'
-import { resumeArgs, resumedSession, statusFromHook } from '../agentStatus'
+import { OUTPUT_WORKING_MS, resumeArgs, resumedSession, statusFromHook } from '../agentStatus'
 import type { useToast } from '../toast'
 import { errorMessage } from '../util'
 
@@ -37,7 +37,6 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
   const [notify, setNotify] = useState(loadNotifyPref)
   /** Agents from the last run that haven't been restored or dismissed yet; null until loaded. */
   const [pendingRestore, setPendingRestore] = useState<SavedAgent[] | null>(null)
-  const [, setTick] = useState(0)
   // How big each live chat is (by session id), refreshed every few seconds.
   const [contexts, setContexts] = useState<Record<string, ContextUsage>>({})
   const warnedContext = useRef(new Set<string>())
@@ -79,21 +78,31 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
   useEffect(() => {
     let pendingUpdate: Record<string, number> = {}
     let scheduled = false
+    let batchTimer: ReturnType<typeof setTimeout> | undefined
+    const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>()
     const off = onActivity((id) => {
       pendingUpdate[id] = Date.now()
       if (scheduled) return
       scheduled = true
-      setTimeout(() => {
+      batchTimer = setTimeout(() => {
         const batch = pendingUpdate
         pendingUpdate = {}
         scheduled = false
         setLastOutput((prev) => ({ ...prev, ...batch }))
+        for (const [id, at] of Object.entries(batch)) {
+          clearTimeout(expiryTimers.get(id))
+          expiryTimers.set(id, setTimeout(() => {
+            expiryTimers.delete(id)
+            // One render when output becomes idle, rather than waking the entire app every second.
+            setLastOutput(prev => ({ ...prev }))
+          }, Math.max(0, at + OUTPUT_WORKING_MS + 10 - Date.now())))
+        }
       }, 250)
     })
-    const timer = setInterval(() => setTick((t) => t + 1), 1000)
     return () => {
       off()
-      clearInterval(timer)
+      clearTimeout(batchTimer)
+      expiryTimers.forEach(clearTimeout)
     }
   }, [])
 

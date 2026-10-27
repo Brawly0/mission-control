@@ -321,7 +321,7 @@ export default function AgentsView(props: Props) {
             size="sm"
             variant="ghost"
             icon={Send}
-            disabled={!agents.some((a) => a.kind === 'claude' && !a.exited)}
+            disabled={!agents.some((a) => a.kind !== 'shell' && !a.exited)}
             title={withKey('Send one prompt to several agents', keyFor('broadcast'))}
             onClick={props.onBroadcast}
           >

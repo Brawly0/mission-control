@@ -15,10 +15,11 @@ import { basename, join } from 'node:path'
 import { costOf } from './pricing'
 import { titleFromPrompt, windowsPath } from '../shared/projectLook'
 import { skillUsesIn } from '../shared/skills'
+import { codexIdFromFile, codexPrompt, codexReply } from '../shared/codex'
 import { CALIBRATION_DAYS, calibrate, modelPrices, type CostPoint, type PlanReading } from '../shared/planCost'
 import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
 
-const { dbPath, projectsDir } = workerData as { dbPath: string; projectsDir: string }
+const { dbPath, projectsDir, codexSessionsDir } = workerData as { dbPath: string; projectsDir: string; codexSessionsDir?: string }
 const SCHEMA_VERSION = 8
 const MAX_BODY = 20_000
 
@@ -322,6 +323,41 @@ function indexFile(file: string, projectKey: string, sessionId: string, main: bo
 
 // ---------------------------------------------------------------- run loop
 
+function indexCodexFile(file: string, id: string) {
+  const st = statSync(file)
+  const prev = q.getFile.get(file) as { size: number; offset: number } | undefined
+  let offset = prev?.offset ?? 0
+  if (st.size < offset) { offset = 0; q.dropFts.run(id); db.prepare('DELETE FROM sessions WHERE session_id = ?').run(id) }
+  const row: SessionRow = (q.getSession.get(id) as SessionRow | undefined) ?? { session_id: id, project_key: 'codex', project_path: '', title: '', custom_title: '', first_prompt: '', started: 0, updated: 0 }
+  db.exec('BEGIN')
+  try {
+    offset = readLines(file, offset, line => {
+      let e: any
+      try { e = JSON.parse(line) } catch { return }
+      const at = Date.parse(e.timestamp) || 0
+      if (e.type === 'session_meta' && typeof e.payload?.cwd === 'string') row.project_path = e.payload.cwd
+      if (at) { row.started ||= at; row.updated = Math.max(row.updated, at) }
+      const user = codexPrompt(e), reply = codexReply(e)
+      if (user && !row.first_prompt) { row.first_prompt = user.slice(0, 1000); row.title = titleFromPrompt(user) }
+      if (user || reply) q.addFts.run((user || reply).slice(0, MAX_BODY), id, user ? 'user' : 'assistant', at)
+    })
+    q.putSession.run(row.session_id, row.project_key, row.project_path, row.title, row.custom_title, row.first_prompt, row.started, row.updated)
+    q.putFile.run(file, id, st.size, st.mtimeMs, offset)
+    db.exec('COMMIT')
+  } catch (e) { db.exec('ROLLBACK'); throw e }
+}
+
+function codexJobs(dir: string): { file: string; key: string; session: string; main: boolean }[] {
+  if (!existsSync(dir)) return []
+  const jobs: { file: string; key: string; session: string; main: boolean }[] = []
+  for (const item of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, item.name)
+    if (item.isDirectory()) jobs.push(...codexJobs(path))
+    else { const id = codexIdFromFile(item.name); if (id) jobs.push({ file: path, key: 'codex', session: id, main: true }) }
+  }
+  return jobs
+}
+
 let status: IndexStatus = { indexing: false, done: 0, total: 0, sessions: 0, messages: 0, lastRun: 0 }
 
 function postStatus(patch: Partial<IndexStatus>) {
@@ -365,6 +401,7 @@ async function run() {
     }
   }
 
+  if (codexSessionsDir) jobs.push(...codexJobs(codexSessionsDir))
   // Only files that changed since the last run need work.
   const pending = jobs.filter((j) => {
     const prev = q.getFile.get(j.file) as { size: number; mtime: number } | undefined
@@ -388,7 +425,8 @@ async function run() {
   for (let i = 0; i < pending.length; i++) {
     const j = pending[i]
     try {
-      indexFile(j.file, j.key, j.session, j.main)
+      if (j.key === 'codex') indexCodexFile(j.file, j.session)
+      else indexFile(j.file, j.key, j.session, j.main)
     } catch (err) {
       if (isCorrupt(err)) {
         // Start over on a fresh file; the next run re-reads every chat.
@@ -424,7 +462,7 @@ function keyFilter(keys: string | string[], params: (string | number)[]): string
   return `s.project_key IN (${list.map(() => '?').join(', ')})`
 }
 
-function search(query: string, opts: { projectKey?: string | string[]; role?: string; limit?: number }): SearchHit[] {
+function search(query: string, opts: { projectKey?: string | string[]; projectPath?: string; role?: string; limit?: number }): SearchHit[] {
   const match = ftsQuery(query)
   if (!match) return []
   const where = ['fts MATCH ?']
@@ -433,7 +471,15 @@ function search(query: string, opts: { projectKey?: string | string[]; role?: st
     where.push('fts.role = ?')
     params.push(opts.role)
   }
-  if (opts.projectKey?.length) where.push(keyFilter(opts.projectKey, params))
+  if (opts.projectPath) {
+    const conditions: string[] = []
+    if (opts.projectKey?.length) conditions.push(keyFilter(opts.projectKey, params))
+    const root = opts.projectPath.toLowerCase().replace(/\//g, '\\').replace(/\\+$/, '')
+    const prefix = root + '\\.claude\\worktrees\\'
+    conditions.push(`(lower(replace(s.project_path, '/', char(92))) = ? OR substr(lower(replace(s.project_path, '/', char(92))), 1, ?) = ?)`)
+    params.push(root, prefix.length, prefix)
+    where.push('(' + conditions.join(' OR ') + ')')
+  } else if (opts.projectKey?.length) where.push(keyFilter(opts.projectKey, params))
   params.push(Math.min(opts.limit ?? 120, 400))
   const rows = db
     .prepare(

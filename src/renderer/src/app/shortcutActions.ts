@@ -81,7 +81,7 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
       toast('info', c.notify ? 'Notifications off' : 'Notifications on')
     },
     goHome: () => setView('home'),
-    broadcast: () => agents.some((a) => a.kind === 'claude' && !a.exited) && c.openBroadcast(),
+    broadcast: () => agents.some((a) => a.kind !== 'shell' && !a.exited) && c.openBroadcast(),
     goInbox: () => setView('inbox'),
     goAgents: () => setView('agents'),
     goTasks: () => setView('tasks'),

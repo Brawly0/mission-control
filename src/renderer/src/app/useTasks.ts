@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { NewTask, Task } from '@shared/types'
 import type { Agent, LaunchOptions } from '../types'
 import type { useToast } from '../toast'
+import { resumeArgs } from '../agentStatus'
 import { errorMessage } from '../util'
 
 interface TasksOptions {
@@ -27,7 +28,7 @@ export function useTasks({ agents, launch, toast }: TasksOptions) {
         const res = await window.mc.startTask(task.id)
         if (res.interactive) {
           const { cwd, args, worktree } = res.interactive
-          const info = await launch({ cwd, projectName: task.projectName, projectPath: task.projectPath, title: task.title.slice(0, 48), args, worktree })
+          const info = await launch({ cwd, projectName: task.projectName, projectPath: task.projectPath, title: task.title.slice(0, 48), kind: task.tool ?? 'claude', args, worktree })
           if (info) {
             await window.mc.setTaskRun(
               task.id,
@@ -64,6 +65,7 @@ export function useTasks({ agents, launch, toast }: TasksOptions) {
           projectPath: input.projectPath,
           projectName: input.projectName,
           mode: input.mode,
+          tool: input.tool,
           permission: input.permission,
           useWorktree: input.useWorktree,
           budgetUsd: input.budgetUsd,
@@ -85,7 +87,8 @@ export function useTasks({ agents, launch, toast }: TasksOptions) {
         projectName: task.projectName,
         projectPath: task.projectPath,
         title: task.title.slice(0, 48),
-        args: ['--resume', task.run.sessionId],
+        kind: task.tool ?? 'claude',
+        args: resumeArgs(task.tool ?? 'claude', task.run.sessionId),
         worktree: task.worktree
       })
     },
