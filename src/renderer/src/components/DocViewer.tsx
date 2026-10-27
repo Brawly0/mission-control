@@ -4,7 +4,7 @@ import type { DocFile } from '@shared/types'
 import { errorMessage } from '../util'
 import { useToast } from '../toast'
 import NoteMarkdown from './NoteMarkdown'
-import { Button, IconButton } from './ui'
+import { Button, IconButton, LoadingState } from './ui'
 
 interface Props {
   doc: DocFile
@@ -24,13 +24,21 @@ export default function DocViewer({ doc, subtitle, onLink, exists, onContent, ac
   const [content, setContent] = useState('')
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setDraft(null)
   }, [doc.path])
   // Re-read when the file changes on disk too (Claude writing it); an open edit is kept.
   useEffect(() => {
-    window.mc.readDoc(doc.path).then(setContent).catch(() => setContent('*Could not read this file.*'))
+    let current = true
+    setLoading(true); setError(null)
+    window.mc.readDoc(doc.path)
+      .then(text => { if (current) setContent(text) })
+      .catch(e => { if (current) setError(errorMessage(e)) })
+      .finally(() => { if (current) setLoading(false) })
+    return () => { current = false }
   }, [doc.path, doc.version])
   useEffect(() => onContent?.(content), [content]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -59,7 +67,7 @@ export default function DocViewer({ doc, subtitle, onLink, exists, onContent, ac
         {actions}
         <IconButton icon={FolderOpen} label="Show in Explorer" size={14} onClick={() => window.mc.openInExplorer(doc.path.replace(/[\\/][^\\/]+$/, ''))} />
         {draft === null ? (
-          <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setDraft(content)}>
+          <Button size="sm" variant="ghost" icon={Pencil} disabled={loading || !!error} onClick={() => setDraft(content)}>
             Edit
           </Button>
         ) : (
@@ -75,7 +83,7 @@ export default function DocViewer({ doc, subtitle, onLink, exists, onContent, ac
       </div>
       {draft === null ? (
         <div className="markdown scroll">
-          <NoteMarkdown text={content} onLink={onLink} exists={exists} />
+          {loading ? <LoadingState>Reading document…</LoadingState> : error ? <div className="error pad" role="alert">Could not read this file. {error}</div> : <NoteMarkdown text={content} onLink={onLink} exists={exists} />}
         </div>
       ) : (
         <textarea

@@ -3,7 +3,7 @@ import { Md } from './Md'
 import { Copy, Play, Sparkles } from 'lucide-react'
 import type { SessionDetail, SessionSummary } from '@shared/types'
 import { useToast } from '../toast'
-import { Button, IconButton, ToolBadge } from './ui'
+import { Button, IconButton, ToolBadge, LoadingState } from './ui'
 import SessionRecap from './SessionRecap'
 
 interface Props {
@@ -75,7 +75,7 @@ export default function SessionViewer({ session, onResume, actions, onTitleChang
       <SessionRecap key={session.id} sessionId={session.id} version={session.updatedAt} onTitle={onTitleChanged} tool={session.tool} />
       <div className="messages scroll" ref={scrollRef}>
         {error && <div className="error">{error}</div>}
-        {!detail && !error && <div className="muted pad">Reading chat…</div>}
+        {!detail && !error && <LoadingState>Reading chat…</LoadingState>}
         {detail?.truncated && <div className="muted pad center">Showing the latest {detail.messages.length} messages</div>}
         {detail?.messages.map((m, i) => (
           <div key={i} className={`message ${m.role} ${session.tool === 'codex' ? 'from-codex' : ''}`}>

@@ -105,7 +105,7 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
         .catch((e) => toast('error', 'Could not start a quick chat', errorMessage(e))),
     prevProject: () => cycleProject(-1),
     nextProject: () => cycleProject(1),
-    newSession: () => selected && c.newInSelected(),
+    newSession: () => c.newInSelected(),
     newWorktreeSession: () => selected && c.launchWorktree(selected),
     continueLast: () =>
       selected && launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · continued`, args: ['--continue'] }),

@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { LoaderCircle } from 'lucide-react'
 import { avatarHue, initials } from '../util'
 import { ICONS, useLook } from '../projectLook'
 import type { ProjectIcon } from '@shared/projectLook'
@@ -90,6 +91,10 @@ export function EmptyState({ icon: Icon, title, children }: { icon: LucideIcon; 
   )
 }
 
+export function LoadingState({ children = 'Loading…' }: { children?: ReactNode }) {
+  return <div className="loading-state" role="status"><LoaderCircle size={16} aria-hidden="true" /><span>{children}</span></div>
+}
+
 export interface MenuItem {
   id?: string
   label: string
@@ -99,33 +104,84 @@ export interface MenuItem {
   disabled?: boolean
 }
 
-/** A button that opens a small dropdown menu. */
-export function MenuButton({ trigger, items, align = 'left', portal = false }: { portal?: boolean; trigger: (open: () => void) => ReactNode; items: MenuItem[]; align?: 'left' | 'right' }) {
+/** Shared menus escape clipped panes, fit the viewport and support keyboard navigation. */
+export function MenuButton({ trigger, items, align = 'left', portal = true }: { portal?: boolean; trigger: (open: () => void) => ReactNode; items: MenuItem[]; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<CSSProperties>({ visibility: 'hidden' })
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const firstFocus = useRef<'first' | 'last'>('first')
+  const id = useId()
+  const control = () => ref.current?.querySelector<HTMLButtonElement>('button')
+  const enabled = () => [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+  const dismiss = (restoreFocus = false) => { setOpen(false); if (restoreFocus) control()?.focus() }
+
+  useLayoutEffect(() => {
+    if (!open) { setPosition(p => p.visibility === 'hidden' ? p : { visibility: 'hidden' }); return }
+    const place = () => {
+      if (!portal || !ref.current || !menuRef.current) return
+      const anchor = ref.current.getBoundingClientRect()
+      const width = Math.min(300, window.innerWidth - 16)
+      const below = window.innerHeight - anchor.bottom - 12, above = anchor.top - 12
+      const desired = Math.min(420, menuRef.current.scrollHeight + 2)
+      const goesAbove = below < desired && above > below
+      const maxHeight = Math.max(40, Math.min(420, goesAbove ? above : below))
+      const height = Math.min(desired, maxHeight)
+      setPosition({ position: 'fixed', width, minWidth: 0, maxHeight, zIndex: 1000,
+        top: goesAbove ? Math.max(8, anchor.top - height - 4) : anchor.bottom + 4,
+        left: Math.max(8, Math.min(align === 'right' ? anchor.right - width : anchor.left, window.innerWidth - width - 8)), right: 'auto' })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open, portal, align, items.length])
+
+  useLayoutEffect(() => {
+    if (!open || (portal && position.visibility === 'hidden') || menuRef.current?.contains(document.activeElement)) return
+    const options = enabled()
+    ;(firstFocus.current === 'last' ? options.at(-1) : options[0])?.focus()
+  }, [open, portal, position])
 
   useEffect(() => {
     if (!open) return
     const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false)
+      if (!ref.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) dismiss()
     }
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const scroll = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) dismiss() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); dismiss(true) } }
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', esc)
+    window.addEventListener('scroll', scroll, true)
     return () => {
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', esc)
+      window.removeEventListener('scroll', scroll, true)
     }
   }, [open])
 
-  const rect = open && portal ? ref.current?.getBoundingClientRect() : undefined
+  const button = trigger(() => { firstFocus.current = 'first'; setOpen(o => !o) })
+  const accessibleButton = isValidElement(button) ? cloneElement(button as ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>, {
+    'aria-haspopup': 'menu', 'aria-expanded': open, 'aria-controls': open ? id : undefined,
+    onKeyDown: e => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault(); firstFocus.current = e.key === 'ArrowUp' ? 'last' : 'first'; setOpen(true)
+      }
+    }
+  }) : button
   const menu = open && (
-    <div ref={menuRef} className={`menu menu-${align}`} role="menu"
-      style={portal && rect ? { position: 'fixed', top: Math.min(rect.bottom + 4, window.innerHeight - 240), left: Math.max(8, Math.min(rect.right - 260, window.innerWidth - 268)), right: 'auto', minWidth: 0, width: 260, zIndex: 1000 } : undefined}>
+    <div id={id} ref={menuRef} className={`menu menu-${align}`} role="menu" style={portal ? position : undefined}
+      onKeyDown={e => {
+        const options = enabled(), index = options.indexOf(document.activeElement as HTMLButtonElement)
+        if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+          e.preventDefault(); e.stopPropagation()
+          const next = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length
+          options[next]?.focus()
+        } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(true) }
+        else if (e.key === 'Tab') dismiss(true)
+      }}>
       {items.map((item) => (
-        <button key={item.id ?? item.label} className="menu-item" role="menuitem" disabled={item.disabled}
-          onClick={() => { setOpen(false); item.onSelect() }}>
+        <button type="button" key={item.id ?? item.label} className="menu-item" role="menuitem" tabIndex={-1} disabled={item.disabled}
+          onClick={() => { dismiss(true); item.onSelect() }}>
           {item.icon && <item.icon size={15} strokeWidth={1.9} />}
           <span className="menu-label">{item.label}{item.hint && <span className="menu-hint">{item.hint}</span>}</span>
         </button>
@@ -134,7 +190,7 @@ export function MenuButton({ trigger, items, align = 'left', portal = false }: {
   )
   return (
     <div className="menu-anchor" ref={ref}>
-      {trigger(() => setOpen((o) => !o))}
+      {accessibleButton}
       {portal ? createPortal(menu, document.body) : menu}
     </div>
   )

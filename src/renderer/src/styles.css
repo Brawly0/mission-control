@@ -14,7 +14,7 @@
   --text: #e8ecf8;
   --text-2: #b9c1da;
   --muted: #8e97b6;
-  --faint: #646d8c;
+  --faint: #7e8aa9;
   --term-bg: #080c18;
 
   /* Brand palette: Electric Cyan #22d3ee, Signal Blue #3b82f6, Soft Violet #8b5cf6. */
@@ -186,12 +186,13 @@ code {
   font-weight: 500;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
+.btn > svg, .icon-btn > svg { flex-shrink: 0; }
 .btn-md {
   height: 32px;
   padding: 0 12px;
 }
 .btn-sm {
-  height: 26px;
+  height: 28px;
   padding: 0 9px;
   font-size: 12px;
 }
@@ -441,6 +442,9 @@ code {
 .empty-body p {
   margin: 0;
 }
+.empty-body { line-height: 1.6; }
+.loading-state { display: flex; align-items: center; gap: 9px; padding: 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.loading-state > svg { flex-shrink: 0; animation: spin 1s linear infinite; }
 
 /* ---------- menus ---------- */
 .menu-anchor {
@@ -474,6 +478,7 @@ code {
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   text-align: left;
+  min-height: 36px;
 }
 .menu-item svg {
   margin-top: 1px;
@@ -488,7 +493,11 @@ code {
 .menu-label {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
+.menu-item:focus-visible { outline-offset: -2px; background: var(--active); }
+.menu-item > svg { flex-shrink: 0; }
 .menu-hint {
   font-size: 11.5px;
   color: var(--muted);
@@ -825,7 +834,7 @@ code {
   border-bottom: 1px solid rgba(var(--accent-rgb), 0.3);
   color: var(--accent-text);
 }
-.restore-banner span {
+.restore-banner > span {
   flex: 1;
   color: var(--text);
 }
@@ -906,6 +915,7 @@ code {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .icon-group {
   display: flex;
@@ -920,6 +930,8 @@ code {
   gap: 4px;
   padding: 0 18px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
 }
 .page-tabs button {
   display: inline-flex;

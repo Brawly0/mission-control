@@ -1530,6 +1530,7 @@ async function updateCheck(): Promise<void> {
     await sleep(500)
   }
   log('update states:', states.join(' -> '), '| final:', JSON.stringify(updateStatus()))
+  if (updateStatus().state !== 'ready' && updateStatus().state !== 'none') throw new Error('Update check or download failed')
 }
 
 /**
@@ -1538,6 +1539,21 @@ async function updateCheck(): Promise<void> {
  */
 export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeDeps): Promise<void> {
   try {
+    if (process.env.MC_SMOKE_READINESS) {
+      const { releaseReadinessSmoke } = await import('./releaseReadinessSmoke')
+      await releaseReadinessSmoke(win, outFile, log)
+      return
+    }
+    if (process.env.MC_SMOKE_UPDATE) {
+      await updateCheck()
+      log('update check: PASS')
+      return
+    }
+    if (process.env.MC_SMOKE_POLISH) {
+      const { uiPolishSmoke } = await import('./uiPolishSmoke')
+      await uiPolishSmoke(win, outFile, log)
+      return
+    }
     if (process.env.MC_SMOKE_CODEX_TASKS) {
       const { codexTasksSmoke } = await import('./codexTasksSmoke')
       await codexTasksSmoke(win, outFile, log)
@@ -1707,6 +1723,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     log('close test finished')
   } catch (e) {
     log('FAILED', e)
+    process.exitCode = 1
   } finally {
     app.quit()
   }

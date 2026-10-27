@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Play, RefreshCw, TextSearch } from 'lucide-react'
 import type { IndexStatus, Project, SearchHit } from '@shared/types'
 import { basename, errorMessage, timeAgo } from '../util'
-import { Avatar, Button, EmptyState, IconButton, Segmented, ToolBadge } from './ui'
+import { Avatar, Button, EmptyState, IconButton, LoadingState, Segmented, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 
 interface Props {
@@ -38,6 +38,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
   const [projectKey, setProjectKey] = useState('')
   const [hits, setHits] = useState<SearchHit[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -46,20 +47,24 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
 
   useEffect(() => {
     const q = query.trim()
+    setError(null)
+    setHits(null)
     if (!q) {
-      setHits(null)
+      setLoading(false)
       return
     }
+    let current = true
+    setLoading(true)
     const timer = setTimeout(() => {
       window.mc
         .search(q, { role: role === 'all' ? undefined : role, projectKey: projects.find((p) => p.path === projectKey)?.keys ?? (projectKey || undefined), projectPath: projectKey || undefined, limit: 150 })
         .then((h) => {
-          setHits(h)
-          setError(null)
+          if (current) setHits(h)
         })
-        .catch((e) => setError(errorMessage(e)))
+        .catch((e) => { if (current) setError(errorMessage(e)) })
+        .finally(() => { if (current) setLoading(false) })
     }, 180)
-    return () => clearTimeout(timer)
+    return () => { current = false; clearTimeout(timer) }
   }, [query, role, projectKey, status?.lastRun])
 
   // Group matches by chat, keeping the best-ranked chat first.
@@ -78,7 +83,8 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
           <TextSearch size={18} />
           <input
             ref={inputRef}
-            placeholder="Search everything you and Claude wrote in every chat…"
+            placeholder="Search prompts and replies across Claude and Codex…"
+            aria-label="Search chats"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
@@ -91,7 +97,7 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
             options={[
               { value: 'all', label: 'Everything' },
               { value: 'user', label: 'My prompts' },
-              { value: 'assistant', label: 'Claude’s replies' }
+              { value: 'assistant', label: 'Agent replies' }
             ]}
           />
           <select className="select" value={projectKey} onChange={(e) => setProjectKey(e.target.value)} aria-label="Project">
@@ -113,9 +119,10 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
         </div>
       </header>
 
-      <div className="search-results scroll">
+      <div className="search-results scroll" aria-busy={loading}>
         {error && <div className="error pad">{error}</div>}
-        {hits === null && !error && (
+        {loading && <LoadingState>Searching chats…</LoadingState>}
+        {hits === null && !error && !loading && (
           <EmptyState icon={TextSearch} title="Search all your chats">
             Find any prompt or answer across every project. All words must match; the last word also matches as a prefix.
           </EmptyState>

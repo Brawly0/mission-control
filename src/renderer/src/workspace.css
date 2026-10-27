@@ -1,6 +1,16 @@
 /* Shared workspace surfaces and the persistent project tools dock. */
 .brand-mark { background: transparent; box-shadow: none; padding: 0; }
 .brand-logo { display: block; flex-shrink: 0; border-radius: 9px; }
+.page-header { flex-wrap: wrap; }
+.page-title { max-width: 100%; }
+.page-title h1 { overflow-wrap: anywhere; }
+.page-tabs > button { flex-shrink: 0; }
+.settings-tabs { overflow-y: auto; }
+.settings-pane { min-height: 0; }
+.search-box input, .palette-input input { min-width: 0; }
+.search-filters > .select { max-width: 100%; }
+input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .topbar-search > span:first-of-type { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-search > svg { flex-shrink: 0; }
 .dash-action.primary { color: var(--on-accent); box-shadow: 0 6px 18px rgba(var(--accent-rgb), .16); }
@@ -62,6 +72,11 @@
 .review-check-output { color: #e1eaf6; border-radius: 6px; margin-top: 8px; }
 .review-agent-result { user-select: text; }
 @media (max-width: 1050px) {
+  .page { padding: 20px 18px 28px; }
+  .page-head, .tasks-head, .search-head { padding: 18px 18px 14px; }
+  .page-toolbar { gap: 8px; }
+  .search-results { padding: 14px 18px 28px; }
+  .page-tabs { padding: 0 12px; }
   .topbar { height: auto; min-height: 60px; flex-wrap: wrap; padding: 8px 14px; gap: 8px; }
   .agent-current-context { max-width: 140px; }
   .agent-bar-end { gap: 4px; }
@@ -69,4 +84,12 @@
   .bottom-dock-head { gap: 6px; }
   .review-status-card { padding: 7px; }
   .review-approval { margin-left: 0; }
+}
+@media (max-width: 760px) {
+  .settings-layout { grid-template-columns: 140px minmax(0, 1fr); }
+  .settings-pane { padding: 16px; }
+  .settings-pane .segmented { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

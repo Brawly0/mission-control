@@ -21,6 +21,9 @@ let beforeInstall: (() => void) | null = null
 let state: UpdateState = { state: 'idle' }
 let notify: ((s: UpdateState) => void) | null = null
 let timer: NodeJS.Timeout | null = null
+let initialCheck: NodeJS.Timeout | null = null
+let checking: Promise<void> | null = null
+let autoCheckEnabled = false
 
 function set(s: UpdateState): void {
   state = s
@@ -38,7 +41,12 @@ export function initUpdater(onStatus: (s: UpdateState) => void, autoCheck: boole
     return
   }
   autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = !process.env.MC_SMOKE
+  if (process.env.MC_SMOKE && process.env.MC_SMOKE_UPDATE_FEED) {
+    const url = new URL(process.env.MC_SMOKE_UPDATE_FEED)
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Update test feed must use loopback HTTP')
+    autoUpdater.setFeedURL({ provider: 'generic', url: url.href })
+  }
   autoUpdater.on('checking-for-update', () => set({ state: 'checking' }))
   autoUpdater.on('update-not-available', () => {
     installWhenReady = false
@@ -53,31 +61,34 @@ export function initUpdater(onStatus: (s: UpdateState) => void, autoCheck: boole
     set({ state: 'ready', version: info.version })
     if (installWhenReady) installUpdate()
   })
-  autoUpdater.on('error', (err) => set({ state: 'error', message: err?.message ?? String(err) }))
+  autoUpdater.on('error', (err) => { installWhenReady = false; set({ state: 'error', message: err?.message ?? String(err) }) })
   setAutoCheck(autoCheck)
 }
 
 export function setAutoCheck(on: boolean): void {
+  autoCheckEnabled = on
   if (timer) clearInterval(timer)
+  if (initialCheck) clearTimeout(initialCheck)
   timer = null
+  initialCheck = null
   if (!on || !app.isPackaged) return
-  setTimeout(() => void checkForUpdates(), 15_000)
+  initialCheck = setTimeout(() => { initialCheck = null; void checkForUpdates() }, 15_000)
   timer = setInterval(() => void checkForUpdates(), CHECK_EVERY_MS)
 }
 
-export async function checkForUpdates(): Promise<void> {
-  if (!app.isPackaged) return
+export function checkForUpdates(): Promise<void> {
+  if (!app.isPackaged || state.state === 'downloading' || state.state === 'ready') return Promise.resolve()
+  if (checking) return checking
   lastCheck = Date.now()
-  try {
-    await autoUpdater.checkForUpdates()
-  } catch (err) {
-    set({ state: 'error', message: (err as Error).message })
-  }
+  checking = Promise.resolve().then(() => autoUpdater.checkForUpdates()).then(() => undefined)
+    .catch(err => { installWhenReady = false; set({ state: 'error', message: (err as Error).message }) })
+    .finally(() => { checking = null })
+  return checking
 }
 
 /** A check when the window gets focus, unless one ran in the last 10 minutes (or one is under way). */
 export function checkSoon(): void {
-  if (!app.isPackaged || Date.now() - lastCheck < FOCUS_GAP_MS) return
+  if (!autoCheckEnabled || !app.isPackaged || Date.now() - lastCheck < FOCUS_GAP_MS) return
   if (state.state === 'checking' || state.state === 'downloading' || state.state === 'ready') return
   void checkForUpdates()
 }

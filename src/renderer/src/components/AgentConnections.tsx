@@ -11,6 +11,7 @@ export default function AgentConnections({ onUsage, onTerminal }: { onUsage: () 
     setBusy(true)
     const results = await Promise.allSettled([window.mc.claudeStatus(force), window.mc.codexStatus(force)])
     setStatus(Object.fromEntries(results.map((r, i) => [i ? 'codex' : 'claude', r.status === 'fulfilled' ? r.value : null])))
+    if (!force && results.every(r => r.status === 'rejected' || !r.value.installed)) setOpen(true)
     setBusy(false)
   }
   useEffect(() => {
@@ -32,12 +33,13 @@ export default function AgentConnections({ onUsage, onTerminal }: { onUsage: () 
         </button>
       })}
       {open && <div className="connection-details">
+        <p className="muted small">Use Claude, Codex, or both. Install and sign in to the CLI you want to use.</p>
         {(['claude', 'codex'] as const).map(tool => {
           const s = status[tool]
           return <div key={tool} className="small">
             <strong>{tool === 'claude' ? 'Claude Code' : 'Codex'}</strong>
             <div className="muted">{s?.version || 'Version unavailable'}{s?.plan ? ` · ${s.plan[0].toUpperCase()}${s.plan.slice(1)} plan` : ''}</div>
-            {s && !s.installed ? <code>npm install -g {tool === 'claude' ? '@anthropic-ai/claude-code' : '@openai/codex'}</code> : s && !s.loggedIn ? <code>{tool === 'claude' ? 'claude auth login' : 'codex login'}</code> : null}
+            {s && !s.installed ? <><a href={tool === 'claude' ? 'https://code.claude.com/docs/en/setup' : 'https://developers.openai.com/codex/cli/'} target="_blank" rel="noreferrer">Installation guide</a><div className="muted">Restart Mission Control after installing so it can find the updated PATH.</div></> : s && !s.loggedIn ? <><span className="muted">Run in a terminal:</span><code>{tool === 'claude' ? 'claude auth login' : 'codex login'}</code></> : null}
             {!s && <div className="muted">Refresh to try again.</div>}
           </div>
         })}

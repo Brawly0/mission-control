@@ -2,6 +2,7 @@ import { briefingContext } from './projectBriefing'
 import { codexUsage } from './codexData'
 import { codexTaskArgs, applyCodexTaskEvent } from '../shared/codexTask'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { terminateProcessTreesSync } from './processCleanup'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { CheckResult, NewTask, QueueStatus, RateLimitInfo, Task, TaskColumn, TaskRun, WorktreeInfo } from '../shared/types'
@@ -43,6 +44,10 @@ let hooks: Hooks | null = null
 const procs = new Map<string, ChildProcess>()
 const checkProcs = new Map<string, ChildProcess>()
 const stoppedByUser = new Set<string>()
+const startingTasks = new Set<string>()
+let shuttingDown = false
+let queueTimer: ReturnType<typeof setInterval> | undefined
+let queueStart: ReturnType<typeof setTimeout> | undefined
 let lastRateLimit: RateLimitInfo | null = null
 
 let saveTimer: NodeJS.Timeout | null = null
@@ -79,6 +84,7 @@ export function flushTasks(): void {
 }
 
 export function initTasks(h: Hooks): void {
+  shuttingDown = false
   hooks = h
   tasks = loadStore().tasks
   // Runs and checks can't survive an app restart; say so on the card instead of showing a stale spinner.
@@ -97,8 +103,9 @@ export function initTasks(h: Hooks): void {
   }
   persist()
   // Re-check the queue now and then: a plan window may have reset since the last check.
-  setInterval(pumpQueue, 30_000)
-  setTimeout(pumpQueue, 3000)
+  clearInterval(queueTimer); clearTimeout(queueStart)
+  queueTimer = setInterval(pumpQueue, 30_000)
+  queueStart = setTimeout(pumpQueue, 3000)
 }
 
 // ---------------------------------------------------------------- guardrails
@@ -143,17 +150,19 @@ let pumping = false
 
 /** Starts queued tasks while there are free slots. Tasks of projects over budget wait. */
 export async function pumpQueue(): Promise<void> {
-  if (pumping || !hooks) return
+  if (shuttingDown || pumping || !hooks) return
   pumping = true
   try {
     const skipped = new Set<string>()
     for (;;) {
+      if (shuttingDown) return
       const status = queueStatus()
       hooks.onQueueStatus(status)
       if (status.heldBecause || procs.size >= status.parallel) return
       const next = queuedTasks().find((t) => !skipped.has(t.id))
       if (!next) return
       const hold = await automationHold(next.projectPath, next.tool)
+      if (shuttingDown) return
       if (hold) {
         skipped.add(next.id)
         continue
@@ -308,32 +317,39 @@ async function prepareFolder(t: Task): Promise<{ cwd: string; worktree?: Worktre
 }
 
 export async function startTask(id: string): Promise<{ interactive?: { cwd: string; args: string[]; worktree?: WorktreeInfo } }> {
-  const t = find(id)
-  if (procs.has(id) || t.column === 'running') throw new Error('This task is already running.')
-  taskCommand(t.tool ?? 'claude')
-  if (t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a per-task USD cap. Remove the cap before starting.')
-  const { cwd, worktree } = await prepareFolder(t)
-  if (worktree) emit()
+  if (shuttingDown) throw new Error('Mission Control is closing.')
+  if (startingTasks.has(id)) throw new Error('This task is already starting.')
+  startingTasks.add(id)
+  try {
+    const t = find(id)
+    if (procs.has(id) || t.column === 'running') throw new Error('This task is already running.')
+    taskCommand(t.tool ?? 'claude')
+    if (t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a per-task USD cap. Remove the cap before starting.')
+    const { cwd, worktree } = await prepareFolder(t)
+    if (shuttingDown) throw new Error('Mission Control is closing.')
+    if (worktree) emit()
 
-  if (t.mode === 'interactive') {
-    // The UI opens the agent terminal; the prompt is passed as claude's first message.
-    const args = t.tool === 'codex' ? [...(t.model ? ['--model', t.model] : []), ...(t.permission === 'plan' ? ['-s', 'read-only'] : []), briefingContext(t.projectPath, t.prompt)] : [...(t.model ? ['--model', t.model] : []), '--permission-mode', t.permission, briefingContext(t.projectPath, t.prompt)]
-    return { interactive: { cwd, args, worktree } }
-  }
+    if (t.mode === 'interactive') {
+      // The UI opens the agent terminal; the prompt is passed as claude's first message.
+      const args = t.tool === 'codex' ? [...(t.model ? ['--model', t.model] : []), ...(t.permission === 'plan' ? ['-s', 'read-only'] : []), briefingContext(t.projectPath, t.prompt)] : [...(t.model ? ['--model', t.model] : []), '--permission-mode', t.permission, briefingContext(t.projectPath, t.prompt)]
+      return { interactive: { cwd, args, worktree } }
+    }
 
-  const run: TaskRun = { sessionId: t.tool === 'codex' ? undefined : randomUUID(), startedAt: Date.now(), toolCalls: 0, events: [], activity: 'Starting…' }
-  const parent = chainBaseFor(t, tasks)
-  addEvent(run, 'start', `Started in ${cwd}${worktree ? ` (branch ${worktree.branch}${parent?.worktree && worktree.branch !== parent.worktree.branch ? `, building on ${parent.worktree.branch}` : ''})` : ''}`)
-  t.run = run
-  moveTo(t, 'running')
-  t.updatedAt = Date.now()
-  emit()
-  runHeadless(t, cwd, briefingContext(t.projectPath, t.permission === 'plan' ? 'Investigate and plan only; do not modify files.\n' + t.prompt : t.prompt), { sessionId: run.sessionId })
-  return {}
+    const run: TaskRun = { sessionId: t.tool === 'codex' ? undefined : randomUUID(), startedAt: Date.now(), toolCalls: 0, events: [], activity: 'Starting…' }
+    const parent = chainBaseFor(t, tasks)
+    addEvent(run, 'start', `Started in ${cwd}${worktree ? ` (branch ${worktree.branch}${parent?.worktree && worktree.branch !== parent.worktree.branch ? `, building on ${parent.worktree.branch}` : ''})` : ''}`)
+    t.run = run
+    moveTo(t, 'running')
+    t.updatedAt = Date.now()
+    emit()
+    runHeadless(t, cwd, briefingContext(t.projectPath, t.permission === 'plan' ? 'Investigate and plan only; do not modify files.\n' + t.prompt : t.prompt), { sessionId: run.sessionId })
+    return {}
+  } finally { startingTasks.delete(id) }
 }
 
 /** Continues a finished headless task's chat with a new prompt, in the same folder. */
 export function followUpTask(id: string, prompt: string): void {
+  if (shuttingDown) throw new Error('Mission Control is closing.')
   const t = find(id)
   const run = t.run
   if (!run?.sessionId) throw new Error('This task has no chat to continue yet.')
@@ -473,6 +489,10 @@ async function runChecks(t: Task, cwd: string): Promise<void> {
   const command = checkCommandFor(t)
   const run = t.run
   if (!command || !run) return
+  if (shuttingDown) {
+    run.checks = { command, status: 'error', output: 'Checks not started because Mission Control is closing.', startedAt: Date.now(), finishedAt: Date.now() }
+    return
+  }
   const checks: CheckResult = { command, status: 'running', output: '', startedAt: Date.now() }
   run.checks = checks
   run.activity = `Checking: ${command}`
@@ -511,6 +531,8 @@ async function runChecks(t: Task, cwd: string): Promise<void> {
 
 /** Runs the checks again (e.g. after fixing the command); unblocks waiting tasks if they now pass. */
 export async function rerunChecks(id: string): Promise<void> {
+  if (shuttingDown) throw new Error('Mission Control is closing.')
+  if (checkProcs.has(id)) throw new Error('Checks are already running for this task.')
   const t = find(id)
   if (!t.run) throw new Error('This task hasn’t run yet.')
   if (t.column === 'running') throw new Error('Wait until the task has finished.')
@@ -567,7 +589,7 @@ async function startIfReady(t: Task): Promise<void> {
 function killTree(child: ChildProcess): void {
   // claude and check commands may start child processes; end the whole tree on Windows.
   if (process.platform === 'win32' && child.pid) {
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).on('error', () => child.kill())
   } else {
     child.kill()
   }
@@ -581,10 +603,13 @@ export function stopTask(id: string): void {
 }
 
 export function stopAllTasks(): void {
-  for (const id of [...procs.keys()]) stopTask(id)
-  for (const id of [...checkProcs.keys()]) stopChecks(id)
+  shuttingDown = true
+  clearInterval(queueTimer); clearTimeout(queueStart)
+  const children = [...procs.values(), ...checkProcs.values()]
+  for (const id of procs.keys()) stoppedByUser.add(id)
+  terminateProcessTreesSync(children.flatMap(child => child.pid ? [child.pid] : []))
 }
 
 export function runningTaskCount(): number {
-  return procs.size
+  return procs.size + checkProcs.size + startingTasks.size
 }

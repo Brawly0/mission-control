@@ -11,7 +11,7 @@ import { queryIndex, startIndexer, stopIndexer } from './indexer'
 import { checkBudgetWarnings } from './budget'
 import { startHookServer, stopHookServer } from './hookServer'
 import { killAllTerminals } from './pty'
-import { loadStore } from './store'
+import { loadStore, updateStore } from './store'
 import { saveNewBriefings } from './briefings'
 import { log as smokeLog, perfMark, runSmoke } from './smoke'
 import { startPlanUsage, stopPlanUsage } from './planUsage'
@@ -29,15 +29,16 @@ import { briefingSaved, budgetWarning, checkChatCosts, checkPlanLimits, notifyDu
 // Self-tests run in their own profile, starting from a copy of your settings: they work while the
 // installed app is open (Chromium can't share a profile) and never change its data.
 if (process.env.MC_SMOKE) {
-  const real = app.getPath('userData')
-  const own = `${real} (self-test)`
+  const real = process.env.MC_SMOKE_PROFILE ? undefined : app.getPath('userData')
+  const own = process.env.MC_SMOKE_PROFILE || `${real} (self-test)`
   mkdirSync(own, { recursive: true })
   try {
-    copyFileSync(join(real, 'store.json'), join(own, 'store.json'))
+    if (!process.env.MC_SMOKE_CLEAN && real) copyFileSync(join(real, 'store.json'), join(own, 'store.json'))
   } catch {
     /* no settings yet */
   }
   app.setPath('userData', own)
+  if (process.env.MC_SMOKE_CLEAN) updateStore(s => { s.settings.userName = 'Developer'; s.settings.autoUpdate = false; s.settings.queueEnabled = false; s.settings.autoBriefings = false; s.settings.hotkey = '' })
   if (process.env.MC_SMOKE_PERF === 'fresh') for (const ext of ['', '-wal', '-shm']) rmSync(join(own, `index-perf.db${ext}`), { force: true })
 }
 perfMark('main loaded')

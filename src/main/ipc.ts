@@ -5,7 +5,8 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
 import type {
   AgentTool,
   AppSettings,
@@ -169,7 +170,11 @@ export function registerIpc(): void {
   ipcMain.handle('briefings:latest', (_e, path: string) => latestBriefing(path))
   ipcMain.handle('briefings:hasInstructions', (_e, path: string) => hasSummaryInstructions(path))
   ipcMain.handle('briefings:addInstructions', (_e, path: string) => addSummaryInstructions(path))
-  ipcMain.handle('folders:common', () => ({ desktop: app.getPath('desktop'), documents: app.getPath('documents'), home: app.getPath('home') }))
+  ipcMain.handle('folders:common', () => {
+    const folder = (name: 'home' | 'desktop' | 'documents', fallback: string) => { try { return app.getPath(name) } catch { return fallback } }
+    const home = folder('home', homedir())
+    return { home, desktop: folder('desktop', join(home, 'Desktop')), documents: folder('documents', join(home, 'Documents')) }
+  })
 
   ipcMain.handle('open:explorer', (_e, path: string) => shell.openPath(path))
   ipcMain.handle('open:vscode', (_e, path: string) => {

@@ -27,7 +27,7 @@ import { isScratchPath } from '@shared/projectLook'
 import { elapsed, timeAgo } from '../util'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
-import { Avatar, Button, MenuButton } from './ui'
+import { Avatar, Button, MenuButton, LoadingState } from './ui'
 
 interface Props {
   agents: Agent[]
@@ -199,7 +199,7 @@ export default function HomeView(props: Props) {
 
       <section className="dash-actions">
         {[
-          { id: 'newSession', icon: Plus, title: 'New session', sub: props.currentProject ? `Claude in ${props.currentProject}` : 'Start a Claude Code session', primary: true },
+          { id: 'newSession', icon: Plus, title: 'New session', sub: props.currentProject ? `Start in ${props.currentProject}` : 'Choose a project to begin', primary: true },
           { id: 'newTask', icon: ListPlus, title: 'New task', sub: 'A task or a reminder', tone: 'green' },
           { id: 'newProject', icon: FolderPlus, title: 'New project', sub: 'Create or add a folder', tone: 'purple' },
           { id: 'quickChat', icon: MessageSquareDashed, title: 'Quick chat', sub: 'A throwaway chat, no project', tone: 'blue' }
@@ -226,7 +226,7 @@ export default function HomeView(props: Props) {
             </button>
           </div>
           <div className="activity-list">
-            {recent === null && <div className="muted pad">Loading…</div>}
+            {recent === null && <LoadingState>Loading recent activity…</LoadingState>}
             {recent?.length === 0 && <div className="muted pad">No chats yet. Start a session and it shows here.</div>}
             {recent?.map((s) => {
               const sub = s.firstPrompt && s.firstPrompt.split('\n')[0].trim() !== s.title ? s.firstPrompt.split('\n')[0] : ''
@@ -258,7 +258,7 @@ export default function HomeView(props: Props) {
             </button>
           </div>
           {shownProjects.length === 0 ? (
-            <div className="muted pad">No projects match “{FILTERS.find((f) => f.id === filter)?.label}”.</div>
+            <div className="muted pad">{real.length === 0 ? 'Add a project folder to get started.' : <>No projects match “{FILTERS.find((f) => f.id === filter)?.label}”.</>}</div>
           ) : (
             <div className="project-cards">
               {shownProjects.map((p) => (

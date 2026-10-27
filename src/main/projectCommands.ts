@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { terminateProcessTreesSync } from './processCleanup'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -68,12 +69,22 @@ export function stopProjectCommand(id: string) {
   run.state = 'stopping'
   if (child.pid && process.platform === 'win32') {
     const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
-    killer.on('error', err => { run.output += `\nCould not stop command: ${err.message}`; run.state = 'running'; changed(run) })
+    const failed = (message: string) => {
+      if (run.finishedAt) return
+      run.output = (run.output + `\nCould not stop command: ${message}`).slice(-65_536)
+      run.state = 'running'; changed(run)
+    }
+    killer.on('error', err => failed(err.message))
+    killer.on('close', code => { if (code !== 0) failed(`taskkill exited with code ${code}. Try Stop again.`) })
   } else child.kill()
   changed(run)
 }
 export const runningProjectCommandCount = () => children.size
-export function stopAllProjectCommands() { for (const id of children.keys()) stopProjectCommand(id) }
+export function stopAllProjectCommands() {
+  const pids = [...children.values()].flatMap(child => child.pid ? [child.pid] : [])
+  for (const run of runs.values()) if (children.has(run.id)) run.state = 'stopping'
+  terminateProcessTreesSync(pids)
+}
 
 /** Keep potentially long output out of Windows' command-line arguments. */
 export function projectCommandReport(id: string): { cwd: string; prompt: string } {

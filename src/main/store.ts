@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AiRecap, AppSettings, Note, Workspace, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
 
@@ -104,14 +104,26 @@ function storePath(): string {
 
 export function loadStore(): StoreData {
   const fresh = structuredClone(defaults)
-  try {
-    const file = storePath()
-    if (!existsSync(file)) return fresh
-    const data = JSON.parse(readFileSync(file, 'utf8'))
-    return { ...fresh, ...data, settings: { ...fresh.settings, ...data.settings } }
-  } catch {
-    return fresh
+  for (const file of [storePath(), `${storePath()}.bak`]) {
+    try {
+      if (!existsSync(file)) continue
+      const data = readStore(file)
+      return { ...fresh, ...data, settings: { ...fresh.settings, ...data.settings, eco: { ...fresh.settings.eco, ...data.settings?.eco } } }
+    } catch { /* Try the last valid backup before using defaults. */ }
   }
+  return fresh
+}
+
+function readStore(file: string): Partial<StoreData> {
+  const data = JSON.parse(readFileSync(file, 'utf8'))
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid settings file')
+  for (const key of ['manualProjects', 'pinned', 'savedAgents', 'tasks', 'templates', 'notes', 'workspaces', 'limitAlerted']) {
+    if (data[key] !== undefined && !Array.isArray(data[key])) throw new Error(`Invalid settings: ${key}`)
+  }
+  for (const key of ['settings', 'ui', 'projectMeta']) {
+    if (data[key] !== undefined && (!data[key] || typeof data[key] !== 'object' || Array.isArray(data[key]))) throw new Error(`Invalid settings: ${key}`)
+  }
+  return data
 }
 
 export function saveStore(data: StoreData): void {
@@ -120,6 +132,12 @@ export function saveStore(data: StoreData): void {
   // Write then rename, so a crash mid-write can't leave a half-written store.
   const tmp = `${file}.tmp`
   writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+  if (existsSync(file)) {
+    let valid = true
+    try { readStore(file) } catch { valid = false }
+    // Preserve damaged input for manual recovery; never replace a valid backup with it.
+    copyFileSync(file, valid ? `${file}.bak` : `${file}.corrupt-${Date.now()}`)
+  }
   renameSync(tmp, file)
 }
 

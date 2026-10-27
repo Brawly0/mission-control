@@ -361,7 +361,7 @@ export default function Sidebar(props: Props) {
         {pinned.length > 0 && renderGroup('Pinned', pinned)}
         {groupNames.map((g) => renderGroup(g, groups.get(g)!))}
         {ungrouped.length > 0 && renderGroup(groupNames.length > 0 ? 'Other projects' : 'All projects', ungrouped)}
-        {!loading && visible.length === 0 && <div className="muted pad">No projects match.</div>}
+        {!loading && visible.length === 0 && <div className="muted pad">{projects.length === 0 ? 'Add your first project with the folder button above.' : 'No projects match.'}</div>}
       </div>
 
       {hiddenCount > 0 && (

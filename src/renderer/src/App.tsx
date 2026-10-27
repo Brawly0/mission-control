@@ -331,11 +331,15 @@ export default function App() {
   const sessionProject = view === 'agents' && terminalAgent ? projects.find(p => p.path.toLowerCase() === terminalAgent.projectPath.toLowerCase()) : selected
   const newInSelected = useCallback(() => {
     if (sessionProject) launch({ kind: sessionProject.meta.preferredAgent ?? 'claude', cwd: sessionProject.path, projectName: sessionProject.name, projectPath: sessionProject.path, title: `${sessionProject.name} · new` })
+    else setNewProjectOpen(true)
   }, [sessionProject, launch])
 
   const openProjectTerminal = (p?: Project) => {
     const project = p ?? selected
-    if (!project) return toast('info', 'Select a project first', 'Choose a project, then open a terminal there.')
+    if (!project) {
+      void window.mc.commonFolders().then(({ home }) => launch({ kind: 'shell', cwd: home, projectPath: home, projectName: 'Setup', title: 'Setup terminal' })).catch(e => toast('error', 'Could not open setup terminal', errorMessage(e)))
+      return
+    }
     if (p || (view !== 'project' && view !== 'agents')) openProject(project.path)
     openDock('terminal')
   }

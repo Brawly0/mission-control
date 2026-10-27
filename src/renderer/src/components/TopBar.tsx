@@ -1,6 +1,6 @@
 import { ChevronDown, Download, FolderPlus, Leaf, Loader2, ListPlus, MessageSquareDashed, NotebookPen, Play, Plus, Search } from 'lucide-react'
 import type { EcoSettings, RateLimitInfo, UpdateState } from '@shared/types'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useKeyFor, withKey } from '../shortcuts'
 import { initials } from '../util'
 import { KeyCombo } from './ShortcutsDialog'
@@ -24,6 +24,7 @@ interface Props {
 /** Shows when a new version is out: one click downloads it (if needed) and restarts into it. */
 function UpdateButton({ update }: { update: UpdateState }) {
   const [pressed, setPressed] = useState(false)
+  useEffect(() => { if (update.state === 'error' || update.state === 'none') setPressed(false) }, [update.state])
   if (update.state !== 'available' && update.state !== 'downloading' && update.state !== 'ready') return null
   const busy = pressed && update.state !== 'ready'
   const label =

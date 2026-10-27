@@ -75,7 +75,17 @@ It also checks shared briefing preview/save/refresh, preserving manual decisions
 
 `MC_SMOKE_UI=<git repo with at least one commit>` screenshots Home, the project tabs, the command palette and the Agents grid with the review panel (as `<MC_SMOKE>-<name>.png`). It also runs the worktree flow on that repo: create, change a file, commit, merge into the base branch, stop the agent, delete. Use a throwaway repo, because the test merges into it. The repo is shown as a project only while the test runs.
 
+### UI polish tour
+
+`MC_SMOKE_POLISH=1` tours Home, Projects, Tasks, Search, Usage and Settings in dark/light themes at 1440 and 960 pixel window widths. It checks page/header overflow, real menu keyboard navigation and focus return, upward placement at the bottom edge, search progress/empty states, switching and cancelling document edits, and Settings at 125% zoom. Screenshots use the `MC_SMOKE` filename with descriptive suffixes. No model calls or changes to project files; settings are restored in the isolated self-test profile.
+
 ## Packaging
+
+`node scripts/check-release.mjs --dev` runs clean-profile first-run and process cleanup gates without model calls. After building the installer, `node scripts/check-release.mjs` runs the same gates against `release/win-unpacked/Mission Control.exe`, validates its update manifest and downloads the real installer through a temporary loopback update feed. Tests use isolated history/settings/cache folders under `out/release-check-*`; downloaded updates are never installed by self-tests.
+
+`scripts/check-installer.ps1` exercises install, upgrade and uninstall using separate `MissionControlInstallCheck` installers under `out/install-check-old` (0.24.99) and `out/install-check-new` (the release version). Build these with a distinct appId (`com.brawly0.missioncontrol.installcheck`), productName (`MissionControlInstallCheck`), extraMetadata.name (`mission-control-install-check`), matching shortcutName and nsis.runAfterFinish=false. Keep normal per-user NSIS settings, including deleteAppDataOnUninstall=false. This prevents interference with the daily-use install. The script verifies executable replacement, preserved fixture data and shortcut cleanup.
+
+`npm run publish-release -- --draft-only --notes-file <notes.md>` builds, uploads and validates a draft without publishing. Review it, then publish with GitHub CLI. The ordinary command publishes after the same gates pass. Every release includes SHA256SUMS.txt alongside the installer, blockmap and latest.yml. The source repository remains private; `Brawly0/mission-control-releases` is the public download repository.
 
 `npm run dist` builds `release/Mission Control Setup <version>.exe` with electron-builder (NSIS, one-click, per-user). The app icon is `build/icon.svg`; run `npm run icon` after editing it to regenerate `build/icon.png`, which electron-builder turns into the `.ico`.
 

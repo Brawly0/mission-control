@@ -6,7 +6,7 @@ import { ecoVerdict, formatShare, modelFamily, tokensPerPercent } from '@shared/
 import { isScratchPath } from '@shared/projectLook'
 import { PlanShare, usePlanRate } from '../planRate'
 import { basename, errorMessage, formatCost, formatTokens, timeAgo } from '../util'
-import { Avatar, EmptyState, IconButton, Segmented } from './ui'
+import { Avatar, EmptyState, IconButton, Segmented, LoadingState } from './ui'
 import { useLook } from '../projectLook'
 
 interface Props {
@@ -492,7 +492,7 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
       </div>
       <PlanCost />
       {error && <div className="error pad">{error}</div>}
-      {!report && !error && <div className="muted pad">{status?.indexing ? `Reading your chats… ${status.done}/${status.total}` : 'Loading…'}</div>}
+      {!report && !error && <LoadingState>{status?.indexing ? `Reading chats… ${status.done}/${status.total}` : 'Loading usage…'}</LoadingState>}
       {report && t && allTokens(t) === 0 && (
         <EmptyState icon={BarChart3} title="No usage in this period">
           Pick a longer range, or start a session.

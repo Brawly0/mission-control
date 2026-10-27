@@ -168,6 +168,20 @@
 - [x] Review status cards for diff, checks and agent review; stale results called out and long outputs collapsed
 - [x] Brand palette (Deep Space Navy, Midnight Slate, Electric Cyan, Signal Blue, Soft Violet) in dark/light themes; orbital terminal logo in the sidebar and Windows icon
 
+## UI quality pass
+- [x] Shared menus fit screen edges, escape clipped panes and support keyboard navigation with focus return
+- [x] Readable helper/status text in both themes; consistent small controls, dialog spacing and compact page layouts
+- [x] Consistent loading feedback for chats, activity, usage and documents; search shows progress and ignores outdated responses
+- [x] Free visual tour covering both themes, minimum window width, menu keyboard behavior and settings at 125% zoom
+
+## v0.25: Reliability and distribution
+- [x] Preserve a valid settings backup and damaged input; merge older settings safely
+- [x] Guard duplicate task starts and check reruns; count checks as running work; prevent queue restarts during shutdown
+- [x] Respect automatic-update preferences and recover from failed/concurrent checks
+- [x] First-run CLI setup guidance and setup terminal without selecting a project
+- [x] Refresh public download documentation, screenshots and issue form
+- [x] Native isolated install/upgrade/uninstall checks; gate publishing on packaged startup, process cleanup and update download verification
+
 ## Next ideas
 - [ ] "Run this for me" for commands an agent can't run (works for both agents)
 - [ ] Prompt snippets you can insert into any agent

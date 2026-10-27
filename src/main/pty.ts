@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { terminateProcessTreesSync } from './processCleanup'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -31,7 +31,9 @@ const toolPaths = new Map<string, string | null>()
 const INSTALL_HINT = { claude: 'Install Claude Code', codex: 'Install it with: npm i -g @openai/codex' }
 
 function resolveCommand(spec: TerminalSpec): { file: string; args: string[] } {
-  if (spec.kind === 'shell') return { file: 'powershell.exe', args: ['-NoLogo'] }
+  // A fresh account need not have Windows PowerShell on PATH.
+  const powershell = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  if (spec.kind === 'shell') return { file: powershell, args: ['-NoLogo'] }
   if (!toolPaths.has(spec.kind)) toolPaths.set(spec.kind, whichSync(spec.kind))
   const path = toolPaths.get(spec.kind)
   if (!path) {
@@ -39,7 +41,7 @@ function resolveCommand(spec: TerminalSpec): { file: string; args: string[] } {
     toolPaths.delete(spec.kind)
     // Fall back to a shell that explains what is missing instead of failing silently.
     return {
-      file: 'powershell.exe',
+      file: powershell,
       args: ['-NoLogo', '-NoExit', '-Command', `Write-Host '${spec.kind} was not found on PATH. ${INSTALL_HINT[spec.kind]}, then reopen this tab.' -ForegroundColor Yellow`]
     }
   }
@@ -145,7 +147,7 @@ export function killAllTerminals(): void {
   const list = [...pids.values()]
   terminals.clear()
   terminalCwd.clear()
-  if (list.length) spawnSync('taskkill', ['/T', '/F', ...list.flatMap((pid) => ['/PID', String(pid)])], { windowsHide: true, stdio: 'ignore', timeout: 4000 })
+  terminateProcessTreesSync(list)
   const child = host
   host = null
   listeners.clear()

@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a problem with the Windows application.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Please remove credentials, private prompts and project paths from anything you share here."
+  - type: input
+    id: version
+    attributes:
+      label: Mission Control version
+      description: Find it in Settings > Updates.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include what you expected and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or error text
+      description: Optional. Review and remove private information before submitting.

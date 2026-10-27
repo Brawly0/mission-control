@@ -38,7 +38,7 @@ import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
 import IdentityDialog from './IdentityDialog'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
-import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented, ToolBadge } from './ui'
+import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented, ToolBadge, LoadingState } from './ui'
 import { PlanShare } from '../planRate'
 import { unclearTitle } from '@shared/projectLook'
 import { useToast } from '../toast'
@@ -430,7 +430,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                 }}
               />
               <ul className="scroll">
-                {loading && <li className="muted pad">Loading chats…</li>}
+                {loading && <li><LoadingState>Loading chats…</LoadingState></li>}
                 {!loading && sessions.length === 0 && (
                   <EmptyState icon={History} title="No chats yet">
                     Start a session and it will show up here.
