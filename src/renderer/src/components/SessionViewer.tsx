@@ -3,7 +3,7 @@ import { Md } from './Md'
 import { Copy, Play, Sparkles } from 'lucide-react'
 import type { SessionDetail, SessionSummary } from '@shared/types'
 import { useToast } from '../toast'
-import { Button, IconButton } from './ui'
+import { Button, IconButton, ToolBadge } from './ui'
 import SessionRecap from './SessionRecap'
 
 interface Props {
@@ -44,6 +44,7 @@ export default function SessionViewer({ session, onResume, actions, onTitleChang
       <div className="session-viewer-head">
         <div className="session-viewer-title">
           <div className="ellipsis strong session-viewer-name">
+            {session.tool === 'codex' && <ToolBadge tool="codex" />}
             {session.title}
             {session.titleSource === 'claude' && (
               <span title="Named by Claude. Rename it to use your own." className="named-by-claude">
@@ -71,15 +72,15 @@ export default function SessionViewer({ session, onResume, actions, onTitleChang
           Resume
         </Button>
       </div>
-      <SessionRecap key={session.id} sessionId={session.id} version={session.updatedAt} onTitle={onTitleChanged} />
+      <SessionRecap key={session.id} sessionId={session.id} version={session.updatedAt} onTitle={onTitleChanged} tool={session.tool} />
       <div className="messages scroll" ref={scrollRef}>
         {error && <div className="error">{error}</div>}
         {!detail && !error && <div className="muted pad">Reading chat…</div>}
         {detail?.truncated && <div className="muted pad center">Showing the latest {detail.messages.length} messages</div>}
         {detail?.messages.map((m, i) => (
-          <div key={i} className={`message ${m.role}`}>
+          <div key={i} className={`message ${m.role} ${session.tool === 'codex' ? 'from-codex' : ''}`}>
             <div className="message-role">
-              {m.role === 'user' ? 'You' : 'Claude'}
+              {m.role === 'user' ? 'You' : session.tool === 'codex' ? 'Codex' : 'Claude'}
               {m.timestamp > 0 && (
                 <span className="message-time">
                   {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

@@ -135,7 +135,18 @@
 - [x] UI simplification: less-used pages under **More** in the sidebar; one Settings button (your initials) and no theme button in the top bar (Settings → Appearance, Ctrl+Shift+L); no clock card on Home; the status bar only shows what's happening or needs you; "open" vs "working" agents labelled honestly everywhere (Home, tray, Projects); Settings reviewed and left as is
 - [x] Known-issues backlog: everything fixable in the app is done. Left for you: delete old scratch chat folders in ~/.claude/projects if wanted, fix the GitHub MCP auth header, try Eco, Build vault and the morning digest in real use
 
+## ✅ v0.20: Claude and Codex together (ADR 0020)
+- [x] Codex agents in the app's terminals: New Codex session, status lights and notifications from Codex's own state signal, the trust screen shown as "needs you", restore and workspaces reopen the chat (`codex resume`)
+- [x] Codex chats in each project's chat list with a badge; viewer, recap, rename and Summarize work for them
+- [x] Handoffs both ways: "Continue in Codex / Claude" writes what the last chat did (asks, files, commits, git, rules, latest messages) to docs/briefings/ and starts the other agent reading it, in the same folder or worktree
+- [x] Shared rules: one click adds an AGENTS.md that points Codex at CLAUDE.md
+- [x] Codex usage: its 5-hour and weekly limits in the top bar next to Claude's, tokens by project and model on the Usage page
+- [x] Self-test MC_SMOKE_CODEX (one short Codex turn and one short Claude turn)
+
 ## Next ideas
+- [ ] Codex in tasks: headless runs (`codex exec --json`), chains (Claude builds, Codex reviews) and the queue
+- [ ] Codex chats in full-text search; Send to several agents for Codex
+- [ ] Project terminal dock and "Run this for me" for commands an agent can't run (works for both agents)
 - [ ] Project briefing: write or refresh BRIEFING.md from recent chats, so new chats start informed
 - [ ] Prompt snippets you can insert into any agent
 - [ ] Code signing so Windows SmartScreen stops warning

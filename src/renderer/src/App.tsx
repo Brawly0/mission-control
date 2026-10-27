@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import type {
+  AgentTool,
+  CodexUsage,
   GitInfo,
   IndexStatus,
   NewTask,
@@ -13,7 +15,8 @@ import type {
   TaskTemplate,
   UpdateState,
   BudgetState,
-  PlanRate
+  PlanRate,
+  WorktreeInfo
 } from '@shared/types'
 import TasksView from './components/TasksView'
 import TaskComposer from './components/TaskComposer'
@@ -27,7 +30,7 @@ import CommandPalette, { type Command } from './components/CommandPalette'
 import { Button } from './components/ui'
 import type { AgentLayout, View } from './types'
 import { useToast } from './toast'
-import { errorMessage } from './util'
+import { errorMessage, shortPath } from './util'
 import { LookContext, makeLookUp } from './projectLook'
 import { ShortcutContext, allowedIn, bindingIndex, comboFromEvent, effectiveKeys } from './shortcuts'
 import ShortcutsDialog from './components/ShortcutsDialog'
@@ -46,6 +49,8 @@ import { useAgents } from './app/useAgents'
 import { useTasks } from './app/useTasks'
 import { useWorkspaces } from './app/useWorkspaces'
 import { briefingPrompt, worktreeParent } from '@shared/projectLook'
+import { resumeArgs } from './agentStatus'
+import { TOOL_NAME } from '@shared/handoff'
 
 // Pages and dialogs most sessions never open load on first use, so they aren't part of startup.
 const TemplatesDialog = lazy(() => import('./components/TemplatesDialog'))
@@ -316,7 +321,7 @@ export default function App() {
 
   const resumeRecent = useCallback(
     (s: RecentSession) =>
-      launch({ cwd: s.cwd || s.projectPath, projectName: s.projectName, projectPath: s.projectPath, title: s.title.slice(0, 48), args: ['--resume', s.id] }),
+      launch({ cwd: s.cwd || s.projectPath, projectName: s.projectName, projectPath: s.projectPath, title: s.title.slice(0, 48), kind: s.tool ?? 'claude', args: resumeArgs(s.tool ?? 'claude', s.id) }),
     [launch]
   )
 
@@ -350,7 +355,7 @@ export default function App() {
   /** Resumes several chats at once and shows them side by side. */
   const openMany = async (project: Project, chats: SessionSummary[]) => {
     for (const s of chats) {
-      await launch({ cwd: s.cwd || project.path, projectName: project.name, projectPath: project.path, title: s.title.slice(0, 48), args: ['--resume', s.id] })
+      await launch({ cwd: s.cwd || project.path, projectName: project.name, projectPath: project.path, title: s.title.slice(0, 48), kind: s.tool ?? 'claude', args: resumeArgs(s.tool ?? 'claude', s.id) })
     }
     if (chats.length > 1) setLayout('grid')
     toast('success', `Opened ${chats.length} ${chats.length === 1 ? 'chat' : 'chats'} from ${project.name}`, 'Minimize, maximize or resize them from each agent’s header.')
@@ -423,6 +428,34 @@ export default function App() {
     launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · from briefing`, args: [briefingPrompt(path)] })
   }
 
+  /**
+   * Hands a project from one agent to the other (ADR 0020): Mission Control writes a handoff from the
+   * chat (the newest one by `from` when no id is given) and starts `to` reading it, in the same folder.
+   */
+  const handOff = useCallback(
+    async (projectPath: string, from: AgentTool, to: AgentTool, sessionId?: string, worktree?: WorktreeInfo) => {
+      const p = projects.find((x) => x.path === projectPath)
+      const name = p?.name ?? projectPath.split(/[\\/]/).pop() ?? projectPath
+      try {
+        const h = await window.mc.writeHandoff(projectPath, from, to, sessionId)
+        await launch({ cwd: h.cwd, projectName: name, projectPath, title: `${name} · ${TOOL_NAME[to]} (from ${TOOL_NAME[from]})`, kind: to, args: [h.prompt], worktree })
+        toast('success', `${TOOL_NAME[to]} is picking up from ${TOOL_NAME[from]}`, `It starts by reading the handoff from "${h.title}", saved in ${shortPath(h.file)}.`)
+      } catch (e) {
+        toast('error', `Could not hand off to ${TOOL_NAME[to]}`, errorMessage(e))
+      }
+    },
+    [projects, launch, toast]
+  )
+
+  // Codex's plan limits and token use, read from its session files (cheap: cached by file size).
+  const [codexUsage, setCodexUsage] = useState<CodexUsage | null>(null)
+  useEffect(() => {
+    const load = () => window.mc.codexUsage(Date.now() - 30 * 86_400_000).then(setCodexUsage, () => undefined)
+    load()
+    const t = setInterval(load, 60_000)
+    return () => clearInterval(t)
+  }, [])
+
   /** What each shortcut does. Anything not listed here is handled by the visible view (see useShortcutEvent). */
   const runShortcutRef = useRef<(id: string) => void>(() => undefined)
   runShortcutRef.current = (id: string) =>
@@ -480,6 +513,7 @@ export default function App() {
         selected,
         newInSelected,
         launchWorktree,
+        handOff: (path, from, to) => void handOff(path, from, to),
         launch,
         layout,
         setLayout,
@@ -500,7 +534,7 @@ export default function App() {
         openSettings: () => setSettingsOpen(true),
         openShortcuts: () => setShortcutsOpen(true)
       }),
-    [workspaces, update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys] // eslint-disable-line react-hooks/exhaustive-deps
+    [workspaces, update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, handOff, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   return (
@@ -535,6 +569,7 @@ export default function App() {
       <main className="main">
         <TopBar userName={userName} currentProject={selected?.name}
           rateLimit={rateLimit}
+          codexLimits={codexUsage?.limits ?? null}
           update={update}
           eco={appSettings?.eco}
           onEcoSettings={() => {
@@ -630,6 +665,7 @@ export default function App() {
                 openSessions={openSessions}
                 onLaunchWorktree={launchWorktree}
                 onStartFromBriefing={() => void startFromBriefing(selected.path)}
+                onHandOff={(from, to, sessionId) => void handOff(selected.path, from, to, sessionId)}
                 onChanged={() => {
                   refreshProjects()
                 }}
@@ -663,6 +699,7 @@ export default function App() {
               onLayout={setLayout}
               onNew={newInSelected}
               onGitChanged={refreshGit}
+              onHandOff={(a) => a.kind !== 'shell' && void handOff(a.projectPath, a.kind, a.kind === 'claude' ? 'codex' : 'claude', a.sessionId, a.worktree)}
             />
           </div>
           <div className={view === 'search' ? 'view-pane' : 'view-pane hidden'}>

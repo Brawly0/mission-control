@@ -1,0 +1,101 @@
+/* ============================================================
+   v0.20: Claude and Codex side by side (ADR 0020). Tool badges,
+   the Codex plan meter and the Codex usage card.
+   ============================================================ */
+:root {
+  --codex: #34c79b;
+  --codex-soft: rgba(52, 199, 155, 0.14);
+}
+:root[data-theme='light'] {
+  --codex: #0b8a65;
+  --codex-soft: rgba(11, 138, 101, 0.1);
+}
+
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font: 600 10px var(--font);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+.tool-codex {
+  color: var(--codex);
+  background: var(--codex-soft);
+}
+.tool-claude {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+:root[data-theme='light'] .tool-claude {
+  color: var(--accent);
+}
+.session-title .tool-badge,
+.session-viewer-name .tool-badge {
+  margin-right: 6px;
+}
+.session-viewer-name .tool-badge {
+  vertical-align: 2px;
+}
+
+/* Whose limits a plan meter shows, when both are in the top bar. */
+.plan-meter-tool {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.plan-meter + .plan-meter {
+  margin-left: -4px;
+}
+
+.bar-row-fill.codex {
+  background: var(--codex);
+}
+.codex-usage h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.codex-usage-totals {
+  margin: 12px 0 8px;
+}
+
+.message.assistant.from-codex .message-role {
+  color: var(--codex);
+}
+
+/* Usage page: Claude's and Codex's plan cards side by side. */
+.usage-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+.usage-pair > :only-child {
+  grid-column: 1 / -1;
+}
+.usage-pair .usage-card {
+  margin-top: 0;
+}
+.usage-pair .usage-card-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Half-width cards: label, bar and percentage on one line, reset and pace below. */
+.usage-pair .meter-row {
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  row-gap: 2px;
+}
+.usage-pair .meter-row > :nth-child(n + 4) {
+  grid-column: 2 / -1;
+}
+@media (max-width: 1100px) {
+  .usage-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

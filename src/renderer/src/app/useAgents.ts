@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ContextUsage, SavedAgent } from '@shared/types'
 import type { Agent, LaunchOptions, View } from '../types'
 import { onActivity } from '../terminalBus'
-import { statusFromHook } from '../agentStatus'
+import { resumeArgs, resumedSession, statusFromHook } from '../agentStatus'
 import type { useToast } from '../toast'
 import { errorMessage } from '../util'
 
@@ -126,11 +126,11 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
         )
       )
       // A finished turn usually means files changed.
-      if (event.event === 'Stop') onTurnDoneRef.current()
+      if (event.event === 'Stop' || (event.event === 'CodexState' && event.source === 'done')) onTurnDoneRef.current()
       const ui = uiRef.current
       const lookingAtIt = document.hasFocus() && ui.view === 'agents' && ui.activeAgent === agent.id
       if (change?.notify && ui.notify && !lookingAtIt) {
-        const body = change.status === 'done' ? 'Finished. Your turn.' : change.message || 'Claude needs your input.'
+        const body = change.status === 'done' ? 'Finished. Your turn.' : change.message || `${agent.kind === 'codex' ? 'Codex' : 'Claude'} needs your input.`
         const n = new Notification(agent.title, { body, silent: false })
         n.onclick = () => focusAgent(agent.id)
       }
@@ -149,9 +149,7 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
   const launch = useCallback(
     async (opts: LaunchOptions) => {
       const kind = opts.kind ?? 'claude'
-      const args = opts.args ?? []
-      const resumeAt = args.indexOf('--resume')
-      const resumedFrom = resumeAt >= 0 ? args[resumeAt + 1] : undefined
+      const resumedFrom = resumedSession(kind, opts.args ?? [])
       // A chat that's already open as an agent is shown, not started a second time.
       const open = resumedFrom ? agentsRef.current.find((a) => !a.exited && a.sessionId === resumedFrom) : undefined
       if (open) {
@@ -197,7 +195,7 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
     setPendingRestore([])
     for (const s of saved) {
       // A session that never got a prompt has no transcript, so it can't be resumed; start fresh.
-      const canResume = s.kind === 'claude' && s.sessionId && (await window.mc.sessionExists(s.sessionId))
+      const canResume = s.kind !== 'shell' && s.sessionId && (await window.mc.sessionExists(s.sessionId))
       await launch({
         cwd: s.cwd,
         projectName: s.projectName,
@@ -205,7 +203,7 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
         title: s.title,
         kind: s.kind,
         worktree: s.worktree,
-        args: canResume ? ['--resume', s.sessionId!] : []
+        args: canResume && s.kind !== 'shell' ? resumeArgs(s.kind, s.sessionId!) : []
       })
     }
   }, [pendingRestore, launch])

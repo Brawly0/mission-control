@@ -81,6 +81,22 @@ async function readGitInfo(path: string): Promise<GitInfo> {
   return info
 }
 
+/** Branch, `git status --short` lines and commits since a time, for a handoff (ADR 0020); null outside a repo. */
+export async function handoffGitState(path: string, since: number): Promise<{ branch: string; status: string[]; commits: string[] } | null> {
+  if (!existsSync(path)) return null
+  try {
+    const [status, log] = await Promise.all([
+      git(path, ['status', '--short', '-b']),
+      since ? git(path, ['log', '--oneline', '-15', `--since=${new Date(since).toISOString()}`]) : Promise.resolve('')
+    ])
+    const lines = status.split('\n').filter(Boolean)
+    const head = lines[0]?.startsWith('## ') ? lines.shift()!.slice(3) : ''
+    return { branch: head.replace(/^No commits yet on /, '').split('...')[0].split(' ')[0], status: lines, commits: log.split('\n').filter(Boolean) }
+  } catch {
+    return null
+  }
+}
+
 export async function gitInfoMany(paths: string[]): Promise<Record<string, GitInfo>> {
   const out: Record<string, GitInfo> = {}
   // A few at a time: each call starts three git processes.

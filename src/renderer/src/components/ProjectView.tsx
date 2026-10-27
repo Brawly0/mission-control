@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   ChevronDown,
   Coins,
@@ -11,6 +12,7 @@ import {
   FolderOpen,
   GitBranch,
   GitFork,
+  Hexagon,
   History,
   Layers,
   Loader2,
@@ -24,8 +26,10 @@ import {
   Terminal,
   Trash2
 } from 'lucide-react'
-import type { BudgetState, GitInfo, Project, SessionSummary, UsageTotals } from '@shared/types'
+import type { AgentTool, BudgetState, GitInfo, Project, SessionSummary, UsageTotals } from '@shared/types'
+import { TOOL_NAME, otherTool } from '@shared/handoff'
 import type { LaunchOptions } from '../types'
+import { resumeArgs } from '../agentStatus'
 import { errorMessage, formatBytes, formatCost, shortPath, timeAgo } from '../util'
 import SessionViewer from './SessionViewer'
 import ChangesPanel from './ChangesPanel'
@@ -33,7 +37,7 @@ import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
 import IdentityDialog from './IdentityDialog'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
-import { Avatar, Button, EmptyState, IconButton, MenuButton } from './ui'
+import { Avatar, Button, EmptyState, IconButton, MenuButton, ToolBadge } from './ui'
 import { PlanShare } from '../planRate'
 import { unclearTitle } from '@shared/projectLook'
 import { useToast } from '../toast'
@@ -57,13 +61,15 @@ interface Props {
   openSessions: Set<string>
   onLaunchWorktree: (project: Project) => void
   onStartFromBriefing: () => void
+  /** Starts the other agent from a handoff of a chat (the newest one by `from` when no id is given). */
+  onHandOff: (from: AgentTool, to: AgentTool, sessionId?: string) => void
   budget?: BudgetState
   onChanged: () => void
 }
 
 type Tab = 'overview' | 'chats' | 'changes' | 'docs'
 
-export default function ProjectView({ project, projects, git, visible, groups, focus, budget, onLaunch, onOpenMany, openSessions, onLaunchWorktree, onStartFromBriefing, onChanged }: Props) {
+export default function ProjectView({ project, projects, git, visible, groups, focus, budget, onLaunch, onOpenMany, openSessions, onLaunchWorktree, onStartFromBriefing, onHandOff, onChanged }: Props) {
   const toast = useToast()
   const [naming, setNaming] = useState(false)
   const [gitInitOpen, setGitInitOpen] = useState(false)
@@ -85,23 +91,21 @@ export default function ProjectView({ project, projects, git, visible, groups, f
     const list = await window.mc.listSessions(project.keys, project.path)
     setSessions(list)
     setSelected((cur) => (cur ? list.find((x) => x.id === cur.id) ?? list[0] ?? null : list[0] ?? null))
-    // Costs come per ~/.claude folder; keep only this project's chats.
-    const keys = [...new Set(list.map((x) => x.projectKey))]
+    // Costs come per ~/.claude folder; keep only this project's chats. Codex chats have no API-priced cost.
+    const keys = [...new Set(list.filter((x) => x.tool !== 'codex').map((x) => x.projectKey))]
     const ids = new Set(list.map((x) => x.id))
     const u: Record<string, UsageTotals> = keys.length ? await window.mc.sessionUsage(keys).catch(() => ({})) : {}
     setUsage(Object.fromEntries(Object.entries(u).filter(([id]) => ids.has(id))))
   }
 
+  // Codex chats aren't in project.keys or sessionCount (those come from ~/.claude), so the list is
+  // always read, and read again when the page comes back into view.
   useEffect(() => {
-    if (!hasChats) {
-      setSessions([])
-      setUsage({})
-      return
-    }
-    setLoading(true)
+    if (!visible && sessions.length) return
+    setLoading(!sessions.length)
     loadSessions().finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listId])
+  }, [listId, visible])
 
   useEffect(() => {
     if (!focus) return
@@ -122,6 +126,11 @@ export default function ProjectView({ project, projects, git, visible, groups, f
 
   const base = { cwd: project.path, projectName: project.name, projectPath: project.path }
   const newSession = () => onLaunch({ ...base, title: `${project.name} · new` })
+  const newCodex = () => onLaunch({ ...base, kind: 'codex', title: `${project.name} · Codex` })
+  const hasCodex = sessions.some((s) => s.tool === 'codex')
+  const hasClaude = sessions.some((s) => s.tool !== 'codex')
+  // Badges only matter when both agents have chats here.
+  const mixed = hasCodex && hasClaude
   const saveTitle = async () => {
     if (!renaming) return
     const { id, draft } = renaming
@@ -180,7 +189,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
   const closedCount = sessions.filter((s) => !openSessions.has(s.id)).length
 
   const resume = (s: SessionSummary) =>
-    onLaunch({ ...base, cwd: s.cwd || project.path, title: s.title.slice(0, 48), args: ['--resume', s.id] })
+    onLaunch({ ...base, cwd: s.cwd || project.path, title: s.title.slice(0, 48), kind: s.tool ?? 'claude', args: resumeArgs(s.tool ?? 'claude', s.id) })
 
   // Keyboard: tabs, the chat list and the name dialog (see shortcuts.ts).
   useShortcutEvent(
@@ -287,7 +296,22 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                 </button>
               )}
               items={[
-                { label: 'New session', hint: 'In the project folder', icon: Play, onSelect: newSession },
+                { label: 'New session', hint: 'Claude, in the project folder', icon: Play, onSelect: newSession },
+                { label: 'New Codex session', hint: 'Codex CLI, in the project folder', icon: Hexagon, onSelect: newCodex },
+                {
+                  label: 'Codex, continuing from Claude',
+                  hint: hasClaude ? 'Reads a handoff of the latest Claude chat' : 'No Claude chat here yet',
+                  icon: ArrowRightLeft,
+                  disabled: !hasClaude,
+                  onSelect: () => onHandOff('claude', 'codex')
+                },
+                {
+                  label: 'Claude, continuing from Codex',
+                  hint: hasCodex ? 'Reads a handoff of the latest Codex chat' : 'No Codex chat here yet',
+                  icon: ArrowRightLeft,
+                  disabled: !hasCodex,
+                  onSelect: () => onHandOff('codex', 'claude')
+                },
                 {
                   label: 'New session in worktree',
                   hint: git?.isRepo ? 'Own branch, no conflicts with other agents' : 'Needs a git repository',
@@ -430,6 +454,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                       ) : (
                         <div className="session-title" title={s.firstPrompt ? `${s.title}\n\n${s.firstPrompt}` : s.title} onDoubleClick={() => setRenaming({ id: s.id, draft: s.title })}>
                           {openSessions.has(s.id) && <span className="session-open" title="Open as an agent" />}
+                          {(mixed || s.tool === 'codex') && <ToolBadge tool={s.tool ?? 'claude'} />}
                           <span className="ellipsis">{s.title}</span>
                           {dated(s) && <span className="session-date">{dated(s)}</span>}
                           {s.titleSource === 'claude' && <Sparkles size={11} className="named-by-claude" aria-label="Named by Claude" />}
@@ -496,7 +521,24 @@ export default function ProjectView({ project, projects, git, visible, groups, f
             </section>
             <section className="chat-pane">
               {selected ? (
-                <SessionViewer session={selected} onResume={() => resume(selected)} actions={moveMenu(selected)} onTitleChanged={() => void loadSessions()} />
+                <SessionViewer
+                  session={selected}
+                  onResume={() => resume(selected)}
+                  actions={
+                    <>
+                      <Button
+                        size="sm"
+                        icon={ArrowRightLeft}
+                        title={`Start ${TOOL_NAME[otherTool(selected.tool ?? 'claude')]} with a handoff of this chat: what was asked, what changed, git and the rules`}
+                        onClick={() => onHandOff(selected.tool ?? 'claude', otherTool(selected.tool ?? 'claude'), selected.id)}
+                      >
+                        Continue in {TOOL_NAME[otherTool(selected.tool ?? 'claude')]}
+                      </Button>
+                      {moveMenu(selected)}
+                    </>
+                  }
+                  onTitleChanged={() => void loadSessions()}
+                />
               ) : (
                 <EmptyState icon={MessagesSquare} title="Pick a chat">
                   Its full conversation shows here.

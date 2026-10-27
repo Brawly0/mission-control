@@ -7,6 +7,13 @@ import { timeAgo } from '../util'
 interface Props {
   info: RateLimitInfo | null
   onOpen: () => void
+  /** Whose limits these are ("Claude", "Codex"), shown when both agents' meters are in view. */
+  label?: string
+  /**
+   * Codex only reports its limits while it runs, so its last reading can be old: that's normal and
+   * not dimmed. A window whose reset has passed since then counts as empty.
+   */
+  reportedOnly?: boolean
 }
 
 /** Older than this, the numbers are shown dimmed: the poll runs every 3 minutes. */
@@ -17,7 +24,7 @@ export function levelClass(pct: number): string {
 }
 
 /** Session and weekly plan limits, always in view: how much is used and when each resets. */
-export default function PlanMeter({ info, onOpen }: Props) {
+export default function PlanMeter({ info, onOpen, label, reportedOnly }: Props) {
   // Re-render every 30 seconds so the countdowns stay current between polls.
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -25,17 +32,21 @@ export default function PlanMeter({ info, onOpen }: Props) {
     return () => clearInterval(t)
   }, [])
 
-  const windows = (info?.windows ?? []).filter((w) => w.name === 'five_hour' || w.name === 'seven_day' || w.utilization > 0)
+  const windows = (info?.windows ?? [])
+    .filter((w) => w.name === 'five_hour' || w.name === 'seven_day' || w.utilization > 0)
+    .map((w) => (reportedOnly && w.resetsAt && w.resetsAt < now ? { ...w, utilization: 0, resetsAt: 0, forecast: undefined } : w))
   if (!info || !windows.length) {
     return (
       <button className="plan-meter plan-meter-empty" onClick={onOpen} title={info?.error ?? 'Checking your plan limits…'}>
+        {label && <span className="plan-meter-tool">{label}</span>}
         {info?.error ? <CircleAlert size={14} /> : null}
         <span>{info?.error ? 'Plan limits unavailable' : 'Plan limits…'}</span>
       </button>
     )
   }
-  const stale = now - info.at > STALE_MS
+  const stale = !reportedOnly && now - info.at > STALE_MS
   const tip = [
+    label ? `${label} plan limits` : '',
     ...windows.map((w) => {
       const pct = Math.round(w.utilization * 100)
       const when = w.resetsAt ? new Date(w.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : 'unknown'
@@ -43,13 +54,14 @@ export default function PlanMeter({ info, onOpen }: Props) {
       return `${windowLabel(w.name, true)}: ${pct}% used, ${Math.max(0, 100 - pct)}% left · resets ${when}${pace ? `\n  ${pace}` : ''}`
     }),
     info.plan ? `Plan: ${info.plan[0].toUpperCase()}${info.plan.slice(1)}` : '',
-    `Updated ${timeAgo(info.at)}`,
+    reportedOnly ? `Last reported by Codex ${timeAgo(info.at)} (it reports while it runs)` : `Updated ${timeAgo(info.at)}`,
     info.error ?? '',
     'Click for details'
   ].filter(Boolean).join('\n')
 
   return (
     <button className={`plan-meter ${stale ? 'stale' : ''}`} onClick={onOpen} title={tip}>
+      {label && <span className="plan-meter-tool">{label}</span>}
       {windows.map((w) => {
         const pct = Math.round(w.utilization * 100)
         const f = w.forecast

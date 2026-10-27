@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline'
 import type { AiRecap, SessionRecap } from '../shared/types'
 import { parseAiRecap, parseNames, recapBuilder, recapMaterial } from '../shared/recap'
 import { summarizeSession } from './claudeData'
+import { codexRecap, codexSummary } from './codexData'
 import { findSessionFile } from './spend'
 import { claudeCommand } from './tasks'
 import { agentEnv } from './pty'
@@ -27,6 +28,13 @@ async function fileFor(sessionId: string): Promise<string> {
 
 /** Reads the whole transcript as a stream (it can be 30+ MB) and keeps only the recap; cached until the file changes. */
 export async function sessionRecap(sessionId: string): Promise<SessionRecap> {
+  if (!(await findSessionFile(sessionId))) {
+    const codex = await codexRecap(sessionId)
+    if (codex) {
+      const ai = loadStore().chatRecaps[sessionId]
+      return ai ? { ...codex, ai } : codex
+    }
+  }
   const file = await fileFor(sessionId)
   const st = await fs.stat(file)
   const hit = cache.get(sessionId)
@@ -97,9 +105,10 @@ const NAMES_SYSTEM =
 
 /** Claude's summary and a clear title for one chat; kept, and the title used unless you named the chat yourself. */
 export async function summarizeChat(sessionId: string): Promise<AiRecap> {
-  const file = await fileFor(sessionId)
   const recap = await sessionRecap(sessionId)
-  const summary = await summarizeSession(basename(dirname(file)), file)
+  const file = await findSessionFile(sessionId)
+  const summary = file ? await summarizeSession(basename(dirname(file)), file) : await codexSummary(sessionId)
+  if (!summary) throw new Error('This chat has no transcript (yet).')
   const parsed = parseAiRecap(await askClaude(recapMaterial(recap, summary.title), SUMMARY_SYSTEM))
   if (!parsed) throw new Error("Claude's answer couldn't be read. Try again.")
   const ai: AiRecap = { ...parsed, at: Date.now() }

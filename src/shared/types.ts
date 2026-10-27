@@ -117,8 +117,13 @@ export interface IndexStatus {
   error?: string
 }
 
+/** Which coding agent a chat or terminal belongs to (ADR 0020). */
+export type AgentTool = 'claude' | 'codex'
+
 export interface SessionSummary {
   id: string
+  /** Codex chats say so; Claude chats leave it out. Codex chats have projectKey 'codex'. */
+  tool?: AgentTool
   projectKey: string
   title: string
   firstPrompt: string
@@ -232,8 +237,8 @@ export interface TerminalSpec {
   cwd: string
   /** Arguments passed to the claude CLI, e.g. ['--resume', id]. */
   args: string[]
-  /** 'claude' runs the Claude Code CLI, 'shell' opens a plain PowerShell. */
-  kind: 'claude' | 'shell'
+  /** 'claude' runs the Claude Code CLI, 'codex' the Codex CLI, 'shell' opens a plain PowerShell. */
+  kind: AgentTool | 'shell'
   cols: number
   rows: number
 }
@@ -243,6 +248,29 @@ export interface TerminalInfo {
   pid: number
   /** Session id for claude terminals: assigned via --session-id for new sessions, or the one being resumed. */
   sessionId?: string
+}
+
+/** Where a handoff from one agent to the other was written, and what the new agent is told. */
+export interface Handoff {
+  file: string
+  prompt: string
+  /** The chat it was built from. */
+  sessionId: string
+  title: string
+  /** Where that chat ran (a worktree's folder for worktree chats); the new agent starts there too. */
+  cwd: string
+}
+
+/** Codex's own plan limits and token use, read from its session files in ~/.codex (ADR 0020). */
+export interface CodexUsage {
+  /** The newest limits Codex reported (windows named five_hour / seven_day, like Claude's); null before any Codex chat. */
+  limits: RateLimitInfo | null
+  totals: { input: number; cachedInput: number; output: number; reasoning: number; sessions: number }
+  byDay: { day: string; input: number; cachedInput: number; output: number; sessions: number }[]
+  byProject: { projectPath: string; input: number; cachedInput: number; output: number; sessions: number }[]
+  byModel: { model: string; input: number; cachedInput: number; output: number; sessions: number }[]
+  /** False when the Codex CLI isn't on PATH. */
+  installed: boolean
 }
 
 /** A Claude Code hook call reported by one of the app's agents. */
@@ -263,7 +291,7 @@ export interface SavedAgent {
   title: string
   cwd: string
   projectName: string
-  kind: 'claude' | 'shell'
+  kind: AgentTool | 'shell'
   sessionId?: string
   worktree?: WorktreeInfo
   projectPath?: string
@@ -767,6 +795,14 @@ export interface MissionControlApi {
   /** Has Claude (Haiku, one call) give clear names to chats that only have their first prompt as a title; returns how many were named. */
   nameChats(sessionIds: string[]): Promise<number>
   getSession(projectKey: string, sessionId: string): Promise<SessionDetail>
+  /** Writes a handoff from a project's chat (the newest one by `from` when no id is given) for the other agent. */
+  writeHandoff(projectPath: string, from: AgentTool, to: AgentTool, sessionId?: string): Promise<Handoff>
+  /** Codex plan limits and token use since a time (ms; 0 for all time). */
+  codexUsage(since: number): Promise<CodexUsage>
+  /** Whether the project has AGENTS.md (Codex's rules file) and CLAUDE.md. */
+  rulesFiles(projectPath: string): Promise<{ claude: boolean; agents: boolean }>
+  /** Creates AGENTS.md pointing Codex at CLAUDE.md, so both agents follow the same rules. */
+  linkRules(projectPath: string): Promise<void>
   addProject(): Promise<string | null>
   /** Asks for a folder in a native dialog; null if cancelled. */
   pickFolder(title?: string): Promise<string | null>

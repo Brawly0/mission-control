@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Md } from './Md'
-import { Check, Circle, Coins, Eye, FileText, GitBranch, Pause, Pencil, Plus, Workflow, X } from 'lucide-react'
+import { Check, Circle, Coins, Eye, FileText, GitBranch, Link2, Pause, Pencil, Plus, Workflow, X } from 'lucide-react'
 import type { BudgetState, Project, ProjectMeta, ProjectStatus, UsageTotals } from '@shared/types'
 import { formatCost, formatTokens } from '../util'
 import { Button, Segmented } from './ui'
@@ -52,6 +52,45 @@ function BriefingField({ project }: { project: Project }) {
   )
 }
 
+/**
+ * Claude reads CLAUDE.md and Codex reads AGENTS.md (ADR 0020). When only CLAUDE.md exists, one click
+ * adds an AGENTS.md that points to it, so both agents follow the same rules from one file.
+ */
+function RulesField({ project }: { project: Project }) {
+  const [files, setFiles] = useState<{ claude: boolean; agents: boolean } | null>(null)
+  useEffect(() => {
+    window.mc.rulesFiles(project.path).then(setFiles).catch(() => setFiles(null))
+  }, [project.path])
+  if (!files) return null
+  return (
+    <div className="field">
+      <span className="field-label">Rules for both agents</span>
+      {files.agents ? (
+        <span className="small">
+          <Link2 size={12} /> {files.claude ? 'CLAUDE.md (Claude) and AGENTS.md (Codex) are both here.' : 'AGENTS.md is here. Claude Code reads CLAUDE.md, so add one if Claude should follow these rules too.'}
+        </span>
+      ) : files.claude ? (
+        <div className="inline-field">
+          <span className="small muted">Codex reads AGENTS.md, not CLAUDE.md. Add an AGENTS.md that points to CLAUDE.md, so Codex follows the same rules without a second copy.</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={Link2}
+            onClick={async () => {
+              await window.mc.linkRules(project.path)
+              setFiles({ claude: true, agents: true })
+            }}
+          >
+            Share with Codex
+          </Button>
+        </div>
+      ) : (
+        <span className="small muted">No CLAUDE.md or AGENTS.md yet. Rules you write in CLAUDE.md can be shared with Codex from here.</span>
+      )}
+    </div>
+  )
+}
+
 /** Check command, monthly budget and git status: the settings automation relies on. */
 function AutomationCard({ project, budget, isRepo, onTurnOnGit, onChanged }: Pick<Props, 'project' | 'budget' | 'isRepo' | 'onTurnOnGit' | 'onChanged'>) {
   const [check, setCheck] = useState(project.meta.checkCommand ?? '')
@@ -88,6 +127,7 @@ function AutomationCard({ project, budget, isRepo, onTurnOnGit, onChanged }: Pic
         )}
       </div>
       <BriefingField project={project} />
+      <RulesField project={project} />
       <label className="field">
         <span className="field-label">Check command</span>
         <input

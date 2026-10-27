@@ -1,6 +1,6 @@
-import type { WorktreeInfo } from '@shared/types'
+import type { AgentTool, WorktreeInfo } from '@shared/types'
 
-/** Status reported by Claude Code hooks; exact, unlike the output-timing guess. */
+/** Status reported by Claude Code hooks (or Codex's own state signals); exact, unlike the output-timing guess. */
 export type HookStatus = 'ready' | 'working' | 'needs-input' | 'done'
 
 export interface Agent {
@@ -11,7 +11,7 @@ export interface Agent {
   projectName: string
   /** The project this agent belongs to (its main folder, even when it runs in a worktree). */
   projectPath: string
-  kind: 'claude' | 'shell'
+  kind: AgentTool | 'shell'
   sessionId?: string
   /** Set when the agent runs in its own worktree + branch. */
   worktree?: WorktreeInfo
@@ -35,7 +35,7 @@ export interface LaunchOptions {
   projectName: string
   projectPath?: string
   title: string
-  kind?: 'claude' | 'shell'
+  kind?: AgentTool | 'shell'
   args?: string[]
   worktree?: WorktreeInfo
 }

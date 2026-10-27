@@ -9,7 +9,9 @@ src/
     window.ts      the main window, showWindow / sendToWindow, the quitting flag
     ipc.ts         every ipcMain handler behind window.mc
     notify.ts      desktop notifications (chat cost, plan limits, digest, due tasks, task results, budgets, briefings)
-    terminals.ts   launchTerminal: session ids, hook settings and launch flags for claude terminals
+    terminals.ts   launchTerminal: session ids, hook settings and launch flags for claude terminals; Codex state (OSC 7501) and chat id lookup
+    codexData.ts   reads ~/.codex (Codex CLI chats): listings, transcripts, recaps, usage and plan limits, finding a new agent's chat (ADR 0020)
+    handoff.ts     handoffs between Claude and Codex written to docs/briefings/, and AGENTS.md pointing to CLAUDE.md (ADR 0020)
     docs.ts        listDocs: a project's CLAUDE.md, README, docs/ and .claude/ Markdown
     claudeData.ts  reads ~/.claude/projects (projects, sessions, chat transcripts); folds worktree chats into their project
     pty.ts         spawns claude / PowerShell in pseudo-terminals (ConPTY)
@@ -43,6 +45,8 @@ src/
     digest.ts       day keys, when the digest is due, its notification text (pure, unit-tested)
     recap.ts        the recap builder (prompts, files, commits, last reply, active time) and parsing Claude's answers (pure, unit-tested)
     skills.ts       skill uses in transcripts, coach levels and wording (pure, unit-tested)
+    codex.ts        Codex rollout lines: prompts, replies, commands, patched files, recap, token totals, plan limits, OSC 7501 states (pure, unit-tested)
+    handoff.ts      the handoff file and prompt (pure, unit-tested)
     vault.ts        frontmatter, [[wikilinks]], link resolution, headings, the vault prompts (pure, unit-tested)
     projectLook.ts  README title/description, icon guess, worktree paths, chat titles (pure, unit-tested)
   renderer/    React UI
@@ -211,6 +215,10 @@ curl forwards the hook's JSON input to `hookServer.ts`, which sends it to the re
 - If Mission Control was started from inside a Claude Code session, that session's `CLAUDECODE` / `CLAUDE_CODE_*` / `ANTHROPIC_BASE_URL` variables are stripped from agents (`agentEnv()` in `pty.ts`), so agents use your own CLI login.
 - The port is random and the URL carries a per-run secret, so other local processes can't post fake events.
 - Settings files are deleted when an agent exits and cleared at every startup.
+
+## Codex agents (ADR 0020)
+
+A `codex` agent runs `codex` (found on PATH) in the terminal host like `claude`. Codex writes its state into the terminal as `ESC ] 7501 ; state=working:app=codex BEL` (idle, working, done, blocked with kind=permission). `terminals.ts` reads it from the output (keeping a split sequence for the next chunk) and sends a `CodexState` hook event; `agentStatus.ts` maps it to the same statuses as Claude's hooks. Codex can't be given a chat id, so after a new Codex agent starts, `findNewCodexSession` looks for the newest rollout in that folder created since the launch and not claimed by another agent, and reports it as `CodexSession`. Resume is `codex resume <id>`. Codex chats appear in `listSessions` with `tool: 'codex'` and `projectKey: 'codex'`; `getSession('codex', id)` and `sessionRecap` read them from `~/.codex`, which is never written.
 
 ## Restoring agents
 

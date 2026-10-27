@@ -2,6 +2,7 @@ import { useEffect, useState, type Dispatch, type MutableRefObject, type SetStat
 import type { Workspace } from '@shared/types'
 import type { Agent, AgentLayout, LaunchOptions } from '../types'
 import type { useToast } from '../toast'
+import { resumeArgs } from '../agentStatus'
 
 interface WorkspacesOptions {
   agents: Agent[]
@@ -51,8 +52,8 @@ export function useWorkspaces({ agents, agentsRef, layout, setLayout, launch, to
     for (const a of ws.agents) {
       // A shell that's still open isn't opened twice (chats are matched by their session in launch).
       if (a.kind === 'shell' && agentsRef.current.some((x) => !x.exited && x.kind === 'shell' && x.title === a.title && x.cwd === a.cwd)) continue
-      const canResume = a.kind === 'claude' && !!a.sessionId && (await window.mc.sessionExists(a.sessionId))
-      await launch({ cwd: a.cwd, projectName: a.projectName, projectPath: a.projectPath, title: a.title, kind: a.kind, worktree: a.worktree, args: canResume ? ['--resume', a.sessionId!] : [] })
+      const canResume = a.kind !== 'shell' && !!a.sessionId && (await window.mc.sessionExists(a.sessionId))
+      await launch({ cwd: a.cwd, projectName: a.projectName, projectPath: a.projectPath, title: a.title, kind: a.kind, worktree: a.worktree, args: canResume && a.kind !== 'shell' ? resumeArgs(a.kind, a.sessionId!) : [] })
     }
     toast('success', `Opened "${ws.name}"`, `${ws.agents.length} ${ws.agents.length === 1 ? 'agent' : 'agents'}`)
   }

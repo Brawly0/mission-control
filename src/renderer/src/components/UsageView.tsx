@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BarChart3, Coins, Info, Leaf, MessagesSquare, RefreshCw, Scale, Sigma, Table2, Zap } from 'lucide-react'
-import type { IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
+import type { CodexUsage, IndexStatus, RateLimitInfo, UsageReport, UsageTotals } from '@shared/types'
 import { paceText, resetsIn, windowLabel } from '@shared/planUsage'
 import { ecoVerdict, formatShare, modelFamily, tokensPerPercent } from '@shared/planCost'
 import { isScratchPath } from '@shared/projectLook'
@@ -158,17 +158,33 @@ function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; av
 }
 
 /** Plan limits from your Claude account: one meter per window, what's left and when it resets. */
-function PlanLimits({ info }: { info: RateLimitInfo }) {
+function PlanLimits({ info }: { info: RateLimitInfo | null }) {
   const [refreshing, setRefreshing] = useState(false)
   const refresh = (): void => {
     setRefreshing(true)
     window.mc.refreshRateLimit().finally(() => setRefreshing(false))
   }
+  // Still loading or unavailable: keep the card so Claude's and Codex's limits stay side by side.
+  if (!info || !info.windows.length) {
+    return (
+      <section className="card usage-card">
+        <div className="usage-card-head">
+          <h2>
+            <span className="tool-badge tool-claude">Claude</span> Plan limits
+          </h2>
+          <IconButton icon={RefreshCw} label="Check now" size={13} onClick={refresh} disabled={refreshing} />
+        </div>
+        <p className={`small ${info?.error ? 'plan-error' : 'muted'}`}>{info?.error ?? 'Checking your plan limits…'}</p>
+      </section>
+    )
+  }
   const x = info.extraUsage
   return (
     <section className="card usage-card">
       <div className="usage-card-head">
-        <h2>Plan limits{info.plan ? ` · ${info.plan[0].toUpperCase()}${info.plan.slice(1)}` : ''}</h2>
+        <h2>
+          <span className="tool-badge tool-claude">Claude</span> Plan limits{info.plan ? ` · ${info.plan[0].toUpperCase()}${info.plan.slice(1)}` : ''}
+        </h2>
         <span className="muted small">
           updated {timeAgo(info.at)}
           <IconButton icon={RefreshCw} label="Check now" size={13} onClick={refresh} disabled={refreshing} />
@@ -210,6 +226,84 @@ function PlanLimits({ info }: { info: RateLimitInfo }) {
           Extra usage {x.enabled ? `on: $${x.usedUsd.toFixed(2)} of $${x.limitUsd.toFixed(2)} used this month` : 'off: when a limit runs out, Claude waits for the reset'}.
         </p>
       )}
+    </section>
+  )
+}
+
+/**
+ * Codex (ADR 0020): its plan limits and token use, read from its own session files. OpenAI's
+ * prices for these models aren't public per token on a ChatGPT plan, so this shows tokens, not dollars.
+ */
+function CodexCard({ since, visible, onOpenProject }: { since: number; visible: boolean; onOpenProject: (path: string) => void }) {
+  const look = useLook()
+  const [u, setU] = useState<CodexUsage | null>(null)
+  useEffect(() => {
+    if (visible) window.mc.codexUsage(since).then(setU, () => setU(null))
+  }, [visible, since])
+  if (!u || (!u.limits && !u.totals.sessions)) return null
+  const now = Date.now()
+  const t = u.totals
+  const max = Math.max(1, ...u.byProject.map((p) => p.input + p.output))
+  return (
+    <section className="card usage-card codex-usage">
+      <div className="usage-card-head">
+        <h2>
+          <span className="tool-badge tool-codex">Codex</span> Plan limits and tokens{u.limits?.plan ? ` · ${u.limits.plan[0].toUpperCase()}${u.limits.plan.slice(1)}` : ''}
+        </h2>
+        <span className="muted small">{u.limits ? `last reported ${timeAgo(u.limits.at)}` : ''}</span>
+      </div>
+      {u.limits?.windows.map((w) => {
+        const reset = w.resetsAt > 0 && w.resetsAt < now
+        const pct = reset ? 0 : Math.round(w.utilization * 100)
+        return (
+          <div key={w.name} className="meter-row">
+            <span className="meter-label">{windowLabel(w.name, true)}</span>
+            <span className="meter-track" aria-hidden>
+              <span className={`meter-fill ${pct >= 90 ? 'high' : pct >= 70 ? 'warn' : ''}`} style={{ width: `${Math.min(100, pct)}%` }} />
+            </span>
+            <span className="meter-value">
+              {pct}% used · <span className="muted">{Math.max(0, 100 - pct)}% left</span>
+            </span>
+            <span className="muted small">{reset ? 'reset since Codex last reported' : w.resetsAt ? `resets ${resetsIn(w.resetsAt, now)}` : ''}</span>
+          </div>
+        )
+      })}
+      {t.sessions > 0 ? (
+        <>
+          <p className="small codex-usage-totals">
+            <strong>{formatTokens(t.input + t.output)}</strong> tokens in {t.sessions} {t.sessions === 1 ? 'chat' : 'chats'}
+            <span className="muted">
+              {' '}
+              · {formatTokens(t.input)} in ({formatTokens(t.cachedInput)} cached) · {formatTokens(t.output)} out{t.reasoning ? ` (${formatTokens(t.reasoning)} reasoning)` : ''}
+              {u.byModel.length ? ` · ${u.byModel.map((m) => m.model).join(', ')}` : ''}
+            </span>
+          </p>
+          <div className="bar-list">
+            {u.byProject.slice(0, 6).map((p) => {
+              const name = look(p.projectPath)?.name ?? basename(p.projectPath)
+              const total = p.input + p.output
+              return (
+                <button key={p.projectPath} className="bar-row" onClick={() => onOpenProject(p.projectPath)} title={p.projectPath}>
+                  <span className="bar-row-label">
+                    <Avatar name={name} path={p.projectPath} size={22} />
+                    <span className="ellipsis">{name}</span>
+                  </span>
+                  <span className="bar-row-track">
+                    <span className="bar-row-fill codex" style={{ width: `${(total / max) * 100}%` }} />
+                  </span>
+                  <span className="bar-row-value">{formatTokens(total)}</span>
+                  <span className="bar-row-tokens muted">
+                    {p.sessions} {p.sessions === 1 ? 'chat' : 'chats'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <p className="muted small">No Codex chats in this period.</p>
+      )}
+      <p className="muted small">Tokens count on the day a chat was last active. Codex reports its limits while it runs, so they can be a little behind.</p>
     </section>
   )
 }
@@ -391,7 +485,11 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
         />
       </header>
 
-      {rateLimit && rateLimit.windows.length > 0 && <PlanLimits info={rateLimit} />}
+      {/* Claude's and Codex's limits side by side; Claude's spans the row when Codex hasn't been used. */}
+      <div className="usage-pair">
+        <PlanLimits info={rateLimit} />
+        <CodexCard since={since} visible={visible} onOpenProject={onOpenProject} />
+      </div>
       <PlanCost />
       {error && <div className="error pad">{error}</div>}
       {!report && !error && <div className="muted pad">{status?.indexing ? `Reading your chats… ${status.done}/${status.total}` : 'Loading…'}</div>}

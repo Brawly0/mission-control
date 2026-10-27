@@ -157,3 +157,12 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
     </div>
   )
 }
+
+/** Which agent a chat or terminal belongs to; shown where Claude and Codex appear side by side (ADR 0020). */
+export function ToolBadge({ tool, title }: { tool: 'claude' | 'codex'; title?: string }) {
+  return (
+    <span className={`tool-badge tool-${tool}`} title={title ?? (tool === 'codex' ? 'Codex (OpenAI)' : 'Claude Code')}>
+      {tool === 'codex' ? 'Codex' : 'Claude'}
+    </span>
+  )
+}

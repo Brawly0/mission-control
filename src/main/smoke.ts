@@ -1,5 +1,5 @@
 import { app, type BrowserWindow } from 'electron'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { basename, join } from 'node:path'
 import { refreshPlanUsage } from './planUsage'
@@ -16,7 +16,7 @@ import { listProjects, listSessions, movedChatList, recentSessions, normalizePat
 import { commitAll, createWorktree, getChanges, initGit, mergeWorktree, previewGitInit, removeWorktree } from './git'
 import { agentEnv, killTerminal, killTerminalsIn } from './pty'
 import { contextUsage, defaultModelFor, launchArgs, startupReport } from './spend'
-import { latestBriefing, listBriefings } from './briefings'
+import { folderFor, latestBriefing, listBriefings } from './briefings'
 import { briefingFileName, briefingMarkdown } from '../shared/projectLook'
 import { claudeStatus, createProject, deleteNote, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { queryIndex } from './indexer'
@@ -25,6 +25,7 @@ import { planRate } from './planCost'
 import { buildDigest } from './digest'
 import { digestText } from '../shared/digest'
 import { nameChats, sessionRecap, summarizeChat } from './recap'
+import { codexUsage } from './codexData'
 import { unclearTitle } from '../shared/projectLook'
 
 interface SmokeDeps {
@@ -498,6 +499,92 @@ async function hubTour(folder: string): Promise<void> {
  * writes the newest one as a briefing file into the scratch folder (never into your projects), checks
  * "latest briefing" finds it, and screenshots Knowledge → Session briefings. Free.
  */
+/**
+ * MC_SMOKE_CODEX=<scratch git repo>: Claude and Codex together (ADR 0020). Opens a Codex agent in the
+ * folder with a small read-only prompt, follows its status lights (OSC 7501) and the chat id the app
+ * finds for it, then checks the chat list, recap, usage, the handoff file and the Hand off button
+ * (which starts Claude reading the handoff). Screenshots <MC_SMOKE>-codex-*.png. Uses a little of
+ * both plans: one short Codex turn and one short Claude turn.
+ */
+async function codexTour(win: BrowserWindow, outFile: string, dir: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  const shot = async (name: string, wait = 900) => {
+    await sleep(wait)
+    const file = outFile.replace(/\.png$/, `-codex-${name}.png`)
+    writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+    log('screenshot:', file)
+  }
+  win.show()
+  win.focus()
+  win.webContents.setBackgroundThrottling(false)
+  updateStore((s) => {
+    if (!s.manualProjects.includes(dir)) s.manualProjects.push(dir)
+  })
+  await js('window.__mcSmoke.refresh()')
+  const prompt = 'Read CLAUDE.md and tell me in one short sentence what this project is. Do not change any files.'
+  // Trust the scratch folder for this run only (-c), so Codex skips its first-run question and
+  // nothing is saved to ~/.codex/config.toml.
+  const trust = `projects={'${dir}'={trust_level="trusted"}}`
+  await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(dir)}, projectName: 'codex demo', projectPath: ${JSON.stringify(dir)}, title: 'codex demo · Codex', kind: 'codex', args: ['-c', ${JSON.stringify(trust)}, ${JSON.stringify(prompt)}] })`)
+  const agent = () => js(`(() => { const a = window.__mcSmoke.agents().find(x => x.kind === 'codex'); return a ? { id: a.id, status: a.hookStatus || 'none', session: a.sessionId || '', exited: a.exited } : null })()`)
+  const seen: string[] = []
+  let a: { id: string; status: string; session: string; exited: boolean } | null = null
+  for (let i = 0; i < 360; i++) {
+    a = await agent()
+    if (a && seen[seen.length - 1] !== a.status) seen.push(a.status)
+    if (a?.status === 'done' && a.session) break
+    if (a?.exited) break
+    await sleep(500)
+  }
+  log('codex: status went', seen.join(' -> '), '| session', a?.session || 'not found')
+  log('codex: status lights', seen.includes('working') && seen.includes('done') ? 'ok' : 'FAILED')
+  await shot('agent')
+  if (!a?.session) return log('codex: FAILED, no session id')
+
+  const list = await listSessions([], dir)
+  const chat = list.find((s) => s.id === a!.session)
+  log('codex: chat in project list', chat ? `ok ("${chat.title}", tool ${chat.tool})` : 'FAILED')
+  const recap = await sessionRecap(a.session)
+  log('codex: recap', recap.prompts >= 1 && recap.lastReply ? `ok (${recap.prompts} prompt, reply "${recap.lastReply.slice(0, 80)}")` : 'FAILED')
+  const usage = await codexUsage(0)
+  log('codex: usage', usage.limits ? `ok (${usage.limits.windows.map((w) => `${w.name} ${Math.round(w.utilization * 100)}%`).join(', ')}, plan ${usage.limits.plan}, ${usage.totals.sessions} chats)` : 'no limits reported')
+  const detail = await js(`window.mc.getSession('codex', ${JSON.stringify(a.session)}).then(d => d.messages.length)`)
+  log('codex: chat viewer messages', detail)
+
+  // The Hand off button on the Codex agent starts Claude with the handoff.
+  const before = (await js('window.__mcSmoke.agents().length')) as number
+  await js(`[...document.querySelectorAll('.agent-brief')].find(b => b.textContent.includes('Claude'))?.click()`)
+  let claude: { status: string; title: string } | null = null
+  for (let i = 0; i < 40 && !claude; i++) {
+    await sleep(500)
+    claude = await js(`(() => { const l = window.__mcSmoke.agents(); const c = l.length > ${before} ? l[l.length - 1] : null; return c && c.kind === 'claude' ? { status: c.hookStatus || 'none', title: c.title } : null })()`)
+  }
+  log('codex: hand off to Claude', claude ? `ok (agent "${claude.title}")` : 'FAILED')
+  // docs/briefings/ in a real project; the app's own folder for temp folders like this one.
+  const folder = folderFor(dir)
+  const handoffs = existsSync(folder) ? readdirSync(folder).filter((f) => f.includes('handoff-codex-to-claude')).sort() : []
+  const md = handoffs.length ? readFileSync(join(folder, handoffs[handoffs.length - 1]), 'utf8') : ''
+  log('codex: handoff file', md.startsWith('# Handoff: Codex to Claude') && md.includes('CLAUDE.md') && md.includes(prompt.slice(0, 30)) ? `ok (${handoffs[handoffs.length - 1]}, ${md.length} chars)` : 'FAILED')
+  if (claude) {
+    for (let i = 0; i < 240; i++) {
+      const st = await js(`window.__mcSmoke.agents()[window.__mcSmoke.agents().length - 1].hookStatus || 'none'`)
+      if (st === 'done' || st === 'needs-input') {
+        log('codex: Claude after reading the handoff:', st)
+        break
+      }
+      await sleep(500)
+    }
+    await shot('handoff', 1500)
+  }
+  await js('window.__mcSmoke.setView("usage")')
+  await shot('usage', 2000)
+  await js(`window.__mcSmoke.selectProject(${JSON.stringify(dir)}); window.__mcSmoke.setView("project")`)
+  await sleep(800)
+  await js(`[...document.querySelectorAll('.page-tabs button')].find(b => /Chats/.test(b.textContent))?.click()`)
+  await shot('chats', 1500)
+  for (const x of (await js('window.__mcSmoke.agents().map(a => a.id)')) as string[]) await js(`window.__mcSmoke.closeAgent(${JSON.stringify(x)})`)
+}
+
 async function briefTour(win: BrowserWindow, outFile: string, folder: string): Promise<void> {
   const js = (code: string) => win.webContents.executeJavaScript(code)
   for (let i = 0; i < 240 && (await js('window.mc.indexStatus()')).lastRun === 0; i++) await sleep(500)
@@ -1554,6 +1641,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     if (process.env.MC_SMOKE_VAULT) await vaultTour(win, outFile, process.env.MC_SMOKE_VAULT)
     if (process.env.MC_SMOKE_SHOTS) await shotsTour(win, outFile, process.env.MC_SMOKE_SHOTS)
     if (process.env.MC_SMOKE_BRIEF) await briefTour(win, outFile, process.env.MC_SMOKE_BRIEF)
+    if (process.env.MC_SMOKE_CODEX) await codexTour(win, outFile, process.env.MC_SMOKE_CODEX)
     if (process.env.MC_SMOKE_HUB) {
       listDocsForSmoke = deps.listDocs
       await hubTour(process.env.MC_SMOKE_HUB)

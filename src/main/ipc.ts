@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import { dirname } from 'node:path'
 import type {
+  AgentTool,
   AppSettings,
   NewTask,
   Schedule,
@@ -58,6 +59,8 @@ import { addEcoSkillToProject, listSkills } from './skills'
 import { ecoPluginDir } from './eco'
 import { listDocs } from './docs'
 import { launchTerminal } from './terminals'
+import { linkRules, rulesFiles, writeHandoff } from './handoff'
+import { codexUsage } from './codexData'
 import { getMainWindow, isQuitting, sendToWindow, setQuitting } from './window'
 
 /** Live counts pushed by the UI, for the tray tooltip and menu. */
@@ -80,6 +83,10 @@ export function registerIpc(): void {
   ipcMain.handle('sessions:summarize', (_e, id: string) => summarizeChat(id))
   ipcMain.handle('sessions:name', (_e, ids: string[]) => nameChats(ids))
   ipcMain.handle('sessions:get', (_e, key: string, id: string) => getSession(key, id))
+  ipcMain.handle('handoff:write', (_e, path: string, from: AgentTool, to: AgentTool, id?: string) => writeHandoff(path, from, to, id))
+  ipcMain.handle('handoff:rules', (_e, path: string) => rulesFiles(path))
+  ipcMain.handle('handoff:linkRules', (_e, path: string) => linkRules(path))
+  ipcMain.handle('codex:usage', (_e, since: number) => codexUsage(since))
 
   ipcMain.handle('projects:add', async () => {
     const result = await dialog.showOpenDialog(getMainWindow()!, { properties: ['openDirectory'] })

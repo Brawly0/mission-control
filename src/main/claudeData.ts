@@ -16,6 +16,7 @@ import {
   titleFromPrompt,
   worktreeParent
 } from '../shared/projectLook'
+import { codexFileFor, codexSessionsFor, getCodexSession } from './codexData'
 import { loadStore, updateStore, type StoreData } from './store'
 
 /**
@@ -194,6 +195,8 @@ export async function listSessions(projectKey: string | string[], projectPath?: 
       return moved ? { ...x, movedFrom: folderLabel(moved.from), movedByYou: moved.byYou } : x
     })
   }
+  // Codex chats in the same folder (and its worktrees) sit in the same list, marked as Codex's (ADR 0020).
+  if (projectPath) list.push(...(await codexSessionsFor(projectPath).catch(() => [])).map((x) => withOwnTitle(x, titles)))
   return list.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -464,13 +467,18 @@ export async function sessionExists(sessionId: string): Promise<boolean> {
   if (!/^[\w-]+$/.test(sessionId)) return false
   try {
     const keys = await fs.readdir(claudeProjectsDir)
-    return keys.some((key) => existsSync(join(claudeProjectsDir, key, `${sessionId}.jsonl`)))
+    if (keys.some((key) => existsSync(join(claudeProjectsDir, key, `${sessionId}.jsonl`)))) return true
   } catch {
-    return false
+    /* no Claude data */
   }
+  return !!(await codexFileFor(sessionId))
 }
 
 export async function getSession(projectKey: string, sessionId: string): Promise<SessionDetail> {
+  if (projectKey === 'codex') {
+    const detail = await getCodexSession(sessionId)
+    return { ...detail, summary: withOwnTitle(detail.summary, loadStore()) }
+  }
   const file = join(claudeProjectsDir, projectKey, `${sessionId}.jsonl`)
   const summary = await summarizeSession(projectKey, file)
   const messages: ChatMessage[] = []

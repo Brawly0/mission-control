@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeft,
   BarChart3,
   Bell,
   BookOpen,
@@ -8,6 +9,7 @@ import {
   FolderOpen,
   FolderPlus,
   GitFork,
+  Hexagon,
   History,
   House,
   Inbox,
@@ -51,6 +53,8 @@ export interface CommandContext {
   selected: Project | null
   newInSelected: () => void
   launchWorktree: (project: Project) => void
+  /** Starts the other agent from a handoff of the newest chat by `from` (ADR 0020). */
+  handOff: (projectPath: string, from: 'claude' | 'codex', to: 'claude' | 'codex') => void
   launch: (opts: LaunchOptions) => unknown
   layout: AgentLayout
   setLayout: (layout: AgentLayout) => void
@@ -118,6 +122,16 @@ export function paletteCommands(c: CommandContext): Command[] {
   if (selected) {
     list.push(
       { id: 'new', group: 'Actions', title: `New Claude session in ${selected.name}`, icon: Play, run: c.newInSelected },
+      {
+        id: 'new-codex',
+        group: 'Actions',
+        title: `New Codex session in ${selected.name}`,
+        icon: Hexagon,
+        keywords: 'openai gpt codex cli',
+        run: () => launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · Codex`, kind: 'codex' })
+      },
+      { id: 'handoff-codex', group: 'Actions', title: `Hand ${selected.name} to Codex`, icon: ArrowRightLeft, keywords: 'continue from claude handoff codex', run: () => c.handOff(selected.path, 'claude', 'codex') },
+      { id: 'handoff-claude', group: 'Actions', title: `Hand ${selected.name} to Claude`, icon: ArrowRightLeft, keywords: 'continue from codex handoff claude', run: () => c.handOff(selected.path, 'codex', 'claude') },
       { id: 'new-wt', group: 'Actions', title: `New session in a worktree of ${selected.name}`, icon: GitFork, keywords: 'branch parallel', run: () => c.launchWorktree(selected) },
       {
         id: 'continue',

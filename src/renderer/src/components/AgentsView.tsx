@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
+import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
@@ -7,7 +7,7 @@ import { elapsed } from '../util'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
-import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented } from './ui'
+import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented, ToolBadge } from './ui'
 
 // The terminal (xterm) loads with the first agent, not at startup. Output that comes first is buffered (terminalBus).
 const TerminalPane = lazy(() => import('./TerminalPane'))
@@ -41,6 +41,8 @@ interface Props {
   onManageWorkspaces: () => void
   /** Opens "Send to several agents". */
   onBroadcast: () => void
+  /** Starts the other agent (Claude <-> Codex) with a handoff of this agent's chat (ADR 0020). */
+  onHandOff: (agent: Agent) => void
 }
 
 type Cols = 'auto' | '1' | '2' | '3' | '4'
@@ -121,7 +123,9 @@ function TabTitle({ agent, onRename, editRequest }: { agent: Agent; onRename: (t
 }
 
 export default function AgentsView(props: Props) {
-  const { agents, activeId, layout, maximized, onMaximize, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew } = props
+  const { agents, activeId, layout, maximized, onMaximize, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew, onHandOff } = props
+  // Name badges only matter while Claude and Codex agents are open side by side (Codex always gets one).
+  const mixed = agents.some((a) => a.kind === 'codex') && agents.some((a) => a.kind === 'claude')
   const [reviewOpen, setReviewOpen] = useState(false)
   const [renameRequest, setRenameRequest] = useState(0)
   const [minimized, setMinimized] = useState<Set<string>>(new Set())
@@ -275,6 +279,7 @@ export default function AgentsView(props: Props) {
               >
                 <span className={`dot ${st.cls}`} />
                 {a.kind === 'shell' && <Terminal size={12} className="muted" />}
+                {a.kind !== 'shell' && (mixed || a.kind === 'codex') && <ToolBadge tool={a.kind} />}
                 {a.worktree && <GitBranch size={12} className="tone-accent" />}
                 <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} editRequest={a.id === active?.id ? renameRequest : undefined} />
                 <button
@@ -385,6 +390,7 @@ export default function AgentsView(props: Props) {
                 >
                   <div className="agent-cell-head" onDoubleClick={(e) => (e.target as HTMLElement).closest('button') || toggleMax(a.id)} title="Double-click to maximize or restore">
                     <Avatar name={a.projectName} path={a.projectPath} size={20} />
+                    {a.kind !== 'shell' && (mixed || a.kind === 'codex') && <ToolBadge tool={a.kind} />}
                     <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
                     {a.worktree ? (
                       <span className="chip chip-accent" title={a.worktree.path}>
@@ -423,6 +429,25 @@ export default function AgentsView(props: Props) {
                         <FileText size={11} /> Briefing
                       </button>
                     )}
+                    {a.kind !== 'shell' && !a.exited && (
+                      <button
+                        className="agent-brief"
+                        disabled={st.cls === 'working' || !a.sessionId}
+                        title={
+                          st.cls === 'working'
+                            ? `Wait until ${a.kind === 'codex' ? 'Codex' : 'Claude'} finishes`
+                            : !a.sessionId
+                              ? 'Send a first message, then hand off'
+                              : `Start ${a.kind === 'codex' ? 'Claude' : 'Codex'} with a handoff of this chat: what was asked, what changed, git and the project's rules`
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onHandOff(a)
+                        }}
+                      >
+                        <ArrowRightLeft size={11} /> {a.kind === 'codex' ? 'Claude' : 'Codex'}
+                      </button>
+                    )}
                     <span className="muted small agent-elapsed">{elapsed(a.startedAt)}</span>
                     <span className="cell-controls">
                       <button title={withKey('Minimize', keyFor('minimizeAgent'))} onClick={(e) => { e.stopPropagation(); minimize(a.id) }}>
@@ -437,7 +462,7 @@ export default function AgentsView(props: Props) {
                     </span>
                   </div>
                   {a.resumedFrom && !hiddenRecaps.has(a.id) && (
-                    <SessionRecap compact sessionId={a.resumedFrom} onClose={() => setHiddenRecaps((cur) => new Set([...cur, a.id]))} />
+                    <SessionRecap compact sessionId={a.resumedFrom} tool={a.kind === 'codex' ? 'codex' : 'claude'} onClose={() => setHiddenRecaps((cur) => new Set([...cur, a.id]))} />
                   )}
                   <Suspense fallback={null}>
                     <TerminalPane id={a.id} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />

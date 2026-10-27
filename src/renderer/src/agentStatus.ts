@@ -48,7 +48,39 @@ export function statusFromHook(event: HookEvent, current: HookStatus | undefined
       if (!permission && (current === 'done' || current === 'ready')) return null
       return { status: 'needs-input', message: event.message, notify: true }
     }
+    // Codex reports its state in the terminal (OSC 7501, read in main/terminals.ts); `source` is the state.
+    case 'CodexState':
+      switch (event.source) {
+        case 'working':
+          return { status: 'working', notify: false }
+        case 'done':
+          return { status: 'done', notify: true }
+        case 'blocked':
+          return {
+            status: 'needs-input',
+            message:
+              event.notificationType === 'permission' ? 'Codex needs your approval' : event.notificationType === 'trust' ? 'Codex asks whether to trust this folder' : 'Codex is waiting for you',
+            notify: true
+          }
+        case 'idle':
+          // Idle at start means ready; idle after a turn shouldn't hide "your turn".
+          return current ? null : { status: 'ready', notify: false }
+        default:
+          return null
+      }
     default:
       return null
   }
+}
+
+/** Arguments that reopen a chat: `claude --resume <id>` or `codex resume <id>`. */
+export function resumeArgs(tool: 'claude' | 'codex', sessionId: string): string[] {
+  return tool === 'codex' ? ['resume', sessionId] : ['--resume', sessionId]
+}
+
+/** The chat a launch reopens, if its arguments resume one. */
+export function resumedSession(kind: string, args: string[]): string | undefined {
+  if (kind === 'codex') return args[0] === 'resume' && args[1] && !args[1].startsWith('-') ? args[1] : undefined
+  const at = args.indexOf('--resume')
+  return at >= 0 ? args[at + 1] : undefined
 }

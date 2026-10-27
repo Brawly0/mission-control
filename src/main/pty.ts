@@ -27,20 +27,24 @@ export function whichSync(name: string): string | null {
   return null
 }
 
-let claudePath: string | null | undefined
+const toolPaths = new Map<string, string | null>()
+const INSTALL_HINT = { claude: 'Install Claude Code', codex: 'Install it with: npm i -g @openai/codex' }
 
 function resolveCommand(spec: TerminalSpec): { file: string; args: string[] } {
   if (spec.kind === 'shell') return { file: 'powershell.exe', args: ['-NoLogo'] }
-  if (claudePath === undefined) claudePath = whichSync('claude')
-  if (!claudePath) {
+  if (!toolPaths.has(spec.kind)) toolPaths.set(spec.kind, whichSync(spec.kind))
+  const path = toolPaths.get(spec.kind)
+  if (!path) {
+    // Don't remember a miss: installing it while the app runs should work on the next tab.
+    toolPaths.delete(spec.kind)
     // Fall back to a shell that explains what is missing instead of failing silently.
     return {
       file: 'powershell.exe',
-      args: ['-NoLogo', '-NoExit', '-Command', "Write-Host 'claude was not found on PATH. Install Claude Code, then reopen this tab.' -ForegroundColor Yellow"]
+      args: ['-NoLogo', '-NoExit', '-Command', `Write-Host '${spec.kind} was not found on PATH. ${INSTALL_HINT[spec.kind]}, then reopen this tab.' -ForegroundColor Yellow`]
     }
   }
-  if (/\.(cmd|bat)$/i.test(claudePath)) return { file: 'cmd.exe', args: ['/c', claudePath, ...spec.args] }
-  return { file: claudePath, args: spec.args }
+  if (/\.(cmd|bat)$/i.test(path)) return { file: 'cmd.exe', args: ['/c', path, ...spec.args] }
+  return { file: path, args: spec.args }
 }
 
 /**

@@ -15,6 +15,8 @@ interface Props {
   onClose?: () => void
   /** Claude gave the chat a new title. */
   onTitle?: (title: string) => void
+  /** Whose chat it is, for "Codex's last reply". */
+  tool?: 'claude' | 'codex'
 }
 
 function loadOpen(key: string, fallback: boolean): boolean {
@@ -35,7 +37,7 @@ function span(r: Recap): string {
 }
 
 /** "What we worked on": Claude's summary when there is one, otherwise what the transcript shows. */
-export default function SessionRecap({ sessionId, version, compact, onClose, onTitle }: Props) {
+export default function SessionRecap({ sessionId, version, compact, onClose, onTitle, tool }: Props) {
   const toast = useToast()
   const [recap, setRecap] = useState<Recap | null>(null)
   const [error, setError] = useState('')
@@ -162,7 +164,7 @@ export default function SessionRecap({ sessionId, version, compact, onClose, onT
       )}
       {!r.ai && r.lastReply && (
         <div className="recap-row">
-          <span className="recap-label">Claude’s last reply</span>
+          <span className="recap-label">{tool === 'codex' ? 'Codex' : 'Claude'}’s last reply</span>
           <p className={`recap-reply ${showReply ? 'open' : ''}`}>{r.lastReply}</p>
           {r.lastReply.length > 280 && (
             <button className="link-btn small" onClick={() => setShowReply((v) => !v)}>

@@ -66,14 +66,14 @@ export function inboxItems(input: InboxInput): InboxItem[] {
   const items: InboxItem[] = []
 
   for (const a of input.agents) {
-    if (a.exited || a.kind !== 'claude') continue
+    if (a.exited || a.kind === 'shell') continue
     if (a.hookStatus === 'needs-input') {
       items.push({
         key: `agent:${a.id}:input`,
         severity: 'urgent',
         kind: 'agent',
         title: a.title,
-        detail: a.statusMessage || 'Claude needs your input.',
+        detail: a.statusMessage || `${a.kind === 'codex' ? 'Codex' : 'Claude'} needs your input.`,
         at: a.statusAt ?? a.startedAt,
         action: { kind: 'agent', agentId: a.id },
         actionLabel: 'Open',

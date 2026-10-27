@@ -2,6 +2,14 @@
 
 A Windows desktop hub for **Claude Code**: see all your projects and past chats, read docs, and run several Claude agents side by side in live terminals.
 
+## Features (v0.20): Claude and Codex together
+
+- **Codex agents**: start the Codex CLI next to Claude from a project's **New session** menu or the palette ("New Codex session"). It runs in the same terminals, with the same status lights, notifications and inbox ("needs you" when it asks for approval). Install it once with `npm i -g @openai/codex`.
+- **Hand off between them**: **Continue in Codex** (or **Continue in Claude**) on any chat, the **→ Codex / → Claude** button on an agent, or "Codex, continuing from Claude" in the New menu. Mission Control writes what the last chat did to `docs/briefings/` (what you asked, files changed, commits, git state, the project's rules and the latest messages) and starts the other agent by reading it, in the same folder or worktree. Free: no model call.
+- **One chat list**: Codex chats show in each project's Chats with a **Codex** badge; open, resume, rename or summarize them like Claude's.
+- **Same rules for both**: Claude reads CLAUDE.md and Codex reads AGENTS.md. On a project's Overview, **Share with Codex** adds an AGENTS.md that points to CLAUDE.md.
+- **Codex usage**: its 5-hour and weekly limits sit in the top bar next to Claude's, and the Usage page shows Codex tokens by project and model.
+
 ## Features (v0.18)
 
 - **Workspaces**: save the open agents with their layout under a name ("Bot: daily review") and reopen them in one click. Each chat resumes where it left off. Find them under Agents → Workspaces, in the command palette, or on the empty Agents page.

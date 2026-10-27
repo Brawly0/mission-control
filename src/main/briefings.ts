@@ -36,7 +36,7 @@ function projectOf(r: Row): string {
 }
 
 /** docs/briefings/ in a real project folder, else Mission Control's own briefings folder. */
-function folderFor(projectPath: string): string {
+export function folderFor(projectPath: string): string {
   const root = projectPath ? projectRootOf(projectPath, homedir(), (dir) => existsSync(join(dir, '.git')) || existsSync(join(dir, 'CLAUDE.md'))) : null
   if (root && normalizePath(root) === normalizePath(projectPath) && existsSync(projectPath)) return join(projectPath, 'docs', 'briefings')
   return join(app.getPath('userData'), 'briefings')

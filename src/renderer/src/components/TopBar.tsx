@@ -12,6 +12,8 @@ interface Props {
   /** Name of the project "New session" starts in. */
   currentProject?: string
   rateLimit: RateLimitInfo | null
+  /** Codex's limits from its session files; null until Codex has run here. */
+  codexLimits: RateLimitInfo | null
   eco?: EcoSettings
   update: UpdateState
   /** Opens Settings → Spending, where Eco mode's details are. */
@@ -51,7 +53,7 @@ function UpdateButton({ update }: { update: UpdateState }) {
 }
 
 /** Search, Eco, plan limits, the New menu and Settings (your initials), across the top of every page. */
-export default function TopBar({ userName, currentProject, rateLimit, eco, update, onEcoSettings, onShortcut }: Props) {
+export default function TopBar({ userName, currentProject, rateLimit, codexLimits, eco, update, onEcoSettings, onShortcut }: Props) {
   const keyFor = useKeyFor()
   const ecoTip = eco?.enabled
     ? [
@@ -85,7 +87,8 @@ export default function TopBar({ userName, currentProject, rateLimit, eco, updat
         <Leaf size={15} />
         <span>Eco</span>
       </button>
-      <PlanMeter info={rateLimit} onOpen={() => onShortcut('goUsage')} />
+      <PlanMeter info={rateLimit} label={codexLimits ? 'Claude' : undefined} onOpen={() => onShortcut('goUsage')} />
+      {codexLimits && <PlanMeter info={codexLimits} label="Codex" reportedOnly onOpen={() => onShortcut('goUsage')} />}
       <UpdateButton update={update} />
       <div className="topbar-actions">
         <MenuButton
