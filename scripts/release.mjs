@@ -8,6 +8,8 @@
 // then publish it as the latest release. Uses the GitHub CLI's login (`gh auth token`) for this run only.
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import asar from '@electron/asar'
 
 const REPO = 'Brawly0/mission-control-releases'
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
@@ -30,6 +32,12 @@ gh('release', 'create', tag, '-R', REPO, '--draft', '--title', `Mission Control 
 console.log('Building and uploading…')
 const token = gh('auth', 'token').trim()
 execFileSync('npm', ['run', 'release'], { stdio: 'inherit', shell: process.platform === 'win32', env: { ...process.env, GH_TOKEN: token } })
+
+// Only application output belongs in the installer; local screenshots/logs stay out.
+const packaged = asar.listPackage(join('release', 'win-unpacked', 'resources', 'app.asar'))
+const unexpected = packaged.filter((name) => /^[/\\]out[/\\]/.test(name) && !/^[/\\]out[/\\](main|preload|renderer)([/\\]|$)/.test(name))
+if (unexpected.length) throw new Error(`Installer contains ${unexpected.length} unexpected output paths. Draft left unpublished.`)
+console.log('Installer contents checked: application output only.')
 
 const drafts = JSON.parse(gh('api', `repos/${REPO}/releases`, '--paginate')).filter((r) => r.tag_name === tag && r.draft)
 if (drafts.length !== 1) {
