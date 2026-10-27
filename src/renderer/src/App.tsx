@@ -250,7 +250,8 @@ export default function App() {
           projectName: project.name,
           projectPath: project.path,
           title: `${project.name} · ${wt.branch.replace(/^mc\//, '')}`,
-          worktree: wt
+          worktree: wt,
+          kind: project.meta.preferredAgent ?? 'claude'
         })
       } catch (e) {
         toast('error', 'Could not create a worktree', errorMessage(e))
@@ -316,7 +317,7 @@ export default function App() {
   const selected = projects.find((p) => p.path === selectedPath) ?? null
   const openTask = tasks.find((t) => t.id === openTaskId) ?? null
   const newInSelected = useCallback(() => {
-    if (selected) launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · new` })
+    if (selected) launch({ kind: selected.meta.preferredAgent ?? 'claude', cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · new` })
   }, [selected, launch])
 
   const resumeRecent = useCallback(
@@ -425,7 +426,7 @@ export default function App() {
       toast('info', `No briefing for ${p.name} yet`, 'One is saved automatically the next time a chat there runs out of room, or ask an agent with Write briefing.')
       return
     }
-    launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · from briefing`, args: [briefingPrompt(path)] })
+    launch({ kind: p.meta.preferredAgent ?? 'claude', cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · from briefing`, args: [briefingPrompt(path)] })
   }
 
   /**
@@ -614,7 +615,7 @@ export default function App() {
               onOpenAgent={focusAgent}
               onOpenProject={openProject}
               onResume={resumeRecent}
-              onNewSession={(p) => launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
+              onNewSession={(p) => launch({ kind: p.meta.preferredAgent ?? 'claude', cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
               onShortcut={(id) => runShortcutRef.current(id)}
               currentProject={selected?.name}
             />
@@ -734,7 +735,7 @@ export default function App() {
               git={git}
               showWorktrees={showWorktrees}
               onOpen={openProject}
-              onNewSession={(p) => launch({ cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
+              onNewSession={(p) => launch({ kind: p.meta.preferredAgent ?? 'claude', cwd: p.path, projectName: p.name, projectPath: p.path, title: `${p.name} · new` })}
               onNewProject={() => setNewProjectOpen(true)}
             />
           </div>

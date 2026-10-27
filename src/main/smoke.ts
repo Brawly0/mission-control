@@ -553,7 +553,9 @@ async function codexTour(win: BrowserWindow, outFile: string, dir: string): Prom
 
   // The Hand off button on the Codex agent starts Claude with the handoff.
   const before = (await js('window.__mcSmoke.agents().length')) as number
-  await js(`[...document.querySelectorAll('.agent-brief')].find(b => b.textContent.includes('Claude'))?.click()`)
+  await js(`document.querySelector('.agent-cell.focused button[aria-label^="Actions for"]')?.click()`)
+  await sleep(100)
+  await js(`[...document.querySelectorAll('.menu-item')].find(b => b.textContent.includes('Hand off to Claude'))?.click()`)
   let claude: { status: string; title: string } | null = null
   for (let i = 0; i < 40 && !claude; i++) {
     await sleep(500)
@@ -939,6 +941,17 @@ async function agentsTour(win: BrowserWindow, outFile: string, folder: string): 
   log('recap card:', await js(`document.querySelector('.recap')?.textContent?.slice(0, 300) ?? 'missing'`))
   log('session tools:', await js(`[...document.querySelectorAll('.session-tools button')].map(b => b.textContent).join(' | ')`))
 
+  // Verify the selector persists and survives switching away and back.
+  await js(`document.querySelector('[aria-label="Agent for new sessions"] button[title="Codex"]')?.click()`)
+  await sleep(500)
+  if (loadStore().projectMeta[normalizePath(project.path)]?.preferredAgent !== 'codex') throw new Error('Agent choice did not persist')
+  await openView(win, 'home')
+  await openView(win, 'project')
+  await sleep(200)
+  if (!(await js(`document.querySelector('[aria-label="Agent for new sessions"] button[title="Codex"]')?.getAttribute('aria-pressed') === 'true'`))) throw new Error('Agent choice lost on navigation')
+  await shot('selector')
+  log('agent selector: persistence and navigation passed')
+
   // Four agents "resumed" from the newest chats (PowerShell, so nothing runs in Claude).
   for (const s of sessions.slice(0, 4)) {
     await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(project.path)}, projectName: ${JSON.stringify(project.name)}, projectPath: ${JSON.stringify(project.path)}, title: ${JSON.stringify(s.title.slice(0, 48))}, kind: 'shell', args: ['--resume', ${JSON.stringify(s.id)}] })`)
@@ -972,15 +985,18 @@ async function agentsTour(win: BrowserWindow, outFile: string, folder: string): 
   await shot('resized-banner', 1200)
 
   // Minimize the second agent, then maximize the first.
-  await js(`document.querySelectorAll('.agent-cell:not(.stacked-hidden) .cell-controls button')[3]?.click()`)
+  await js(`document.querySelectorAll('.agent-cell:not(.stacked-hidden) button[aria-label^="Actions for"]')[1]?.click()`)
+  await sleep(200)
+  await shot('actions', 200)
+  await js(`[...document.querySelectorAll('.menu-item')].find(b => b.textContent === 'Minimize')?.click()`)
   await sleep(500)
   log('after minimize: dock items', await js(`document.querySelectorAll('.dock-item').length`), '| grid cells', await js(`document.querySelectorAll('.agent-stage.grid .agent-cell:not(.stacked-hidden)').length`))
   await shot('minimized', 1000)
-  await js(`document.querySelectorAll('.agent-cell:not(.stacked-hidden) .cell-controls button')[1]?.click()`)
+  await js(`document.querySelector('.agent-cell:not(.stacked-hidden) .cell-controls button[title^="Maximize"]')?.click()`)
   await sleep(600)
   log('maximized:', await js(`document.querySelector('.app')?.className`), '| sidebar shown:', await js(`getComputedStyle(document.querySelector('.sidebar')).display !== 'none'`))
   await shot('maximized', 1000)
-  await js(`document.querySelector('.agent-cell.focused .cell-controls button:nth-child(2)')?.click()`)
+  await js(`document.querySelector('.agent-cell.focused .cell-controls button[title^="Restore"]')?.click()`)
   await sleep(500)
   log('restored:', await js(`!document.querySelector('.app.agent-maximized')`))
   await js(`[...document.querySelectorAll('.agent-dock button')].find(b => b.textContent.includes('Restore all'))?.click()`)

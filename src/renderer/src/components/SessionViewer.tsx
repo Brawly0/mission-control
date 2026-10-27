@@ -44,7 +44,7 @@ export default function SessionViewer({ session, onResume, actions, onTitleChang
       <div className="session-viewer-head">
         <div className="session-viewer-title">
           <div className="ellipsis strong session-viewer-name">
-            {session.tool === 'codex' && <ToolBadge tool="codex" />}
+            <ToolBadge tool={session.tool ?? 'claude'} />
             {session.title}
             {session.titleSource === 'claude' && (
               <span title="Named by Claude. Rename it to use your own." className="named-by-claude">

@@ -30,6 +30,8 @@ export type ProjectStatus = 'active' | 'paused' | 'done'
 
 /** The user's own organization of a project, kept in the app's store. */
 export interface ProjectMeta {
+  /** Agent selected for new interactive sessions. */
+  preferredAgent?: AgentTool
   /** Your own name for the project; replaces the automatic one. */
   displayName?: string
   /** Your own icon and color; replace the automatic ones. */

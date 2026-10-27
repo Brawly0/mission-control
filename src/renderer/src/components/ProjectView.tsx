@@ -17,6 +17,7 @@ import {
   Layers,
   Loader2,
   MessagesSquare,
+  MoreHorizontal,
   Pencil,
   Play,
   RotateCcw,
@@ -37,7 +38,7 @@ import OverviewPanel from './OverviewPanel'
 import GitInitDialog from './GitInitDialog'
 import IdentityDialog from './IdentityDialog'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
-import { Avatar, Button, EmptyState, IconButton, MenuButton, ToolBadge } from './ui'
+import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented, ToolBadge } from './ui'
 import { PlanShare } from '../planRate'
 import { unclearTitle } from '@shared/projectLook'
 import { useToast } from '../toast'
@@ -125,12 +126,18 @@ export default function ProjectView({ project, projects, git, visible, groups, f
     : sessions
 
   const base = { cwd: project.path, projectName: project.name, projectPath: project.path }
-  const newSession = () => onLaunch({ ...base, title: `${project.name} · new` })
+  const preferredAgent = project.meta.preferredAgent ?? 'claude'
+  const chooseAgent = async (preferredAgent: AgentTool) => {
+    try {
+      await window.mc.setProjectMeta(project.path, { preferredAgent })
+      onChanged()
+    } catch (e) { toast('error', 'Could not save agent choice', errorMessage(e)) }
+  }
+  const newSession = () => onLaunch({ ...base, kind: preferredAgent, title: `${project.name} · new` })
   const newCodex = () => onLaunch({ ...base, kind: 'codex', title: `${project.name} · Codex` })
   const hasCodex = sessions.some((s) => s.tool === 'codex')
   const hasClaude = sessions.some((s) => s.tool !== 'codex')
-  // Badges only matter when both agents have chats here.
-  const mixed = hasCodex && hasClaude
+
   const saveTitle = async () => {
     if (!renaming) return
     const { id, draft } = renaming
@@ -183,7 +190,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
   const openMany = (count: number) => {
     const list = sessions.filter((s) => !openSessions.has(s.id)).slice(0, count)
     if (!list.length) return toast('info', 'Those chats are already open', 'Find them in Agents.')
-    if (list.length > 8 && !window.confirm(`Open ${list.length} chats as agents? Each one runs its own Claude, and resuming a long chat re-reads it, which uses your plan.`)) return
+    if (list.length > 8 && !window.confirm(`Open ${list.length} chats as agents? Each one runs its own agent, and resuming a long chat re-reads it, which uses your plan.`)) return
     onOpenMany(list)
   }
   const closedCount = sessions.filter((s) => !openSessions.has(s.id)).length
@@ -284,8 +291,11 @@ export default function ProjectView({ project, projects, git, visible, groups, f
         </div>
 
         <div className="page-actions">
+          <div role="group" aria-label="Agent for new sessions">
+            <Segmented<AgentTool> value={preferredAgent} onChange={chooseAgent} options={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }]} />
+          </div>
           <div className="split-btn">
-            <Button variant="primary" icon={Play} onClick={newSession} title={withKey('New Claude session', keyFor('newSession'))}>
+            <Button variant="primary" icon={Play} onClick={newSession} title={withKey(`New ${TOOL_NAME[preferredAgent]} session`, keyFor('newSession'))}>
               New session
             </Button>
             <MenuButton
@@ -296,7 +306,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                 </button>
               )}
               items={[
-                { label: 'New session', hint: 'Claude, in the project folder', icon: Play, onSelect: newSession },
+                { label: 'New Claude session', hint: 'Claude, in the project folder', icon: Play, onSelect: () => onLaunch({ ...base, kind: 'claude', title: `${project.name} · Claude` }) },
                 { label: 'New Codex session', hint: 'Codex CLI, in the project folder', icon: Hexagon, onSelect: newCodex },
                 {
                   label: 'Codex, continuing from Claude',
@@ -326,7 +336,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                   onSelect: onStartFromBriefing
                 },
                 {
-                  label: 'Continue last chat',
+                  label: 'Continue last Claude chat',
                   icon: RotateCcw,
                   disabled: project.sessionCount === 0,
                   onSelect: () => onLaunch({ ...base, title: `${project.name} · continued`, args: ['--continue'] })
@@ -335,30 +345,16 @@ export default function ProjectView({ project, projects, git, visible, groups, f
               ]}
             />
           </div>
-          <div className="icon-group">
-            <IconButton icon={SquareTerminal} label={withKey('Open Claude in Windows Terminal', keyFor('openTerminal'))} onClick={() => window.mc.openExternalTerminal(project.path, [])} />
-            <IconButton icon={Code2} label={withKey('Open in VS Code', keyFor('openVSCode'))} onClick={() => window.mc.openInVSCode(project.path)} />
-            <IconButton icon={FolderOpen} label={withKey('Open in Explorer', keyFor('openExplorer'))} onClick={() => window.mc.openInExplorer(project.path)} />
-            <IconButton
-              icon={Star}
-              label={withKey(project.pinned ? 'Unpin' : 'Pin', keyFor('pinProject'))}
-              active={project.pinned}
-              onClick={async () => {
-                await window.mc.togglePin(project.path)
-                onChanged()
-              }}
-            />
-            {project.manual && (
-              <IconButton
-                icon={Trash2}
-                label="Remove from list"
-                onClick={async () => {
-                  await window.mc.removeProject(project.path)
-                  onChanged()
-                }}
-              />
-            )}
-          </div>
+          <MenuButton align="right"
+            trigger={(toggle) => <IconButton icon={MoreHorizontal} label="Project actions" onClick={toggle} />}
+            items={[
+              { label: 'Open in VS Code', icon: Code2, onSelect: () => window.mc.openInVSCode(project.path) },
+              { label: 'Open in Explorer', icon: FolderOpen, onSelect: () => window.mc.openInExplorer(project.path) },
+              { label: 'Open Claude in Windows Terminal', icon: SquareTerminal, onSelect: () => window.mc.openExternalTerminal(project.path, []) },
+              { label: project.pinned ? 'Unpin project' : 'Pin project', icon: Star, onSelect: async () => { await window.mc.togglePin(project.path); onChanged() } },
+              ...(project.manual ? [{ label: 'Remove from list', icon: Trash2, onSelect: async () => { await window.mc.removeProject(project.path); onChanged() } }] : [])
+            ]}
+          />
         </div>
       </header>
 
@@ -454,7 +450,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
                       ) : (
                         <div className="session-title" title={s.firstPrompt ? `${s.title}\n\n${s.firstPrompt}` : s.title} onDoubleClick={() => setRenaming({ id: s.id, draft: s.title })}>
                           {openSessions.has(s.id) && <span className="session-open" title="Open as an agent" />}
-                          {(mixed || s.tool === 'codex') && <ToolBadge tool={s.tool ?? 'claude'} />}
+                          <ToolBadge tool={s.tool ?? 'claude'} />
                           <span className="ellipsis">{s.title}</span>
                           {dated(s) && <span className="session-date">{dated(s)}</span>}
                           {s.titleSource === 'claude' && <Sparkles size={11} className="named-by-claude" aria-label="Named by Claude" />}

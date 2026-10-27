@@ -143,6 +143,10 @@
 - [x] Codex usage: its 5-hour and weekly limits in the top bar next to Claude's, tokens by project and model on the Usage page
 - [x] Self-test MC_SMOKE_CODEX (one short Codex turn and one short Claude turn)
 
+## v0.21: UI clarity
+- [x] Visible Claude / Codex selector beside New session, saved per project; new sessions, shortcuts, worktrees and briefing starts use the choice
+- [x] Always label Claude and Codex chats and agents; simplify project and agent headers with secondary actions in menus (ADR 0021)
+
 ## Next ideas
 - [ ] Codex in tasks: headless runs (`codex exec --json`), chains (Claude builds, Codex reviews) and the queue
 - [ ] Codex chats in full-text search; Send to several agents for Codex

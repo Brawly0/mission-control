@@ -1,9 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
+import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, Maximize2, Minimize2, MoreHorizontal, Minus, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { displayStatus } from '../agentStatus'
-import { elapsed } from '../util'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
@@ -124,8 +123,6 @@ function TabTitle({ agent, onRename, editRequest }: { agent: Agent; onRename: (t
 
 export default function AgentsView(props: Props) {
   const { agents, activeId, layout, maximized, onMaximize, visible, lastOutput, git, contexts, warnAt, onSelect, onClose, onRename, onExit, onLayout, onNew, onHandOff } = props
-  // Name badges only matter while Claude and Codex agents are open side by side (Codex always gets one).
-  const mixed = agents.some((a) => a.kind === 'codex') && agents.some((a) => a.kind === 'claude')
   const [reviewOpen, setReviewOpen] = useState(false)
   const [renameRequest, setRenameRequest] = useState(0)
   const [minimized, setMinimized] = useState<Set<string>>(new Set())
@@ -184,7 +181,7 @@ export default function AgentsView(props: Props) {
   if (agents.length === 0) {
     return (
       <EmptyState icon={Bot} title="No agents open">
-        <p>Start Claude in a project and it runs here, live. Run several side by side in a grid, or open a project’s chats all at once from its Chats tab.</p>
+        <p>Start Claude or Codex in a project and it runs here, live. Run several side by side in a grid, or open a project’s chats all at once from its Chats tab.</p>
         <Button variant="primary" icon={Plus} onClick={onNew}>
           New session in current project
         </Button>
@@ -279,7 +276,7 @@ export default function AgentsView(props: Props) {
               >
                 <span className={`dot ${st.cls}`} />
                 {a.kind === 'shell' && <Terminal size={12} className="muted" />}
-                {a.kind !== 'shell' && (mixed || a.kind === 'codex') && <ToolBadge tool={a.kind} />}
+                {a.kind !== 'shell' && <ToolBadge tool={a.kind} />}
                 {a.worktree && <GitBranch size={12} className="tone-accent" />}
                 <TabTitle agent={a} onRename={(t) => onRename(a.id, t)} editRequest={a.id === active?.id ? renameRequest : undefined} />
                 <button
@@ -390,7 +387,7 @@ export default function AgentsView(props: Props) {
                 >
                   <div className="agent-cell-head" onDoubleClick={(e) => (e.target as HTMLElement).closest('button') || toggleMax(a.id)} title="Double-click to maximize or restore">
                     <Avatar name={a.projectName} path={a.projectPath} size={20} />
-                    {a.kind !== 'shell' && (mixed || a.kind === 'codex') && <ToolBadge tool={a.kind} />}
+                    {a.kind !== 'shell' && <ToolBadge tool={a.kind} />}
                     <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
                     {a.worktree ? (
                       <span className="chip chip-accent" title={a.worktree.path}>
@@ -415,44 +412,17 @@ export default function AgentsView(props: Props) {
                         onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
                       />
                     )}
-                    {a.kind === 'claude' && !a.exited && (
-                      <button
-                        className="agent-brief"
-                        disabled={st.cls === 'working'}
-                        title={st.cls === 'working' ? 'Wait until Claude finishes' : withKey('Ask Claude to write a session briefing for the next session', keyFor('writeBriefing'))}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onSelect(a.id)
-                          window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
-                        }}
-                      >
-                        <FileText size={11} /> Briefing
-                      </button>
-                    )}
-                    {a.kind !== 'shell' && !a.exited && (
-                      <button
-                        className="agent-brief"
-                        disabled={st.cls === 'working' || !a.sessionId}
-                        title={
-                          st.cls === 'working'
-                            ? `Wait until ${a.kind === 'codex' ? 'Codex' : 'Claude'} finishes`
-                            : !a.sessionId
-                              ? 'Send a first message, then hand off'
-                              : `Start ${a.kind === 'codex' ? 'Claude' : 'Codex'} with a handoff of this chat: what was asked, what changed, git and the project's rules`
-                        }
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onHandOff(a)
-                        }}
-                      >
-                        <ArrowRightLeft size={11} /> {a.kind === 'codex' ? 'Claude' : 'Codex'}
-                      </button>
-                    )}
-                    <span className="muted small agent-elapsed">{elapsed(a.startedAt)}</span>
+                    <MenuButton portal align="right"
+                      trigger={(toggle) => <IconButton icon={MoreHorizontal} label={`Actions for ${a.title}`} onClick={() => { onSelect(a.id); toggle() }} />}
+                      items={[
+                        ...(a.kind === 'claude' && !a.exited ? [{ label: 'Write briefing', icon: FileText, disabled: st.cls === 'working', onSelect: () => { onSelect(a.id); window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' })) } }] : []),
+                        ...(a.kind !== 'shell' && !a.exited ? [{ label: `Hand off to ${a.kind === 'codex' ? 'Claude' : 'Codex'}`, icon: ArrowRightLeft, disabled: st.cls === 'working' || !a.sessionId, onSelect: () => onHandOff(a) }] : []),
+                        { label: 'Rename session', icon: FileText, onSelect: () => { onSelect(a.id); setRenameRequest(Date.now()) } },
+                        { label: 'Minimize', icon: Minus, onSelect: () => minimize(a.id) },
+                        { label: 'Close session', hint: 'Stops the process', icon: X, onSelect: () => onClose(a.id) }
+                      ]}
+                    />
                     <span className="cell-controls">
-                      <button title={withKey('Minimize', keyFor('minimizeAgent'))} onClick={(e) => { e.stopPropagation(); minimize(a.id) }}>
-                        <Minus size={13} />
-                      </button>
                       <button title={withKey(isMax ? 'Restore' : 'Maximize (fills the window)', keyFor('maximizeAgent'))} onClick={(e) => { e.stopPropagation(); toggleMax(a.id) }}>
                         {isMax ? <Shrink size={12} /> : <Maximize2 size={12} />}
                       </button>

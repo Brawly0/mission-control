@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { avatarHue, initials } from '../util'
@@ -98,14 +99,15 @@ export interface MenuItem {
 }
 
 /** A button that opens a small dropdown menu. */
-export function MenuButton({ trigger, items, align = 'left' }: { trigger: (open: () => void) => ReactNode; items: MenuItem[]; align?: 'left' | 'right' }) {
+export function MenuButton({ trigger, items, align = 'left', portal = false }: { portal?: boolean; trigger: (open: () => void) => ReactNode; items: MenuItem[]; align?: 'left' | 'right' }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
     const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+      if (!ref.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false)
     }
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     window.addEventListener('mousedown', close)
@@ -116,31 +118,23 @@ export function MenuButton({ trigger, items, align = 'left' }: { trigger: (open:
     }
   }, [open])
 
+  const rect = ref.current?.getBoundingClientRect()
+  const menu = open && (
+    <div ref={menuRef} className={`menu menu-${align}`} role="menu"
+      style={portal && rect ? { position: 'fixed', top: Math.min(rect.bottom + 4, window.innerHeight - 240), left: Math.max(8, Math.min(rect.right - 260, window.innerWidth - 268)), right: 'auto', minWidth: 0, width: 260, zIndex: 1000 } : undefined}>
+      {items.map((item) => (
+        <button key={item.label} className="menu-item" role="menuitem" disabled={item.disabled}
+          onClick={() => { setOpen(false); item.onSelect() }}>
+          {item.icon && <item.icon size={15} strokeWidth={1.9} />}
+          <span className="menu-label">{item.label}{item.hint && <span className="menu-hint">{item.hint}</span>}</span>
+        </button>
+      ))}
+    </div>
+  )
   return (
     <div className="menu-anchor" ref={ref}>
       {trigger(() => setOpen((o) => !o))}
-      {open && (
-        <div className={`menu menu-${align}`} role="menu">
-          {items.map((item) => (
-            <button
-              key={item.label}
-              className="menu-item"
-              role="menuitem"
-              disabled={item.disabled}
-              onClick={() => {
-                setOpen(false)
-                item.onSelect()
-              }}
-            >
-              {item.icon && <item.icon size={15} strokeWidth={1.9} />}
-              <span className="menu-label">
-                {item.label}
-                {item.hint && <span className="menu-hint">{item.hint}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {portal ? createPortal(menu, document.body) : menu}
     </div>
   )
 }
@@ -149,7 +143,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
   return (
     <div className="segmented">
       {options.map((o) => (
-        <button key={o.value} className={value === o.value ? 'active' : ''} onClick={() => onChange(o.value)} title={o.label}>
+        <button key={o.value} aria-pressed={value === o.value} className={value === o.value ? 'active' : ''} onClick={() => onChange(o.value)} title={o.label}>
           {o.icon && <o.icon size={14} strokeWidth={2} />}
           <span>{o.label}</span>
         </button>
