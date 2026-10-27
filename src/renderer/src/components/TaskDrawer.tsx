@@ -17,6 +17,7 @@ import {
   SquareTerminal,
   Terminal,
   Trash2,
+  Users,
   Wrench,
   X,
   XCircle,
@@ -27,6 +28,7 @@ import type { Agent } from '../types'
 import { elapsed, errorMessage, formatCost } from '../util'
 import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
+import TaskTeamPanel from './TaskTeamPanel'
 import { Avatar, Button, IconButton, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 import { dueFrom, dueInputs, dueLabel } from '../due'
@@ -78,13 +80,25 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
   const [prompt, setPrompt] = useState(task.prompt)
   const [title, setTitle] = useState(task.title)
   const [followUp, setFollowUp] = useState('')
+  const [planning, setPlanning] = useState(false)
   const run = task.run
   const running = task.column === 'running'
-  const editable = task.column === 'todo'
+  const managed = !!task.team || !!task.teamParentId
+  const editable = task.column === 'todo' && !managed
+  const canChanges = !!task.worktree && (!task.team || task.team.phase === 'review')
   const deps = dependencyState(task, all)
   const before = (task.dependsOn ?? []).map((id) => all.find((t) => t.id === id)).filter((t): t is Task => !!t)
   const after = dependentsOf(task.id, all)
-  const canFollowUp = task.mode === 'headless' && !running && !!run?.sessionId && !!run.finishedAt
+  const canFollowUp = !managed && task.mode === 'headless' && !running && !!run?.sessionId && !!run.finishedAt
+
+  const splitTeam = async () => {
+    setPlanning(true)
+    try {
+      await window.mc.updateTask(task.id, { title: title.trim() || task.title, prompt })
+      await window.mc.planTaskTeam(task.id)
+    } catch (e) { toast('error', 'Could not split the task into agents', errorMessage(e)) }
+    finally { setPlanning(false) }
+  }
 
   const sendFollowUp = async () => {
     try {
@@ -105,6 +119,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
   useEffect(() => {
     setPrompt(task.prompt)
     setTitle(task.title)
+    setTab('activity')
   }, [task.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -143,8 +158,9 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
             value={dueInputs(task).date}
             onChange={(e) => void window.mc.updateTask(task.id, dueFrom(e.target.value, dueInputs(task).time))}
             aria-label="Due date"
+            disabled={managed}
           />
-          {task.dueAt && (
+          {task.dueAt && !managed && (
             <button className="due-clear" title="Remove due date" onClick={() => void window.mc.updateTask(task.id, { dueAt: undefined, dueHasTime: undefined })}>
               ×
             </button>
@@ -158,17 +174,20 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
       </div>
 
       <div className="drawer-actions">
-        {task.column === 'todo' && (deps.kind === 'none' || deps.kind === 'ready') && (
+        {!managed && task.column === 'todo' && (deps.kind === 'none' || deps.kind === 'ready') && (
           <Button variant="primary" icon={Play} onClick={() => onStart(task)}>
             Start
           </Button>
         )}
-        {task.column === 'todo' && (deps.kind === 'waiting' || deps.kind === 'blocked') && (
+        {!managed && task.column === 'todo' && (deps.kind === 'waiting' || deps.kind === 'blocked') && (
           <Button icon={Play} onClick={() => onStart(task)} title="Start now without waiting for the tasks before it">
             Run anyway
           </Button>
         )}
-        {running && task.mode === 'headless' && (
+        {!managed && task.column === 'todo' && !run && <Button icon={planning ? Loader2 : Users} disabled={planning || !prompt.trim()} onClick={() => void splitTeam()} title="Inspect the task and preview a team sized to the work. Uses the selected agent’s plan.">
+          {planning ? 'Planning…' : 'Split into agents'}
+        </Button>}
+        {!managed && running && task.mode === 'headless' && (
           <Button icon={Square} onClick={() => onStop(task)}>
             Stop
           </Button>
@@ -178,24 +197,24 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
             Open agent
           </Button>
         )}
-        {!running && run?.sessionId && (
+        {!managed && !running && run?.sessionId && (
           <Button variant="primary" icon={Terminal} onClick={() => onContinue(task)} title="Open this run's chat in an agent terminal to follow up">
             Continue in terminal
           </Button>
         )}
-        {!running && run && (
+        {!managed && !running && run && (
           <Button icon={RotateCcw} onClick={() => onStart(task)} title="Run the same prompt again">
             Run again
           </Button>
         )}
-        {task.column === 'review' && (
+        {!task.teamParentId && task.column === 'review' && (!task.team || task.team.phase === 'review') && (
           <Button icon={CheckCircle2} onClick={() => onDone(task)}>
             Mark done
           </Button>
         )}
         <span className="spacer" />
-        {task.column !== 'done' && <IconButton icon={Link2} label="Add a task that runs after this one" onClick={() => onAddAfter(task)} />}
-        <IconButton icon={Trash2} label="Delete task" onClick={() => onDelete(task)} disabled={running && task.mode === 'headless'} />
+        {!task.teamParentId && task.column !== 'done' && <IconButton icon={Link2} label="Add a task that runs after this one" onClick={() => onAddAfter(task)} />}
+        {!task.teamParentId && <IconButton icon={Trash2} label="Delete task" onClick={() => onDelete(task)} disabled={running && task.mode === 'headless' || task.team?.phase === 'planning'} />}
       </div>
 
       {run && (
@@ -228,17 +247,18 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         <button className={tab === 'activity' ? 'active' : ''} onClick={() => setTab('activity')}>
           Task &amp; activity
         </button>
-        <button className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')} disabled={!task.worktree} title={task.worktree ? '' : 'Only for tasks run in a worktree'}>
+        <button className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')} disabled={!canChanges} title={task.team && !canChanges ? 'Combined changes become available when integration finishes.' : task.worktree ? '' : 'Only for tasks run in a worktree'}>
           Changes
         </button>
       </nav>
 
-      {tab === 'changes' && task.worktree ? (
+      {tab === 'changes' && canChanges && task.worktree ? (
         <div className="drawer-changes">
           <ChangesPanel path={task.worktree.path} worktree={task.worktree} visible onChanged={onGitChanged} />
         </div>
       ) : (
         <div className="drawer-body scroll">
+          {managed && <TaskTeamPanel task={task} all={all} onOpenTask={onOpenTask} />}
           {(before.length > 0 || after.length > 0) && (
             <section>
               <h3>
@@ -319,7 +339,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
                   <code className="ellipsis">{run.checks.command}</code>
                   {run.checks.exitCode !== undefined && <span className="muted small">exit {run.checks.exitCode}</span>}
                   <span className="spacer" />
-                  {!running && run.checks.status !== 'running' && (
+                  {!managed && !running && run.checks.status !== 'running' && (
                     <Button size="sm" variant="ghost" icon={RotateCcw} onClick={rerunChecks}>
                       Re-run checks
                     </Button>
@@ -329,7 +349,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
               </div>
             </section>
           )}
-          {!run?.checks && run?.finishedAt && !running && !run.error && task.mode === 'headless' && (
+          {!managed && !run?.checks && run?.finishedAt && !running && !run.error && task.mode === 'headless' && (
             <p className="muted small">
               No checks ran. Set a check command (like <code>npm test</code>) in the project’s Overview tab.{' '}
               <button className="link" onClick={rerunChecks}>

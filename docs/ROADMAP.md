@@ -182,6 +182,13 @@
 - [x] Refresh public download documentation, screenshots and issue form
 - [x] Native isolated install/upgrade/uninstall checks; gate publishing on packaged startup, process cleanup and update download verification
 
+## v0.26: Agent teams
+- [x] Split a task into one to six scoped assignments using its selected provider; preview the plan before launch
+- [x] Run coordinated workers in one isolated worktree with ownership/dependency scheduling and live grouped progress
+- [x] Pause/resume teams, preserve completed work and retry interrupted runs with total Claude cap accounting
+- [x] Final integration, configured checks and one reviewable branch; no automatic merge or release
+- [x] Mocked lifecycle tests and a free native UI/IPC/process smoke test in both themes
+
 ## Next ideas
 - [ ] "Run this for me" for commands an agent can't run (works for both agents)
 - [ ] Prompt snippets you can insert into any agent

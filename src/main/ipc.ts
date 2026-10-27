@@ -28,6 +28,10 @@ import type {
 } from '../shared/types'
 import {
   createTask,
+  assertTeamWorktreeIdle,
+  planTaskTeam,
+  startTaskTeam,
+  stopTaskTeam,
   deleteTask,
   followUpTask,
   rerunChecks,
@@ -75,7 +79,7 @@ export const uiSummary = (): { agents: number; attention: number } => summary
 export function registerIpc(): void {
   ipcMain.handle('projects:list', () => listProjects())
   ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
-  ipcMain.handle('review:merge', (_e, wt: WorktreeInfo, fingerprint: string) => mergeReviewedWorktree(wt, fingerprint))
+  ipcMain.handle('review:merge', (_e, wt: WorktreeInfo, fingerprint: string) => { assertTeamWorktreeIdle(wt.path); return mergeReviewedWorktree(wt, fingerprint) })
   ipcMain.handle('review:get', (_e, path: string, base?: string) => projectReview(path, base))
   ipcMain.handle('review:checks', (_e, path: string, base?: string) => startReviewChecks(path, base))
   ipcMain.handle('review:agent', (_e, path: string, base?: string, tool?: 'claude' | 'codex') => startCodeReview(path, base, tool))
@@ -232,9 +236,10 @@ export function registerIpc(): void {
   ipcMain.handle('git:infoMany', (_e, paths: string[]) => gitInfoMany(paths))
   ipcMain.handle('git:createWorktree', (_e, projectPath: string) => createWorktree(projectPath))
   ipcMain.handle('git:changes', (_e, path: string, base?: string) => getChanges(path, base))
-  ipcMain.handle('git:commitAll', (_e, path: string, message: string) => commitAll(path, message))
-  ipcMain.handle('git:mergeWorktree', (_e, wt: WorktreeInfo) => mergeWorktree(wt))
+  ipcMain.handle('git:commitAll', (_e, path: string, message: string) => { assertTeamWorktreeIdle(path); return commitAll(path, message) })
+  ipcMain.handle('git:mergeWorktree', (_e, wt: WorktreeInfo) => { assertTeamWorktreeIdle(wt.path); return mergeWorktree(wt) })
   ipcMain.handle('git:removeWorktree', async (_e, wt: WorktreeInfo) => {
+    assertTeamWorktreeIdle(wt.path)
     // Deleting work is permanent, so the confirmation lives here rather than in the UI.
     const { response } = await dialog.showMessageBox(getMainWindow()!, {
       type: 'warning',
@@ -246,6 +251,7 @@ export function registerIpc(): void {
       detail: `${wt.path}\n\nAgents running in it are stopped. Any changes in it that were not merged are lost for good.`
     })
     if (response !== 0) return false
+    assertTeamWorktreeIdle(wt.path)
     await killTerminalsIn(wt.path)
     await removeWorktree(wt)
     return true
@@ -308,6 +314,9 @@ export function registerIpc(): void {
 
   ipcMain.handle('tasks:list', () => listTasks())
   ipcMain.handle('tasks:create', (_e, t: NewTask) => createTask(t))
+  ipcMain.handle('tasks:team:plan', (_e, id: string) => planTaskTeam(id))
+  ipcMain.handle('tasks:team:start', (_e, id: string) => startTaskTeam(id))
+  ipcMain.handle('tasks:team:stop', (_e, id: string) => stopTaskTeam(id))
   ipcMain.handle('tasks:update', (_e, id: string, patch: Partial<Task>) => updateTask(id, patch))
   ipcMain.handle('tasks:delete', (_e, id: string) => deleteTask(id))
   ipcMain.handle('tasks:start', (_e, id: string) => startTask(id))

@@ -245,6 +245,7 @@ export default function App() {
   }, [refreshGit])
 
   const { tasks, tasksRef, startTask, saveAsTemplate, continueTask } = useTasks({ agents, launch, toast })
+  const boardTasks = useMemo(() => tasks.filter(t => !t.teamParentId), [tasks])
 
   const launchWorktree = useCallback(
     async (project: Project) => {
@@ -399,7 +400,7 @@ export default function App() {
   const allInbox = inboxItems({
     now: Date.now(),
     agents,
-    tasks,
+    tasks: boardTasks,
     rateLimit,
     planAlertPercent: appSettings?.planAlertPercent ?? 80,
     budgets,
@@ -594,8 +595,8 @@ export default function App() {
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
         inbox={inboxBadge}
         taskCounts={{
-          running: tasks.filter((t) => t.column === 'running').length,
-          review: tasks.filter((t) => t.column === 'review').length
+          running: boardTasks.filter((t) => t.column === 'running').length,
+          review: boardTasks.filter((t) => t.column === 'review').length
         }}
       />
       <main className="main">
@@ -629,7 +630,7 @@ export default function App() {
               agents={agents}
               lastOutput={lastOutput}
               projects={projects}
-              tasks={tasks}
+              tasks={boardTasks}
               visible={view === 'home'}
               userName={userName}
               rateLimit={rateLimit}
@@ -767,7 +768,7 @@ export default function App() {
               onChanged={refreshProjects}
               onTerminal={openProjectTerminal}
               projects={projects}
-              tasks={tasks}
+              tasks={boardTasks}
               agents={agents}
               git={git}
               showWorktrees={showWorktrees}
@@ -842,10 +843,10 @@ export default function App() {
             onContinue={continueTask}
             onOpenAgent={focusAgent}
             onDone={(t) => window.mc.updateTask(t.id, { column: 'done', order: Date.now() })}
-            onDelete={(t) => {
+            onDelete={async (t) => {
               if (window.confirm(`Delete the task "${t.title}"?`)) {
-                window.mc.deleteTask(t.id)
-                setOpenTaskId(null)
+                try { await window.mc.deleteTask(t.id); setOpenTaskId(null) }
+                catch (e) { toast('error', 'Could not delete the task', errorMessage(e)) }
               }
             }}
             onGitChanged={refreshGit}
@@ -881,7 +882,7 @@ export default function App() {
       )}
       {composerOpen && (
         <TaskComposer
-          tasks={tasks}
+          tasks={boardTasks}
           projects={projects}
           git={git}
           defaultProject={taskFilter || selectedPath || undefined}
@@ -896,6 +897,11 @@ export default function App() {
             setView('tasks')
             const task = await window.mc.createTask({ ...input, queued: then === 'queue' })
             if (then === 'start') startTask(task)
+            if (then === 'team') {
+              setOpenTaskId(task.id)
+              try { await window.mc.planTaskTeam(task.id) }
+              catch (e) { toast('error', 'Could not split the task into agents', errorMessage(e)) }
+            }
             if (then === 'queue') toast('info', 'Added to the queue', queue?.enabled ? task.title : 'Turn on “Auto-run queue” to start it automatically.')
           }}
           onSaveTemplate={saveAsTemplate}

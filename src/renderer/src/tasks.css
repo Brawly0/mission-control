@@ -225,6 +225,11 @@
 }
 
 /* ---------- dialogs ---------- */
+.team-compose-action { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; margin: 0 0 14px; background: var(--accent-soft); border: 1px solid var(--border); border-radius: var(--radius); }
+.team-compose-action > div { flex: 1; min-width: 180px; }
+.team-compose-action strong { font-size: 12px; }
+.team-compose-action p { margin: 5px 0 0; }
+.composer .dialog-foot { flex-wrap: wrap; }
 .overlay .dialog {
   align-self: flex-start;
 }

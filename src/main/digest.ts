@@ -24,7 +24,7 @@ export async function buildDigest(which: 'yesterday' | 'today'): Promise<Digest>
   const moved = new Map(movedChatList().map((m) => [m.id, m.path]))
   const topChats = usage.topChats.map((c) => ({ ...c, projectPath: moved.get(c.sessionId) ?? c.projectPath, title: loadStore().chatTitles[c.sessionId] || loadStore().chatAiNames[c.sessionId] || c.title }))
 
-  const tasks = listTasks()
+  const tasks = listTasks().filter(t => !t.teamParentId)
   const finished = tasks.filter((t) => t.run?.finishedAt && t.run.finishedAt >= from && t.run.finishedAt < to)
   const endOfToday = startOfDay(now, 1)
   const open = tasks.filter((t) => t.column !== 'done' && t.dueAt)

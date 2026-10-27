@@ -21,6 +21,7 @@ import {
   Repeat,
   Square,
   SquareTerminal,
+  Users,
   Zap, CalendarClock } from 'lucide-react'
 import type { Project, QueueStatus, Task, TaskColumn } from '@shared/types'
 import type { Agent } from '../types'
@@ -86,7 +87,7 @@ function TaskCard({
   return (
     <article
       className={`task-card ${running ? 'is-running' : ''} ${run?.error && !running ? 'has-error' : ''} ${agentStatus?.cls === 'needs-input' ? 'needs-you' : ''}`}
-      draggable={!running || task.mode === 'interactive'}
+      draggable={!task.team && (!running || task.mode === 'interactive')}
       onDragStart={onDragStart}
       onClick={() => onOpen(task)}
     >
@@ -98,6 +99,7 @@ function TaskCard({
           </span>
         )}
         {task.templateId && <Repeat size={12} className="muted template-mark" aria-label="From a template" />}
+        {task.team && <Users size={14} aria-label="Agent team" />}
       </div>
       <div className="task-meta">
         <Avatar name={task.projectName} path={task.projectPath} size={18} />
@@ -117,6 +119,8 @@ function TaskCard({
           </span>
         )}
       </div>
+
+      {task.team && <div className="dep-chip" role="status"><Users size={12} /><span className="ellipsis">{task.team.error || task.team.holdReason || (task.team.phase === 'planning' ? 'Planning the team…' : task.team.phase === 'ready' ? `${task.team.plan?.agents.length ?? 0} agents ready to start` : task.team.phase === 'review' ? 'Team finished · review combined changes' : run?.activity || task.team.phase)}</span></div>}
 
       {task.column === 'todo' && deps.kind !== 'none' && (
         <div className={`dep-chip dep-${deps.kind}`} title={(task.dependsOn ?? []).map((id) => all.find((t) => t.id === id)?.title ?? '(deleted)').join('\n')}>
@@ -177,7 +181,8 @@ function TaskCard({
           {run?.costUsd ? ' · ' : ''}
           {run?.finishedAt ? `finished ${timeAgo(run.finishedAt)}` : `added ${timeAgo(task.createdAt)}`}
         </span>
-        {task.column === 'todo' && task.mode === 'headless' && (
+        {task.team && <Button size="sm" icon={Users} onClick={() => onOpen(task)}>Open team</Button>}
+        {!task.team && task.column === 'todo' && task.mode === 'headless' && (
           <Button
             size="sm"
             variant="ghost"
@@ -188,7 +193,7 @@ function TaskCard({
             {task.queued ? 'Unqueue' : 'Queue'}
           </Button>
         )}
-        {task.column === 'todo' && !waiting && (
+        {!task.team && task.column === 'todo' && !waiting && (
           <Button size="sm" variant="primary" icon={Play} onClick={() => onStart(task)}>
             Start
           </Button>
@@ -198,7 +203,7 @@ function TaskCard({
             {deps.kind === 'blocked' ? 'Blocked' : 'Waiting'}
           </Button>
         )}
-        {running && task.mode === 'headless' && (
+        {!task.team && running && task.mode === 'headless' && (
           <Button size="sm" variant="ghost" icon={Square} onClick={() => onStop(task)}>
             Stop
           </Button>
@@ -219,7 +224,7 @@ export default function TasksView(props: Props) {
   const keyFor = useKeyFor()
 
   const visible = useMemo(
-    () => tasks.filter((t) => !projectFilter || t.projectPath.toLowerCase() === projectFilter.toLowerCase()),
+    () => tasks.filter((t) => !t.teamParentId && (!projectFilter || t.projectPath.toLowerCase() === projectFilter.toLowerCase())),
     [tasks, projectFilter]
   )
   const projectOptions = projects.filter((p) => !p.worktree)
@@ -240,7 +245,7 @@ export default function TasksView(props: Props) {
     setDragOver(null)
     const id = e.dataTransfer.getData('text/task-id')
     const task = tasks.find((t) => t.id === id)
-    if (!task || task.column === column) return
+    if (!task || task.team || task.teamParentId || task.column === column) return
     // Only Start moves a task into Running; a headless run can't be dragged out while it works.
     if (column === 'running') return
     props.onMove(task, column)

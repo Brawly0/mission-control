@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, X, Zap, CalendarClock } from 'lucide-react'
+import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTerminal, Users, X, Zap, CalendarClock } from 'lucide-react'
 import type { AgentTool, GitInfo, NewTask, Project, Task, TaskMode, TaskPermission } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 import { dueFrom, dueInputs } from '../due'
@@ -13,7 +13,7 @@ interface Props {
   /** Existing tasks this one can wait on. */
   tasks: Task[]
   onCancel: () => void
-  onCreate: (task: NewTask, then: 'todo' | 'queue' | 'start') => void
+  onCreate: (task: NewTask, then: 'todo' | 'queue' | 'start' | 'team') => void
   onSaveTemplate: (task: NewTask) => void
 }
 
@@ -82,7 +82,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
   const candidates = tasks
     .filter((t) => t.column !== 'done' && !dependsOn.includes(t.id))
     .sort((a, b) => Number(b.projectPath === projectPath) - Number(a.projectPath === projectPath) || b.createdAt - a.createdAt)
-  const submit = (then: 'todo' | 'queue' | 'start') => {
+  const submit = (then: 'todo' | 'queue' | 'start' | 'team') => {
     const t = current()
     if (t) onCreate(t, then)
   }
@@ -119,6 +119,10 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
               rows={6}
             />
           </label>
+          <div className="team-compose-action">
+            <div><strong>Give a larger task to a team</strong><p className="field-hint">Preview assignments sized to the work, then run them together in an isolated worktree.</p></div>
+            <Button type="button" icon={Users} disabled={!valid || !isRepo} onClick={() => submit('team')} title={isRepo ? 'Uses the selected agent to inspect the project and plan assignments.' : 'Agent teams need a git repository for their isolated worktree.'}>Split into agents</Button>
+          </div>
           <div className="field-row">
             <label className="field grow">
               <span className="field-label">Title (optional)</span>

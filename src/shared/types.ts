@@ -406,6 +406,32 @@ export type TaskColumn = 'todo' | 'running' | 'review' | 'done'
 export type TaskMode = 'headless' | 'interactive'
 export type TaskPermission = 'auto' | 'acceptEdits' | 'plan' | 'bypassPermissions'
 
+export interface TeamAssignment {
+  id: string
+  title: string
+  prompt: string
+  /** Relative files/directories owned by this worker; overlapping scopes run sequentially. */
+  files: string[]
+  dependsOn: string[]
+}
+
+export interface TeamPlan {
+  summary: string
+  size: 'small' | 'medium' | 'large'
+  agents: TeamAssignment[]
+}
+
+export interface TaskTeam {
+  phase: 'planning' | 'ready' | 'running' | 'paused' | 'review' | 'error'
+  plannerId: string
+  memberIds: string[]
+  plan?: TeamPlan
+  error?: string
+  holdReason?: string
+  /** Shared Claude spending cap, including planning and retries. Codex has no USD cap. */
+  budgetUsd?: number
+}
+
 export interface TaskEvent {
   at: number
   kind: 'start' | 'tool' | 'text' | 'result' | 'error' | 'info'
@@ -448,6 +474,13 @@ export interface CheckResult {
 }
 
 export interface Task {
+  /** The original task owns its plan, shared worktree and aggregate progress. */
+  team?: TaskTeam
+  teamParentId?: string
+  teamRole?: 'planner' | 'worker' | 'integrator'
+  teamStepId?: string
+  /** Reported cost of previous attempts; retained when an assignment is retried. */
+  teamSpentUsd?: number
   tool?: AgentTool
   id: string
   title: string
@@ -929,6 +962,9 @@ export interface MissionControlApi {
   onIndexStatus(cb: (s: IndexStatus) => void): () => void
   listTasks(): Promise<Task[]>
   createTask(t: NewTask): Promise<Task>
+  planTaskTeam(id: string): Promise<void>
+  startTaskTeam(id: string): Promise<void>
+  stopTaskTeam(id: string): Promise<void>
   updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode' | 'queued' | 'dueAt' | 'dueHasTime'>>): Promise<void>
   /** Continues a finished headless task's chat with a new prompt, in the background. */
   followUpTask(id: string, prompt: string): Promise<void>

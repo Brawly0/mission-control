@@ -1,0 +1,77 @@
+.team-panel {
+  padding: 15px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  color: var(--text);
+  min-width: 0;
+}
+.team-budget { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.team-budget label { display: grid; gap: 5px; font-size: 11px; color: var(--text-2); }
+.team-budget input { width: 140px; }
+.team-budget p { flex-basis: 100%; margin: 0; }
+.team-panel-heading,
+.team-panel-heading h3,
+.team-phase,
+.team-plan-meta,
+.team-progress-label,
+.team-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.team-panel-heading { flex-wrap: wrap; justify-content: space-between; }
+.team-panel-heading h3 { margin: 0; font-size: 13px; color: var(--text); }
+.team-phase { color: var(--accent-text); font-size: 11px; }
+.team-phase-error .team-phase { color: var(--red); }
+.team-phase-review .team-phase { color: var(--green); }
+.team-description { margin: 11px 0; color: var(--text-2); font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.team-plan-meta { margin-top: 12px; color: var(--muted); font-size: 11px; flex-wrap: wrap; }
+.team-plan-meta .chip { text-transform: capitalize; }
+.team-progress { margin: 13px 0; }
+.team-progress-label { justify-content: space-between; color: var(--text-2); font-size: 11px; flex-wrap: wrap; }
+.team-progress progress { display: block; width: 100%; height: 6px; margin-top: 7px; border: 0; border-radius: 99px; accent-color: var(--accent); overflow: hidden; background: var(--surface-3); }
+.team-progress progress::-webkit-progress-bar { background: var(--surface-3); border-radius: 99px; }
+.team-progress progress::-webkit-progress-value { background: var(--accent); border-radius: 99px; transition: width .2s; }
+.team-notice { display: flex; align-items: flex-start; gap: 8px; padding: 10px; margin: 12px 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.team-notice > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent-text); }
+.team-assignments,
+.team-members { display: grid; gap: 7px; list-style: none; margin: 13px 0; padding: 0; }
+.team-assignment { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.team-assignment summary { display: flex; align-items: center; gap: 9px; cursor: pointer; padding: 10px; font-size: 12px; font-weight: 600; }
+.team-assignment summary::after { content: '+'; margin-left: auto; color: var(--muted); font-size: 15px; }
+.team-assignment[open] summary::after { content: '−'; }
+.team-assignment summary::-webkit-details-marker { display: none; }
+.team-member-number { display: inline-flex; justify-content: center; align-items: center; flex: 0 0 21px; height: 21px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.team-assignment-detail { padding: 0 12px 12px; font-size: 11px; }
+.team-scope { display: flex; align-items: baseline; gap: 8px; color: var(--text-2); }
+.team-scope > span { display: flex; flex-wrap: wrap; gap: 5px; }
+.team-scope code { max-width: 100%; padding: 2px 5px; border-radius: 4px; background: var(--surface-2); overflow-wrap: anywhere; }
+.team-dependencies { color: var(--muted); line-height: 1.5; margin: 10px 0; }
+.team-assignment-prompt { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; line-height: 1.6; color: var(--text-2); }
+.team-integration-preview { display: flex; align-items: flex-start; gap: 8px; padding: 10px; font-size: 12px; color: var(--text-2); }
+.team-integration-preview > svg { color: var(--accent-text); flex-shrink: 0; }
+.team-integration-preview p { margin: 4px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.team-member { display: flex; width: 100%; align-items: center; gap: 8px; padding: 10px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); cursor: pointer; }
+.team-member:hover { border-color: var(--border-strong); background: var(--surface-3); }
+.team-member > svg { flex-shrink: 0; }
+.team-member-running > svg { color: var(--accent-text); }
+.team-member-complete > svg { color: var(--green); }
+.team-member-needs-attention > svg { color: var(--red); }
+.team-member-text { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.team-member-text strong { font-size: 12px; font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.team-member-text > span { font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.team-parent-link,
+.team-planner-link { display: inline-flex; gap: 5px; align-items: center; border: 0; padding: 4px 0; background: transparent; color: var(--accent-text); cursor: pointer; font-size: 11px; text-align: left; }
+.team-parent-link { margin-top: 10px; max-width: 100%; }
+.team-parent-link span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.team-parent-link:hover,
+.team-planner-link:hover { text-decoration: underline; }
+.team-workspace-note { display: flex; align-items: flex-start; gap: 6px; margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.team-workspace-note > svg { margin-top: 2px; flex-shrink: 0; }
+.team-workspace-note code { overflow-wrap: anywhere; }
+.team-panel-actions { flex-wrap: wrap; margin-top: 13px; }
+.team-panel :is(button, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .team-progress progress::-webkit-progress-value { transition: none; }
+}
