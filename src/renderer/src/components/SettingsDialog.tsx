@@ -144,7 +144,7 @@ function UpdatesSection({ autoUpdate, onAutoUpdate }: { autoUpdate: boolean; onA
   )
 }
 
-export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab }: { onClose: () => void; onOpenShortcuts?: () => void; initialTab?: Tab }) {
+export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab, onResumeSetup }: { onResumeSetup?: () => void; onClose: () => void; onOpenShortcuts?: () => void; initialTab?: Tab }) {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [tab, setTab] = useState<Tab>(initialTab ?? 'general')
   const [recording, setRecording] = useState(false)
@@ -184,6 +184,7 @@ export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab }:
               ))}
             </nav>
           <div className="dialog-body settings-pane">
+            {onResumeSetup && <Button onClick={onResumeSetup}>Resume guided setup</Button>}
             {tab === 'general' && (<>
             <label className="field">
               <span className="field-label">Your name</span>

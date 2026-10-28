@@ -32,6 +32,7 @@ import { TOOL_NAME, otherTool } from '@shared/handoff'
 import type { LaunchOptions } from '../types'
 import { resumeArgs } from '../agentStatus'
 import { errorMessage, formatBytes, formatCost, shortPath, timeAgo } from '../util'
+import ProjectReadiness from './ProjectReadiness'
 import SessionViewer from './SessionViewer'
 import ChangesPanel from './ChangesPanel'
 import OverviewPanel from './OverviewPanel'
@@ -381,6 +382,7 @@ export default function ProjectView({ project, projects, git, visible, groups, f
 
       <div className="page-body">
         {tab === 'briefing' && <Suspense fallback={<div className="muted pad">Loading briefing…</div>}><ProjectBriefingPanel project={project} onLaunch={onLaunch} /></Suspense>}
+        {(tab === 'overview' || tab === 'run') && <ProjectReadiness path={project.path} onCommands={() => setTab('run')} />}
         {tab === 'run' && <Suspense fallback={<div className="muted pad">Loading commands…</div>}><RunPanel project={project} onChanged={onChanged} onLaunch={onLaunch} /></Suspense>}
         {tab === 'chats' && (
           <div className="chats">

@@ -43,3 +43,27 @@ describe('settings recovery', () => {
     expect(loadStore().pinned).toEqual(['saved'])
   })
 })
+
+describe('guided setup compatibility', () => {
+  it('adds setup state without changing projects, commands, task records or user settings', async () => {
+    const { getGuidedSetup, updateGuidedSetup } = await import('./store')
+    const file = setup()
+    const old = { manualProjects: ['C:\\existing'], pinned: ['C:\\existing'], tasks: [{ id: 'task', prompt: 'keep' }], projectMeta: { existing: { commands: [{ id: 'run', command: 'npm start' }], checkCommand: 'npm test' } }, settings: { theme: 'light', userName: 'Keep', eco: { model: 'haiku' } }, futureField: { keep: true } }
+    writeFileSync(file, JSON.stringify(old))
+    expect(getGuidedSetup()).toMatchObject({ status: 'not-started', providers: ['claude'] })
+    for (const status of ['active', 'skipped', 'dismissed', 'active'] as const) updateGuidedSetup({ status, providers: ['claude', 'codex'], step: 'project' })
+    const result = JSON.parse(readFileSync(file, 'utf8'))
+    for (const key of ['manualProjects', 'pinned', 'tasks', 'projectMeta', 'futureField'] as const) expect(result[key]).toEqual(old[key])
+    expect(result.settings).toMatchObject(old.settings)
+    expect(getGuidedSetup()).toMatchObject({ status: 'active', providers: ['claude', 'codex'], step: 'project' })
+  })
+  it('repairs invalid setup independently of an otherwise valid profile and rejects invalid writes', async () => {
+    const { getGuidedSetup, updateGuidedSetup } = await import('./store')
+    const file = setup()
+    writeFileSync(file, JSON.stringify({ pinned: ['keep'], guidedSetup: { providers: ['unknown'], status: 'invalid' } }))
+    expect(getGuidedSetup().status).toBe('not-started')
+    expect(loadStore().pinned).toEqual(['keep'])
+    expect(() => updateGuidedSetup({ providers: [] })).toThrow('Invalid setup')
+    expect(loadStore().pinned).toEqual(['keep'])
+  })
+})

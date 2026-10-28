@@ -1,0 +1,15 @@
+.first-task-guide, .fix-problems-center { padding: 16px; color: var(--text); background: var(--surface); border: 1px solid var(--border); min-width: 0; margin-bottom: 16px; }
+.guidance-heading, .fix-problems-center h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.guidance-heading { justify-content: space-between; }
+.first-task-guide h2, .fix-problems-center h2 { margin: 0; font-size: 16px; }
+.first-task-guide p, .fix-problems-center p { margin: 8px 0; overflow-wrap: anywhere; }
+.guidance-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.guidance-problems { list-style: none; padding: 0; margin: 0; }
+.guidance-problems li { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--border); padding: 12px 0; }
+.guidance-problems li > div { min-width: 0; }
+.guidance-problems h3 { font-size: 14px; margin: 0; }
+.first-task-guide :focus-visible, .fix-problems-center :focus-visible, .fix-problems-center:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.guidance-help { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.guidance-help summary { cursor: pointer; color: var(--text); }
+.guidance-help p { margin: 6px 0; }
+@media (max-width: 1100px) { .guidance-problems li { align-items: flex-start; flex-direction: column; } }

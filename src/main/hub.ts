@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto'
 import type { ClaudeStatus, DocFile, KnowledgeDoc, KnowledgeHit, Note } from '../shared/types'
 import { listProjects, normalizePath } from './claudeData'
 import { initGit } from './git'
-import { agentEnv, whichSync } from './pty'
+import { agentEnv } from './pty'
+import { readiness, legacyStatus } from './readiness'
 import { loadStore, updateStore } from './store'
 
 /**
@@ -116,52 +117,15 @@ export async function searchKnowledge(query: string, listDocs: (projectPath: str
 
 // ---------------------------------------------------------------- Claude Code status and your name
 
-let statusCache: { at: number; status: ClaudeStatus } | null = null
-
-/** Whether claude is installed and logged in (the account's email is never passed to the UI). Cached for 5 minutes. */
+/** Compatibility adapters use the same bounded, asynchronous probes as guided setup.
+ * No cache: a forced refresh cannot race with an older cached authentication result.
+ */
 export async function claudeStatus(force = false): Promise<ClaudeStatus> {
-  if (!force && statusCache && Date.now() - statusCache.at < 300_000) return statusCache.status
-  const path = whichSync('claude')
-  let status: ClaudeStatus = { installed: !!path, loggedIn: false }
-  if (path) {
-    try {
-      status.version = (await run(path, ['--version'])).trim().split(/\s+/)[0]
-    } catch {
-      /* old version without --version */
-    }
-    try {
-      const auth = JSON.parse(await run(path, ['auth', 'status']))
-      status = { ...status, loggedIn: !!auth.loggedIn, authMethod: auth.authMethod, plan: auth.subscriptionType }
-    } catch {
-      /* not logged in, or an older CLI */
-    }
-  }
-  statusCache = { at: Date.now(), status }
-  return status
+  return legacyStatus(await readiness.connections(-1, { requestId: randomUUID(), providers: ['claude'], force }), 'claude')
 }
-
-let codexStatusCache: { at: number; status: ClaudeStatus } | null = null
-
-/** Check the CLI itself, never infer authentication from old chat files. */
 export async function codexStatus(force = false): Promise<ClaudeStatus> {
-  if (!force && codexStatusCache && Date.now() - codexStatusCache.at < 300_000) return codexStatusCache.status
-  const path = whichSync('codex')
-  const status: ClaudeStatus = { installed: !!path, loggedIn: false }
-  if (path) {
-    status.version = (await run(path, ['--version'])).trim()
-    status.loggedIn = await new Promise<boolean>((resolve, reject) => {
-      execFile(path, ['login', 'status'], { env: agentEnv(), windowsHide: true, timeout: 15000, shell: /\.(cmd|bat)$/i.test(path) }, (err, stdout, stderr) => {
-        const text = String(stdout) + String(stderr)
-        if (/not logged in/i.test(text)) resolve(false)
-        else if (!err && /logged in/i.test(text)) resolve(true)
-        else reject(new Error('Could not check Codex login status'))
-      })
-    })
-  }
-  codexStatusCache = { at: Date.now(), status }
-  return status
+  return legacyStatus(await readiness.connections(-2, { requestId: randomUUID(), providers: ['codex'], force }), 'codex')
 }
-
 let windowsName: string | null = null
 
 /** Your first name for the greeting: the one in Settings, else the first word of your Windows account's full name. */

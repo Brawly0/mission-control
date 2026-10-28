@@ -1,3 +1,5 @@
+import { DEFAULT_GUIDED_SETUP, validateSetupPatch } from '../shared/readiness'
+import type { GuidedSetupState } from '../shared/readiness'
 import { app } from 'electron'
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -16,6 +18,8 @@ export interface WindowBounds {
  * the user adds (manual projects, pins, open agents, later tags and notes) lives here.
  */
 export interface StoreData {
+  /** Additive app-only onboarding state; never modifies provider configuration. */
+  guidedSetup: GuidedSetupState
   manualProjects: string[]
   pinned: string[]
   /** Agents that were open when the app last closed, offered for restore on next start. */
@@ -56,6 +60,7 @@ export interface StoreData {
 }
 
 const defaults: StoreData = {
+  guidedSetup: DEFAULT_GUIDED_SETUP,
   manualProjects: [],
   pinned: [],
   savedAgents: [],
@@ -108,7 +113,7 @@ export function loadStore(): StoreData {
     try {
       if (!existsSync(file)) continue
       const data = readStore(file)
-      return { ...fresh, ...data, settings: { ...fresh.settings, ...data.settings, eco: { ...fresh.settings.eco, ...data.settings?.eco } } }
+      return { ...fresh, ...data, guidedSetup: normalizeGuidedSetup(data.guidedSetup), settings: { ...fresh.settings, ...data.settings, eco: { ...fresh.settings.eco, ...data.settings?.eco } } }
     } catch { /* Try the last valid backup before using defaults. */ }
   }
   return fresh
@@ -146,4 +151,19 @@ export function updateStore(fn: (data: StoreData) => void): StoreData {
   fn(data)
   saveStore(data)
   return data
+}
+
+function normalizeGuidedSetup(value: unknown): GuidedSetupState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return structuredClone(DEFAULT_GUIDED_SETUP)
+  const { providers, status, step, updatedAt } = value as GuidedSetupState
+  try {
+    const patch = { ...(providers !== undefined ? { providers } : {}), ...(status !== undefined ? { status } : {}), ...(step !== undefined ? { step } : {}) }
+    validateSetupPatch(patch)
+    return { ...structuredClone(DEFAULT_GUIDED_SETUP), ...patch, updatedAt: Number.isFinite(updatedAt) && updatedAt >= 0 ? updatedAt : 0 }
+  } catch { return structuredClone(DEFAULT_GUIDED_SETUP) }
+}
+export function getGuidedSetup(): GuidedSetupState { return loadStore().guidedSetup }
+export function updateGuidedSetup(patch: Partial<Pick<GuidedSetupState, 'providers' | 'status' | 'step'>>): GuidedSetupState {
+  validateSetupPatch(patch)
+  return updateStore(s => { s.guidedSetup = { ...s.guidedSetup, ...patch, updatedAt: Date.now() } }).guidedSetup
 }

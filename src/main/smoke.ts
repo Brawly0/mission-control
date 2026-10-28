@@ -27,6 +27,10 @@ import { digestText } from '../shared/digest'
 import { nameChats, sessionRecap, summarizeChat } from './recap'
 import { codexUsage } from './codexData'
 import { unclearTitle } from '../shared/projectLook'
+import { prepareOnboardingSmoke, onboardingSmoke } from './onboardingSmoke'
+
+// Establish fail-closed CLI fixtures before app.whenReady or renderer effects can launch work.
+if (process.env.MC_SMOKE_ONBOARDING) prepareOnboardingSmoke()
 
 interface SmokeDeps {
   launchTerminal: (spec: TerminalSpec) => TerminalInfo
@@ -1539,6 +1543,10 @@ async function updateCheck(): Promise<void> {
  */
 export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeDeps): Promise<void> {
   try {
+    if (process.env.MC_SMOKE_ONBOARDING) {
+      await onboardingSmoke(win, outFile, log)
+      return
+    }
     if (process.env.MC_SMOKE_TEAM) {
       const { taskTeamSmoke } = await import('./taskTeamSmoke')
       await taskTeamSmoke(win, outFile, log)

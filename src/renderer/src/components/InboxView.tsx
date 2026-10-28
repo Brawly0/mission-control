@@ -26,8 +26,11 @@ import { basename, formatCost, timeAgo } from '../util'
 import { useLook } from '../projectLook'
 import { usePlanRate, rateExplainer } from '../planRate'
 import { Avatar, Button, IconButton, Segmented } from './ui'
+import FixProblemsCenter, { type FixProblemsCenterProps } from './FixProblemsCenter'
 
 interface Props {
+  /** Independent from dismissible inbox notifications; verified problems are never dismissed away. */
+  problemsCenter?: FixProblemsCenterProps
   visible: boolean
   /** What to list; with "show dismissed", dismissed ones come marked hidden. */
   items: ShownItem[]
@@ -260,7 +263,8 @@ export default function InboxView(props: Props) {
       </header>
       <div className="inbox-columns">
         <div className="inbox-main">
-          {items.length === 0 && (
+          {props.problemsCenter && <FixProblemsCenter {...props.problemsCenter} />}
+          {items.length === 0 && !props.problemsCenter?.problems.length && (
             <div className="inbox-empty">
               <CheckCheck size={30} />
               <h2>All clear</h2>

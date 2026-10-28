@@ -19,11 +19,12 @@ import {
   Plus,
   Star
 } from 'lucide-react'
-import type { ClaudeStatus, Project, RateLimitInfo, RecentSession, Task, UsageReport } from '@shared/types'
+import type { Project, RateLimitInfo, RecentSession, Task, UsageReport } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { windowLabel } from '@shared/planUsage'
 import { isScratchPath } from '@shared/projectLook'
+import { useSharedReadiness } from '../app/useReadiness'
 import { elapsed, timeAgo } from '../util'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
@@ -82,7 +83,9 @@ export default function HomeView(props: Props) {
   const keyFor = useKeyFor()
   const [recent, setRecent] = useState<RecentSession[] | null>(null)
   const [week, setWeek] = useState<UsageReport | null>(null)
-  const [status, setStatus] = useState<ClaudeStatus | null>(null)
+  const { connections, providers } = useSharedReadiness()
+  const claudeChecks = connections.result?.checks.filter(c => providers.some(p => c.id.includes(p))) ?? []
+  const connected = !connections.busy && claudeChecks.length > 0 && claudeChecks.every(c => c.outcome === 'ready')
   const [filter, setFilter] = useState<Filter>(() => {
     try {
       return (localStorage.getItem('mc.homeFilter') as Filter) || 'all'
@@ -98,7 +101,6 @@ export default function HomeView(props: Props) {
     monday.setHours(0, 0, 0, 0)
     monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
     window.mc.usageReport(monday.getTime()).then(setWeek).catch(() => setWeek(null))
-    window.mc.claudeStatus().then(setStatus).catch(() => undefined)
   }, [visible, props.indexRun])
 
   const pickFilter = (f: Filter) => {
@@ -381,11 +383,11 @@ export default function HomeView(props: Props) {
         <div className="card dash-panel">
           <h2>System status</h2>
           <div className="status-body">
-            <div className={`status-claude ${status?.loggedIn ? 'ok' : status ? 'bad' : ''}`}>
+            <div className={`status-claude ${connected ? 'ok' : ''}`}>
               <span className="dot" />
               <span>
-                <span className="strong">Claude Code</span>
-                <span className="small">{!status ? 'Checking…' : !status.installed ? 'Not installed' : status.loggedIn ? 'Connected' : 'Not logged in'}</span>
+                <span className="strong">{providers.map(p => p === 'claude' ? 'Claude Code' : 'Codex').join(' + ')}</span>
+                <span className="small">{connections.busy ? 'Checking...' : connected ? 'Connected' : 'Not verified - open guided setup'}</span>
               </span>
             </div>
             <div className="status-meters">

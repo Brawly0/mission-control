@@ -27,6 +27,12 @@ Node.js is not required to install Mission Control. Follow each CLI vendor's ins
 
 ## What is included
 
+Use **Start or resume guided setup** on Home, **Guided setup** in the sidebar, or the setup action in Settings to choose Claude, Codex, or both. Recheck after installing a CLI or signing in. Skip and Dismiss save your place without removing projects or settings. An unavailable or offline check means readiness is still unknown.
+
+Open a folder and review **Project readiness**. Root `package.json` scripts can become command suggestions; choose **Review project commands**, edit a suggestion, then **Save command**. Detection and saving never install packages, initialize Git, or run the command. Running remains a separate action.
+
+Create a task, review permissions and whether to use a separate Git worktree, then follow its live activity. Inspect the result and **Changes** before deciding to mark done or merge. **Fix problems** on Home opens the Inbox's actionable connection, project and task problems. Use its Open, Retry or Recheck actions; a diagnostic problem clears only when a fresh check verifies the fix.
+
 - Projects with saved names, groups, tags and ordering.
 - Claude and Codex chats, search, handoffs and shared project briefings.
 - Live agents in tabs or a resizable grid, plus a bottom Terminal / Run dock.

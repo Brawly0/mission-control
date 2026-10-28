@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Md } from './Md'
 import {
   AlertCircle,
@@ -33,6 +33,8 @@ import { Avatar, Button, IconButton, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 import { dueFrom, dueInputs, dueLabel } from '../due'
 import { PlanShare } from '../planRate'
+import type { TaskInspection } from '../firstTaskGuidance'
+import '../guidance.css'
 
 interface Props {
   task: Task
@@ -50,6 +52,10 @@ interface Props {
   onDone: (task: Task) => void
   onDelete: (task: Task) => void
   onGitChanged: () => void
+  initialTab?: 'activity' | 'changes'
+  /** Reports displayed result identity only. Changes inspection must come from the actual review surface. */
+  onInspectResult?: (inspection: TaskInspection) => void
+  onInspectChanges?: (inspection: TaskInspection) => void
 }
 
 const EVENT_ICON: Record<TaskEvent['kind'], typeof Info> = {
@@ -73,16 +79,21 @@ function statusIcon(t: Task) {
   return <Lock size={12} className="muted" />
 }
 
-export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
+export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged, initialTab = 'activity', onInspectResult, onInspectChanges }: Props) {
   const look = useLook()
   const toast = useToast()
-  const [tab, setTab] = useState<'activity' | 'changes'>('activity')
+  const [tab, setTab] = useState<'activity' | 'changes'>(initialTab)
   const [prompt, setPrompt] = useState(task.prompt)
   const [title, setTitle] = useState(task.title)
   const [followUp, setFollowUp] = useState('')
   const [planning, setPlanning] = useState(false)
+  const reportedInspection = useRef('')
   const run = task.run
   const running = task.column === 'running'
+  const inspectChanges = useCallback((fingerprint: string | undefined, inspected: boolean) => {
+    if (!run?.finishedAt || running) return
+    onInspectChanges?.({ taskId: task.id, runStartedAt: run.startedAt, runFinishedAt: run.finishedAt, result: false, changes: inspected, changesFingerprint: fingerprint })
+  }, [task.id, run?.startedAt, run?.finishedAt, running, onInspectChanges])
   const managed = !!task.team || !!task.teamParentId
   const editable = task.column === 'todo' && !managed
   const canChanges = !!task.worktree && (!task.team || task.team.phase === 'review')
@@ -119,8 +130,17 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
   useEffect(() => {
     setPrompt(task.prompt)
     setTitle(task.title)
-    setTab('activity')
-  }, [task.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    setTab(initialTab)
+  }, [task.id, initialTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if ((tab !== 'changes' || !canChanges) && run?.result && run.finishedAt && !running) {
+      const identity = JSON.stringify([task.id, run.startedAt, run.finishedAt])
+      if (!onInspectResult || reportedInspection.current === identity) return
+      reportedInspection.current = identity
+      onInspectResult?.({ taskId: task.id, runStartedAt: run.startedAt, runFinishedAt: run.finishedAt, result: true, changes: false })
+    }
+  }, [task.id, run?.startedAt, run?.finishedAt, run?.result, running, tab, canChanges, onInspectResult])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -217,6 +237,14 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         {!task.teamParentId && <IconButton icon={Trash2} label="Delete task" onClick={() => onDelete(task)} disabled={running && task.mode === 'headless' || task.team?.phase === 'planning'} />}
       </div>
 
+      <details className="guidance-help">
+        <summary>How progress and review work</summary>
+        <p>Background execution runs without an interactive terminal. Activity and tool counts show reported work, not a percentage or a guarantee of success. Open an interactive agent to answer its questions.</p>
+        <p>Permissions control edits and commands; Claude and Codex apply their own permission rules. A worktree is a separate checkout and branch, not a security sandbox.</p>
+        <p>Checks run the configured project command. Pending, failed, unavailable, or missing checks have not passed. Inspect the result, check outcome, and Changes before deciding what to do.</p>
+        <p>Reading a result does not mark the task done. Mark done updates the board; merging brings a worktree branch into its base and still requires the existing review and check safeguards.</p>
+      </details>
+
       {run && (
         <div className="run-stats">
           <div>
@@ -254,7 +282,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
 
       {tab === 'changes' && canChanges && task.worktree ? (
         <div className="drawer-changes">
-          <ChangesPanel path={task.worktree.path} worktree={task.worktree} visible onChanged={onGitChanged} />
+          <ChangesPanel key={`${task.id}:${run?.startedAt}`} path={task.worktree.path} worktree={task.worktree} visible onChanged={onGitChanged} onInspectChanges={inspectChanges} />
         </div>
       ) : (
         <div className="drawer-body scroll">

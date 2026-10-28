@@ -4,6 +4,7 @@ import type { AgentTool, Project, ProjectCommand, ProjectCommandRun, WorktreeInf
 import type { LaunchOptions } from '../types'
 import { Button, EmptyState, IconButton } from './ui'
 import { useToast } from '../toast'
+import { useSharedReadiness } from '../app/useReadiness'
 import { errorMessage } from '../util'
 
 export default function RunPanel({ project, onChanged, onLaunch, cwd = project.path, worktree }: { project: Project; onChanged: () => void; onLaunch: (opts: LaunchOptions) => void; cwd?: string; worktree?: WorktreeInfo }) {
@@ -16,6 +17,8 @@ export default function RunPanel({ project, onChanged, onLaunch, cwd = project.p
   const [follow, setFollow] = useState(true)
   const outputRef = useRef<HTMLPreElement>(null)
   const commands = project.meta.commands ?? []
+  const { projects: readiness } = useSharedReadiness()
+  const suggestions = readiness[project.path]?.result?.suggestions ?? []
   const activeId = commands.some(c => c.id === selected) ? selected : commands[0]?.id
   const current = runs.find(r => r.commandId === activeId)
   const live = (r?: ProjectCommandRun) => r?.state === 'running' || r?.state === 'stopping'
@@ -32,7 +35,13 @@ export default function RunPanel({ project, onChanged, onLaunch, cwd = project.p
     if (!draft?.name.trim() || !draft.command.trim()) return
     setBusy(true)
     try {
-      const next = commands.some(c => c.id === draft.id) ? commands.map(c => c.id === draft.id ? draft : c) : [...commands, draft]
+      const latest = (await window.mc.listProjects()).find(p => p.path === project.path)
+      if (!latest) throw new Error('Project is no longer available')
+      const saved = latest.meta.commands ?? []
+      if (saved.some(c => c.id !== draft.id && c.command.trim() === draft.command.trim())) {
+        toast('info', 'Command already saved'); setDraft(null); onChanged(); return
+      }
+      const next = saved.some(c => c.id === draft.id) ? saved.map(c => c.id === draft.id ? draft : c) : [...saved, draft]
       await window.mc.setProjectMeta(project.path, { commands: next.map(c => ({ ...c, name: c.name.trim(), command: c.command.trim() })) })
       setSelected(draft.id); setDraft(null); onChanged()
     } catch (e) { toast('error', 'Could not save command', errorMessage(e)) } finally { setBusy(false) }
@@ -63,6 +72,10 @@ export default function RunPanel({ project, onChanged, onLaunch, cwd = project.p
       <div><strong>Project commands</strong><div className="muted small">PowerShell · {cwd}</div></div>
       <Button size="sm" icon={Plus} onClick={() => setDraft({ id: crypto.randomUUID(), name: '', command: '' })}>Add command</Button>
     </header>
+    {suggestions.length > 0 && <section className="run-editor" aria-label="Detected command suggestions"><strong>Detected package.json scripts</strong><p className="muted small">Review and edit each suggestion before saving. Saving does not run it or change automatic task checks.</p>{suggestions.map(suggestion => {
+      const exists = commands.some(c => c.command.trim() === suggestion.command.trim())
+      return <div key={suggestion.provenance.script} className="setup-actions"><code>{suggestion.command}</code><span className="muted small">package.json ? {suggestion.provenance.script} ({suggestion.provenance.manager})</span><Button size="sm" disabled={exists || busy} onClick={() => setDraft({ id: crypto.randomUUID(), name: suggestion.kind === 'test' ? 'Test' : 'Run app', command: suggestion.command })}>{exists ? 'Already saved' : 'Review suggestion'}</Button></div>
+    })}</section>}
     {draft && <form className="run-editor" onSubmit={e => { e.preventDefault(); void save() }}>
       <label className="field"><span className="field-label">Name</span><input className="text-input" autoFocus placeholder="Start app, Test, Build…" maxLength={80} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
       <label className="field"><span className="field-label">Command</span><textarea className="text-input mono" rows={2} maxLength={8000} placeholder="npm run dev" value={draft.command} onChange={e => setDraft({ ...draft, command: e.target.value })} /></label>
