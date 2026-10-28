@@ -283,6 +283,10 @@
 .search-results > * {
   max-width: 980px;
 }
+.search-view .search-examples { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.search-view .search-box input { min-width: 0; }
+.search-view .search-filters .select { max-width: min(240px, 100%); text-overflow: ellipsis; }
+.search-view .search-results > .empty-state { min-height: 260px; }
 .result {
   padding: 12px 14px;
   margin-bottom: 10px;

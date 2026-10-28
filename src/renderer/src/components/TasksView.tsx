@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Circle,
   CircleDot,
-  ClipboardList,
   Eye,
   FileStack,
   GitBranch,
@@ -28,7 +27,7 @@ import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { dependencyState, dependentsOf } from '@shared/deps'
 import { elapsed, formatCost, timeAgo } from '../util'
-import { Avatar, Button, EmptyState, ToolBadge } from './ui'
+import { Avatar, Button, ToolBadge } from './ui'
 import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
 import { useLook } from '../projectLook'
@@ -273,7 +272,13 @@ export default function TasksView(props: Props) {
     <div className="tasks-view">
       <header className="tasks-head">
         <div>
-          <h1>Tasks</h1>
+          <div className="tasks-title-row">
+            <h1>Tasks</h1>
+            <select className="select project-filter" value={projectFilter} onChange={(e) => props.onProjectFilter(e.target.value)} aria-label="Project" title="Filter tasks by project">
+              <option value="">All projects</option>
+              {projectOptions.map((p) => <option key={p.path} value={p.path}>{p.name}</option>)}
+            </select>
+          </div>
           <p className="muted">Give a task to Claude or Codex, then watch its agents work in Tabs or Grid.</p>
         </div>
         <div className="toolbar">
@@ -319,14 +324,6 @@ export default function TasksView(props: Props) {
           <Button variant="secondary" icon={FileStack} onClick={props.onOpenTemplates} title={withKey('Templates and schedules', keyFor('templates'))}>
             Templates
           </Button>
-          <select className="select project-filter" value={projectFilter} onChange={(e) => props.onProjectFilter(e.target.value)} aria-label="Project">
-            <option value="">All projects</option>
-            {projectOptions.map((p) => (
-              <option key={p.path} value={p.path}>
-                {p.name}
-              </option>
-            ))}
-          </select>
           <Button variant="primary" icon={Plus} onClick={props.onNew} title={withKey('New task', keyFor('newTask'))}>
             New task
           </Button>
@@ -346,14 +343,13 @@ export default function TasksView(props: Props) {
           onStop={props.onStop}
         />
       </div>
-      {props.layout === 'terminals' ? null : tasks.length === 0 ? (
-        <EmptyState icon={ClipboardList} title="No tasks yet">
-          <p>Write down what you want done, pick a project, and press Start. You can run several at once, each in its own worktree.</p>
-          <Button variant="primary" icon={Plus} onClick={props.onNew}>
-            New task
-          </Button>
-        </EmptyState>
-      ) : (
+      {props.layout === 'board' && visible.length === 0 && (
+        <div className="board-notice" role="status">
+          <span>{projectFilter ? 'No tasks for this project.' : 'Your board is ready. Add a task to get started.'}</span>
+          {projectFilter && <Button size="sm" variant="ghost" onClick={() => props.onProjectFilter('')}>Show all projects</Button>}
+        </div>
+      )}
+      {props.layout === 'terminals' ? null : (
         <div className="board">
           {COLUMNS.map((col) => {
             const items = visible.filter((t) => t.column === col.id).sort((a, b) => a.order - b.order)

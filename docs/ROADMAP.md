@@ -1,5 +1,14 @@
 # Roadmap
 
+## Tasks, Search, Projects and Settings clarity (2026-10-28)
+
+- [x] Put the bounded Tasks project filter beside the title; align toolbar controls and wrap them at narrower widths
+- [x] Keep all four board columns and workflow hints visible on empty boards, with a distinct filtered-empty message and clear New task action
+- [x] Offer clickable plain-word Search examples through the existing debounced search flow
+- [x] Align project card rows and action areas; reveal session actions on hover and keyboard focus, retaining touch access and the preferred provider
+- [x] Replace repeated project descriptions with activity context and group General settings into Profile, Notifications and Window
+- [x] Size short Settings tabs to content, bound long tabs with scrolling, and extend the isolated no-model-call polish tour for these states
+
 ## Task agent workspace (2026-10-28)
 
 - [x] Task-owned planner, worker and integrator tabs, with Tabs/Grid layouts and live provider output

@@ -219,7 +219,9 @@
 /* ---------- settings with tabs ---------- */
 .dialog.settings {
   width: min(760px, calc(100vw - 40px));
-  height: min(620px, 86vh);
+  height: auto;
+  min-height: min(340px, 84vh);
+  max-height: 84vh;
 }
 .settings-layout {
   display: grid;
@@ -263,6 +265,15 @@
   padding: 18px 22px;
   overflow-y: auto;
 }
+.settings .settings-layout { overflow: hidden; }
+.settings .settings-tabs { overflow-y: auto; }
+.settings .settings-tabs button { flex-shrink: 0; }
+.settings .settings-pane { min-width: 0; }
+.settings .settings-section + .settings-section { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 16px; }
+.settings .settings-section h3 { margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.settings .settings-section > :last-child { margin-bottom: 0; }
+.settings .hotkey-row { flex-wrap: wrap; }
+.settings .inline-field { flex-wrap: wrap; }
 .zoom-row {
   display: flex;
   align-items: center;
@@ -402,6 +413,25 @@
 .big-project-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding: 4px 18px 16px; }
 .big-project-actions .big-project-go { margin: 0; align-self: center; }
 .big-project.list .big-project-actions { margin-top: 0; padding: 0; }
+.projects-page .projects-grid { align-items: stretch; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+.projects-page .big-project.grid { height: 100%; min-width: 0; }
+.projects-page .big-project-main { min-width: 0; }
+.projects-page .big-project.grid .big-project-main { flex-wrap: wrap; }
+.projects-page .big-project.grid .big-project-when { width: 100%; padding-left: 58px; }
+.projects-page .big-project.grid .big-project-text { min-width: 120px; }
+.projects-page .big-project-meta { overflow-wrap: anywhere; }
+.projects-page .big-project-tags { overflow-wrap: anywhere; }
+.projects-page .big-project-tags .chip { max-width: 100%; white-space: normal; }
+.projects-page .big-project .big-project-actions .big-project-go { margin: 0; align-self: center; }
+.projects-page .big-project-actions { margin-top: auto; }
+@media (hover: hover) and (pointer: fine) {
+  .projects-page .big-project .big-project-go { opacity: 0; }
+  .projects-page .big-project:hover .big-project-go,
+  .projects-page .big-project:focus-within .big-project-go { opacity: 1; }
+}
+@media (any-pointer: coarse) {
+  .projects-page .big-project .big-project-go { opacity: 1; }
+}
 .run-panel { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: auto; padding: 18px 22px; gap: 16px; }
 .run-toolbar, .run-result-head, .run-result-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .run-toolbar { justify-content: space-between; }

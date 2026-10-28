@@ -1,54 +1,95 @@
-import { useEffect, useState } from 'react'
-import { ChevronDown, RefreshCw, Terminal } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { RefreshCw, Terminal } from 'lucide-react'
 import type { ClaudeStatus } from '@shared/types'
 import { Button, IconButton, ToolBadge } from './ui'
 
+type Tool = 'claude' | 'codex'
+type Reading = { at: number; status: ClaudeStatus }
+type Cache = Partial<Record<Tool, Reading>>
+const CACHE_KEY = 'mc.connectionStatus.v1'
+const MAX_AGE = 30 * 86400_000
+const STALE_AGE = 300_000
+
+/** Whitelist only non-sensitive fields; never persist arbitrary CLI output or errors. */
+export function validConnectionReading(raw: unknown): Reading | undefined {
+  if (!raw || typeof raw !== 'object') return
+  const r = raw as Reading
+  if (!Number.isFinite(r.at) || r.at <= 0 || r.at > Date.now() + 60_000 || Date.now() - r.at > MAX_AGE ||
+    !r.status || typeof r.status.installed !== 'boolean' || typeof r.status.loggedIn !== 'boolean' || r.status.error) return
+  return { at: r.at, status: { installed: r.status.installed, loggedIn: r.status.loggedIn } }
+}
+export function parseConnectionCache(value: string | null): Cache {
+  try {
+    const raw = JSON.parse(value ?? '{}')
+    return { claude: validConnectionReading(raw?.claude), codex: validConnectionReading(raw?.codex) }
+  } catch { return {} }
+}
+function readCache(): Cache {
+  try { return parseConnectionCache(localStorage.getItem(CACHE_KEY)) } catch { return {} }
+}
+
 export default function AgentConnections({ onUsage, onTerminal }: { onUsage: () => void; onTerminal: () => void }) {
-  const [open, setOpen] = useState(false)
+  const [status, setStatus] = useState<Cache>(readCache)
+  const statusRef = useRef(status)
+  const [errors, setErrors] = useState<Partial<Record<Tool, string>>>({})
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<Record<string, ClaudeStatus | null>>({})
+  const pending = useRef(false)
+  const [now, setNow] = useState(Date.now())
   const load = async (force = false) => {
+    if (pending.current) return
+    pending.current = true
     setBusy(true)
-    const results = await Promise.allSettled([window.mc.claudeStatus(force), window.mc.codexStatus(force)])
-    setStatus(Object.fromEntries(results.map((r, i) => [i ? 'codex' : 'claude', r.status === 'fulfilled' ? r.value : null])))
-    if (!force && results.every(r => r.status === 'rejected' || !r.value.installed)) setOpen(true)
-    setBusy(false)
+    try {
+      const results = await Promise.allSettled([window.mc.claudeStatus(force), window.mc.codexStatus(force)])
+      const next = { ...statusRef.current }
+      const failed: Partial<Record<Tool, string>> = {}
+      results.forEach((r, i) => {
+        const tool = i ? 'codex' : 'claude'
+        if (r.status === 'fulfilled' && !r.value.error) next[tool] = { at: Date.now(), status: r.value }
+        else failed[tool] = 'Check failed. Last known status retained; refresh to try again.'
+      })
+      statusRef.current = next
+      setStatus(next)
+      setErrors(failed)
+      const safe = { claude: validConnectionReading(next.claude), codex: validConnectionReading(next.codex) }
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(safe)) } catch { /* storage can be disabled */ }
+    } finally { pending.current = false; setBusy(false); setNow(Date.now()) }
   }
   useEffect(() => {
     void load()
-    const timer = setInterval(() => void load(), 300_000)
+    const timer = setInterval(() => { setNow(Date.now()); void load() }, STALE_AGE)
     return () => clearInterval(timer)
   }, [])
-  return (
-    <section className="agent-connections" aria-label="Agent connections">
-      <button className="connection-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span>Agent connections</span><ChevronDown size={14} />
-      </button>
-      {(['claude', 'codex'] as const).map(tool => {
-        const s = status[tool]
-        // A refresh keeps the last result on screen instead of flashing "Checking" every 5 minutes.
-        const label = s === undefined ? 'Checking...' : !s ? 'Check failed' : !s.installed ? 'Not installed' : s.loggedIn ? 'Connected' : 'Sign in needed'
-        return <button key={tool} className="connection-row" onClick={() => setOpen(!open)} aria-expanded={open}>
-          <ToolBadge tool={tool} /><span className={s?.loggedIn ? 'connection-ok' : 'muted'}>{label}</span>
-        </button>
+  const tools = ['claude', 'codex'] as const
+  const label = (tool: Tool) => {
+    const r = status[tool]
+    const base = !r ? 'Unknown' : !r.status.installed ? 'Not installed' : r.status.loggedIn ? 'Connected' : 'Sign in needed'
+    return `${base}${errors[tool] ? ' · check failed' : r && now - r.at > STALE_AGE ? ' · stale' : ''}`
+  }
+  const healthy = tools.every(tool => status[tool]?.status.loggedIn && !errors[tool] && now - status[tool]!.at <= STALE_AGE)
+  return <details className="agent-connections" onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.open = false }}>
+    <summary className="connection-toggle" aria-label={`Agent connections: Claude ${label('claude')}; Codex ${label('codex')}`} title={`Claude ${label('claude')}; Codex ${label('codex')}`}>
+      <span className={`connection-dot ${healthy ? 'connected' : 'unknown'}`} aria-hidden />
+    </summary>
+    <div className="connection-details">
+      <strong>Agent connections</strong>
+      <p className="muted small">Use Claude, Codex, or both. Install and sign in to the CLI you want to use.</p>
+      {tools.map(tool => {
+        const r = status[tool], s = r?.status
+        return <section key={tool}>
+          <div className="connection-row"><ToolBadge tool={tool} /><span>{label(tool)}</span></div>
+          <div className="muted small">{s?.version || 'Version unavailable'}{r ? ` · Checked ${new Date(r.at).toLocaleString()}` : ' · Not checked yet'}</div>
+          {errors[tool] && <p className="plan-error small" role="status">{errors[tool]}</p>}
+          <a href={tool === 'claude' ? 'https://code.claude.com/docs/en/setup' : 'https://developers.openai.com/codex/cli/'} target="_blank" rel="noreferrer">Installation and setup guide</a>
+          {(!s?.loggedIn || errors[tool]) && <div className="small">Sign in from a terminal: <code>{tool === 'claude' ? 'claude auth login' : 'codex login'}</code></div>}
+        </section>
       })}
-      {open && <div className="connection-details">
-        <p className="muted small">Use Claude, Codex, or both. Install and sign in to the CLI you want to use.</p>
-        {(['claude', 'codex'] as const).map(tool => {
-          const s = status[tool]
-          return <div key={tool} className="small">
-            <strong>{tool === 'claude' ? 'Claude Code' : 'Codex'}</strong>
-            <div className="muted">{s?.version || 'Version unavailable'}{s?.plan ? ` · ${s.plan[0].toUpperCase()}${s.plan.slice(1)} plan` : ''}</div>
-            {s && !s.installed ? <><a href={tool === 'claude' ? 'https://code.claude.com/docs/en/setup' : 'https://developers.openai.com/codex/cli/'} target="_blank" rel="noreferrer">Installation guide</a><div className="muted">Restart Mission Control after installing so it can find the updated PATH.</div></> : s && !s.loggedIn ? <><span className="muted">Run in a terminal:</span><code>{tool === 'claude' ? 'claude auth login' : 'codex login'}</code></> : null}
-            {!s && <div className="muted">Refresh to try again.</div>}
-          </div>
-        })}
-        <div className="connection-actions">
-          <Button size="sm" onClick={onUsage}>Usage</Button>
-          <IconButton icon={Terminal} label="Open terminal for setup commands" onClick={onTerminal} />
-          <IconButton icon={RefreshCw} label="Refresh agent connections" disabled={busy} className={busy ? 'spinning' : ''} onClick={() => void load(true)} />
-        </div>
-      </div>}
-    </section>
-  )
+      <p className="muted small" role="status">{busy ? 'Refreshing quietly…' : 'Restart after installing to pick up the updated PATH.'}</p>
+      <div className="connection-actions">
+        <Button size="sm" onClick={onUsage}>Usage</Button>
+        <IconButton icon={Terminal} label="Open terminal for setup commands" onClick={onTerminal} />
+        <IconButton icon={RefreshCw} label="Refresh agent connections" disabled={busy} onClick={() => void load(true)} />
+      </div>
+    </div>
+  </details>
 }

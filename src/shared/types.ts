@@ -586,6 +586,8 @@ export interface KnowledgeHit {
 
 /** Claude Code on this computer: installed, version, logged in. */
 export interface ClaudeStatus {
+  /** Failed check means unknown, not disconnected. */
+  error?: string
   installed: boolean
   version?: string
   loggedIn: boolean

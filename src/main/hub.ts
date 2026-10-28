@@ -14,10 +14,10 @@ import { loadStore, updateStore } from './store'
  * connection status, your name for the greeting, quick chats and new projects.
  */
 
-function run(file: string, args: string[], timeout = 15_000): Promise<string> {
+function run(file: string, args: string[], timeout = 15_000, acceptFailureOutput = false): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(file, args, { env: agentEnv(), windowsHide: true, timeout, shell: /\.(cmd|bat)$/i.test(file) }, (err, stdout) =>
-      err ? reject(err) : resolve(String(stdout))
+      err && !(acceptFailureOutput && String(stdout).trim()) ? reject(err) : resolve(String(stdout))
     )
   })
 }
@@ -120,6 +120,11 @@ let statusCache: { at: number; status: ClaudeStatus } | null = null
 
 /** Whether claude is installed and logged in (the account's email is never passed to the UI). Cached for 5 minutes. */
 export async function claudeStatus(force = false): Promise<ClaudeStatus> {
+  if (process.env.MC_SMOKE && process.env.MC_SMOKE_WORKSPACE) {
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.MC_SMOKE_PROVIDER_DELAY || 0)))
+    if (process.env.MC_SMOKE_CONNECTION_FIXTURE === 'failure') throw new Error('Fixture Claude status failure')
+    return { installed: true, loggedIn: true, version: 'fixture' }
+  }
   if (!force && statusCache && Date.now() - statusCache.at < 300_000) return statusCache.status
   const path = whichSync('claude')
   let status: ClaudeStatus = { installed: !!path, loggedIn: false }
@@ -130,10 +135,12 @@ export async function claudeStatus(force = false): Promise<ClaudeStatus> {
       /* old version without --version */
     }
     try {
-      const auth = JSON.parse(await run(path, ['auth', 'status']))
-      status = { ...status, loggedIn: !!auth.loggedIn, authMethod: auth.authMethod, plan: auth.subscriptionType }
+      // A signed-out CLI can exit nonzero while still returning a valid status object.
+      const auth = JSON.parse(await run(path, ['auth', 'status'], 15_000, true))
+      if (typeof auth?.loggedIn !== 'boolean') throw new Error('Missing authentication status')
+      status = { ...status, loggedIn: auth.loggedIn, authMethod: auth.authMethod, plan: auth.subscriptionType }
     } catch {
-      /* not logged in, or an older CLI */
+      status.error = 'Could not check Claude login status.'
     }
   }
   statusCache = { at: Date.now(), status }
@@ -144,6 +151,10 @@ let codexStatusCache: { at: number; status: ClaudeStatus } | null = null
 
 /** Check the CLI itself, never infer authentication from old chat files. */
 export async function codexStatus(force = false): Promise<ClaudeStatus> {
+  if (process.env.MC_SMOKE && process.env.MC_SMOKE_WORKSPACE) {
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.MC_SMOKE_PROVIDER_DELAY || 0)))
+    return { installed: true, loggedIn: true, version: 'fixture' }
+  }
   if (!force && codexStatusCache && Date.now() - codexStatusCache.at < 300_000) return codexStatusCache.status
   const path = whichSync('codex')
   const status: ClaudeStatus = { installed: !!path, loggedIn: false }
@@ -168,6 +179,8 @@ let windowsName: string | null = null
 export async function userName(): Promise<string> {
   const own = loadStore().settings.userName?.trim()
   if (own) return own
+  // Clean fixtures must never expose the Windows identity.
+  if (process.env.MC_SMOKE_CLEAN) return ''
   if (windowsName === null) {
     try {
       const full = await run('powershell.exe', ['-NoProfile', '-Command', "(Get-CimInstance Win32_UserAccount -Filter \"Name='$env:USERNAME'\").FullName"], 8000)

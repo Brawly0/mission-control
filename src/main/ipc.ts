@@ -106,7 +106,17 @@ export function registerIpc(): void {
   ipcMain.handle('handoff:write', (_e, path: string, from: AgentTool, to: AgentTool, id?: string) => writeHandoff(path, from, to, id))
   ipcMain.handle('handoff:rules', (_e, path: string) => rulesFiles(path))
   ipcMain.handle('handoff:linkRules', (_e, path: string) => linkRules(path))
-  ipcMain.handle('codex:usage', (_e, since: number) => codexUsage(since))
+  ipcMain.handle('codex:usage', (_e, since: number) => {
+    if (process.env.MC_SMOKE && process.env.MC_SMOKE_WORKSPACE) return {
+      installed: true,
+      limits: { at: Date.now(), status: 'allowed', windows: [
+        { name: 'five_hour', utilization: 0.06, resetsAt: Date.now() + 3600_000 },
+        { name: 'seven_day', utilization: 0.12, resetsAt: Date.now() + 86400_000 }
+      ] },
+      totals: { input: 0, cachedInput: 0, output: 0, reasoning: 0, sessions: 0 }, byDay: [], byProject: [], byModel: []
+    }
+    return codexUsage(since)
+  })
 
   ipcMain.handle('projects:addPath', async (_e, path: string) => {
     if (!(await fs.stat(path)).isDirectory()) throw new Error('The project folder no longer exists.')
@@ -329,6 +339,7 @@ export function registerIpc(): void {
   ipcMain.handle('plan:rate', (_e, force?: boolean) => planRate(!!force))
   ipcMain.handle('digest:get', (_e, which: 'yesterday' | 'today') => buildDigest(which))
   ipcMain.handle('ratelimit:refresh', async () => {
+    if (process.env.MC_SMOKE && process.env.MC_SMOKE_WORKSPACE && process.env.MC_SMOKE_PLAN_FIXTURE === 'reject') throw new Error('Fixture IPC rejection')
     await refreshPlanUsage(true)
     return getRateLimit()
   })

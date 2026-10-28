@@ -7,6 +7,7 @@ import { timeAgo } from '../util'
 import { dueLabel } from '../due'
 import { taskSucceeded } from '@shared/deps'
 import { Avatar, MenuButton } from './ui'
+import { activityPeriod, calendarDay, comparisonLabel, DAY, dayKey, durationPresentation, TIME_HINT, timeLabel, weekStart, type UsageRange } from '../homeMetrics'
 import '../home.css'
 
 interface Props {
@@ -30,14 +31,7 @@ interface Props {
   onRunScript: () => void
   currentProject?: string
 }
-type UsageRange = 'week' | 'month' | 'all'
 type TaskFilter = 'open' | 'teams' | 'all'
-const DAY = 86_400_000
-const TIME_HINT = 'Estimated from gaps of up to 15 minutes between indexed chat events. Parallel chats can overlap; this is not billed or tracked work time.'
-function dayKey(date: Date): string { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
-function calendarDay(date: Date, offset: number): Date { const d = new Date(date); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offset); return d }
-function weekStart(date: Date): Date { return calendarDay(date, -((date.getDay() + 6) % 7)) }
-function timeLabel(minutes: number): string { const n = Math.round(minutes); return minutes > 0 && !n ? '<1m' : n < 60 ? `${n}m` : `${Math.floor(n / 60)}h${n % 60 ? ` ${n % 60}m` : ''}` }
 function greeting(): string { const h = new Date().getHours(); return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 
 /** Shared by the project list's existing filters. */
@@ -50,21 +44,14 @@ export function matchesFilter(p: Project, f: 'all' | 'active' | 'favorites' | 'r
 }
 function ProviderIcon({ tool }: { tool: AgentTool }) { return tool === 'claude' ? <Sun size={25} strokeWidth={1.8} /> : <CodeXml size={25} strokeWidth={1.8} /> }
 
-function Spark({ values, line = false, label }: { values: number[]; line?: boolean; label: string }) {
-  const max = Math.max(1, ...values)
-  if (!line) return <span className="hd-spark-bars" role="img" aria-label={label}>{values.map((v, i) => <i key={i} style={{ height: `${v ? Math.max(10, v / max * 100) : 3}%`, opacity: v ? 1 : .25 }} />)}</span>
-  const points = values.map((v, i) => `${i * 74 / Math.max(1, values.length - 1)},${35 - v / max * 30}`).join(' ')
-  return <svg className="hd-spark" viewBox="0 0 76 40" role="img" aria-label={label}><polygon points={`0,40 ${points} 74,40`} fill="currentColor" opacity=".1" /><polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" /></svg>
-}
-
-function Heatmap({ days, count, compact = false, pending = false, unavailable = false }: { days: DashboardDay[]; count: number; compact?: boolean; pending?: boolean; unavailable?: boolean }) {
+function Heatmap({ days, count, pending = false, unavailable = false }: { days: DashboardDay[]; count: number; pending?: boolean; unavailable?: boolean }) {
   const now = new Date(), first = calendarDay(now, -(count - 1)), start = weekStart(first)
   const weeks = Math.ceil((Math.round((calendarDay(now, 0).getTime() - start.getTime()) / DAY) + 1) / 7)
   const byDay = new Map<string, number>()
   for (const day of days) byDay.set(day.day, (byDay.get(day.day) ?? 0) + day.events)
   const max = Math.max(1, ...Array.from({ length: count }, (_, i) => byDay.get(dayKey(calendarDay(first, i))) ?? 0))
-  return <div className={`hd-heatmap ${compact ? 'is-compact' : ''}`} aria-label={unavailable ? 'Chat activity unavailable' : `${count}-day chat activity`} aria-busy={pending}>
-    {!compact && <div className="hd-heat-labels"><span>Mon</span><span>Wed</span><span>Fri</span></div>}
+  return <div className="hd-heatmap" aria-label={unavailable ? 'Chat activity unavailable' : `${count}-day chat activity`} aria-busy={pending}>
+    <div className="hd-heat-labels"><span>Mon</span><span>Wed</span><span>Fri</span></div>
     <div className="hd-heat-grid" style={{ '--weeks': weeks } as CSSProperties}>{Array.from({ length: weeks * 7 }, (_, i) => {
       const date = calendarDay(start, i), events = byDay.get(dayKey(date)) ?? 0, outside = date < first || date > now
       const level = outside || !events ? 0 : Math.min(4, Math.max(1, Math.ceil(events / max * 4)))
@@ -76,7 +63,7 @@ function Heatmap({ days, count, compact = false, pending = false, unavailable = 
 
 function usageBars(days: DashboardDay[], range: UsageRange, now: Date, tool: AgentTool) {
   const end = calendarDay(now, 1)
-  const start = range === 'week' ? weekStart(now) : range === 'month' ? new Date(now.getFullYear(), now.getMonth(), 1) : days.length ? new Date(days[0].day + 'T00:00:00') : calendarDay(now, -6)
+  const start = activityPeriod(days, range, now).start
   const span = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY)), width = range === 'week' ? 1 : Math.max(1, Math.ceil(span / 7))
   return Array.from({ length: range === 'week' ? 7 : Math.ceil(span / width) }, (_, i) => {
     const from = calendarDay(start, i * width), to = calendarDay(start, (i + 1) * width)
@@ -98,6 +85,7 @@ export default function HomeView(props: Props) {
   useEffect(() => {
     if (!visible) return
     let current = true
+    setActivity(null); setActivityError(false)
     window.mc.dashboardActivity().then(data => { if (current) { setActivity(data); setActivityError(false) } }).catch(() => { if (current) setActivityError(true) })
     window.mc.recentSessions(8).then(data => { if (current) { setRecent(data); setRecentError(false) } }).catch(() => { if (current) { setRecent([]); setRecentError(true) } })
     return () => { current = false }
@@ -106,19 +94,17 @@ export default function HomeView(props: Props) {
   // Home has no persistent terminals or editors. Keep its state while deferring charts offscreen.
   if (!visible) return <div className="home hd scroll" />
 
-  const now = new Date(), monday = weekStart(now), thisWeek = dayKey(monday), previousWeek = dayKey(calendarDay(monday, -7))
-  const daily = activity?.days ?? [], weekDays = Array.from({ length: 7 }, (_, i) => dayKey(calendarDay(monday, i)))
+  const now = new Date(), monday = weekStart(now)
+  const daily = activity?.days ?? []
   const live = agents.filter(a => !a.exited), real = projects.filter(p => !p.worktree)
   const openTasks = tasks.filter(t => t.column !== 'done' && !t.teamParentId)
   const working = live.filter(a => displayStatus(a, lastOutput[a.id]).cls === 'working').length, needYou = live.filter(a => a.hookStatus === 'needs-input').length
-  const weekMinutes = daily.filter(d => d.day >= thisWeek).reduce((n, d) => n + d.activeMinutes, 0), priorMinutes = daily.filter(d => d.day >= previousWeek && d.day < thisWeek).reduce((n, d) => n + d.activeMinutes, 0)
-  const since = range === 'week' ? thisWeek : range === 'month' ? dayKey(new Date(now.getFullYear(), now.getMonth(), 1)) : ''
-  const usageDays = daily.filter(d => d.day >= since), usageMinutes = usageDays.reduce((n, d) => n + d.activeMinutes, 0)
+  const week = activityPeriod(daily, 'week', now), usage = activityPeriod(daily, range, now)
+  const previousStart = dayKey(calendarDay(monday, -7))
+  const priorMinutes = daily.filter(d => d.day >= previousStart && d.day < dayKey(monday)).reduce((n, d) => n + d.activeMinutes, 0)
+  const weekDisplay = durationPresentation(week.minutes, week.events)
   const shownProjects = [...real].sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 4)
-  const weekEvents = weekDays.map(day => daily.filter(d => d.day === day).reduce((n, d) => n + d.events, 0))
-  const taskCreated = weekDays.map(day => tasks.filter(t => !t.teamParentId && dayKey(new Date(t.createdAt)) === day).length)
-  const projectActive = weekDays.map(day => real.filter(p => p.lastActivity && dayKey(new Date(p.lastActivity)) === day).length)
-  const weekAgentStarts = weekDays.map(day => agents.filter(a => dayKey(new Date(a.startedAt)) === day).length)
+  const idle = !live.length && !openTasks.length
   const compact = (n: number) => n.toLocaleString([], { notation: 'compact', maximumFractionDigits: 1 })
   const timeline = [
     ...(recent ?? []).map(s => ({ id: `chat-${s.tool}-${s.id}`, at: s.updatedAt, title: `Session with ${s.tool === 'codex' ? 'Codex' : 'Claude'}`, detail: s.title || s.projectName, icon: MessageSquare, tone: s.tool === 'codex' ? 'blue' : 'orange', action: () => props.onResume(s) })),
@@ -128,33 +114,41 @@ export default function HomeView(props: Props) {
   return <div className="home hd scroll">
     <header className="hd-hero">
       <div className="hd-heading"><h1>{greeting()}{userName && <>, <span className="hd-name">{userName}</span></>}</h1><p>Build faster. Smarter. All in one place.</p></div>
-      <div className="hd-hero-activity"><span className="hd-date">{now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span><Heatmap days={daily} count={91} compact pending={!activity && !activityError} unavailable={!activity && activityError} /></div>
-      <dl className="hd-summary"><div><dd>{activity ? compact(activity.activeDays) : '—'}</dd><dt>active days</dt></div><div><dd>{activity ? compact(activity.sessions) : '—'}</dd><dt>sessions</dt></div><div title={TIME_HINT}><dd>{activity ? timeLabel(activity.activeMinutes) : '—'}</dd><dt>total AI time · est.</dt></div></dl>
+      <dl className="hd-summary"><div><dd>{activity ? compact(activity.activeDays) : '—'}</dd><dt>active days / all time</dt></div><div><dd>{activity ? compact(activity.sessions) : '—'}</dd><dt>sessions / all time</dt></div><div title={TIME_HINT}><dd>{activity ? timeLabel(activity.activeMinutes) : '—'}</dd><dt>AI time / all time / est.</dt></div></dl>
     </header>
     <section className="hd-launch-grid" aria-label="Start something new">
-      <button className="hd-launch hd-tone-claude" onClick={() => props.onChat('claude')} title={props.currentProject ? `Start Claude in ${props.currentProject}` : 'Start a quick chat with Claude'}><span className="hd-launch-icon"><ProviderIcon tool="claude" /></span><span className="hd-launch-copy"><strong>Chat with Claude</strong><small>Plan, build, debug</small></span><ArrowRight className="hd-launch-arrow" size={16} /></button>
+      <button className="hd-launch hd-tone-claude" onClick={() => props.onChat('claude')} title={props.currentProject ? `Start Claude in ${props.currentProject}` : 'Start a quick chat with Claude'}><span className="hd-launch-icon"><ProviderIcon tool="claude" /></span><span className="hd-launch-copy"><strong>Chat with Claude</strong><small>Plan, build, debug</small></span></button>
       <button className="hd-launch hd-tone-codex" onClick={() => props.onChat('codex')} title={props.currentProject ? `Start Codex in ${props.currentProject}` : 'Start a quick chat with Codex'}><span className="hd-launch-icon"><ProviderIcon tool="codex" /></span><span className="hd-launch-copy"><strong>Chat with Codex</strong><small>Code, refactor, automate</small></span></button>
       <button className="hd-launch hd-tone-green" onClick={() => onShortcut('newProject')}><span className="hd-launch-icon"><Folder size={23} /></span><span className="hd-launch-copy"><strong>New Project</strong><small>Create or import</small></span></button>
       <button className="hd-launch hd-tone-purple" onClick={() => onShortcut('newTask')}><span className="hd-launch-icon"><CheckSquare size={23} /></span><span className="hd-launch-copy"><strong>New Task</strong><small>Add a task or reminder</small></span></button>
       <button className="hd-launch hd-tone-indigo" onClick={() => onShortcut('templates')}><span className="hd-launch-icon"><LayoutGrid size={23} /></span><span className="hd-launch-copy"><strong>Use Template</strong><small>Start with a template</small></span></button>
     </section>
-    <section className="hd-stats" aria-label="Workspace overview">{[
-      { label: 'Projects', value: real.length.toLocaleString(), note: `${real.filter(p => p.lastActivity >= monday.getTime()).length} active this week`, icon: Folder, tone: 'green', values: projectActive, chart: 'Projects by most recent activity this week', go: 'goProjects' },
-      { label: 'Chats', value: real.reduce((n, p) => n + p.sessionCount, 0).toLocaleString(), note: 'Across your projects', icon: MessageSquare, tone: 'blue', values: weekEvents, chart: 'Chat activity events this week', go: 'goSearch' },
-      { label: 'Tasks', value: tasks.filter(t => !t.teamParentId).length.toLocaleString(), note: `${openTasks.length} open`, icon: ListChecks, tone: 'purple', values: taskCreated, chart: 'Tasks created this week', go: 'goTasks' },
-      { label: 'Agents', value: String(live.length), note: needYou ? `${needYou} need your attention` : working ? `${working} working now` : 'Open in your workspace', icon: Bot, tone: 'orange', values: weekAgentStarts, chart: 'Current workspace agent start dates', go: 'goAgents' },
-      { label: 'AI Time (week)', value: activity ? timeLabel(weekMinutes) : '—', note: activity ? priorMinutes ? `${weekMinutes >= priorMinutes ? '+' : ''}${Math.round((weekMinutes / priorMinutes - 1) * 100)}% vs last week · est.` : 'Estimated active chat time' : activityError ? 'Activity unavailable' : 'Loading activity…', icon: Clock3, tone: 'violet', values: weekDays.map(day => daily.filter(d => d.day === day).reduce((n, d) => n + d.activeMinutes, 0)), chart: TIME_HINT, go: 'goUsage', line: true }
-    ].map(stat => <button className={`hd-stat hd-tone-${stat.tone}`} key={stat.label} onClick={() => onShortcut(stat.go)} title={stat.chart}><span className="hd-stat-icon"><stat.icon size={23} /></span><span className="hd-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span><small>{stat.note}</small></span><Spark values={stat.values} line={stat.line} label={stat.chart} /></button>)}</section>
+    <section className={`hd-stats ${idle ? 'is-idle' : ''}`} aria-label="Workspace overview">{[
+      { label: 'Projects', value: real.length.toLocaleString(), note: `${real.filter(p => p.lastActivity >= monday.getTime()).length} active this week`, icon: Folder, tone: 'green', go: 'goProjects' },
+      { label: 'Chats', value: real.reduce((n, p) => n + p.sessionCount, 0).toLocaleString(), note: 'Across your projects', icon: MessageSquare, tone: 'blue', go: 'goSearch' },
+      ...(!idle ? [
+        { label: 'Tasks', value: tasks.filter(t => !t.teamParentId).length.toLocaleString(), note: `${openTasks.length} open`, icon: ListChecks, tone: 'purple', go: 'goTasks' },
+        { label: 'Agents', value: String(live.length), note: needYou ? `${needYou} need your attention` : working ? `${working} working now` : 'Open in your workspace', icon: Bot, tone: 'orange', go: 'goAgents' }
+      ] : []),
+      { label: 'AI Time / this week', value: activity ? weekDisplay.value : '—', note: activity ? comparisonLabel(week.minutes, priorMinutes) ?? weekDisplay.note : activityError ? 'Activity unavailable' : 'Loading activity...', icon: Clock3, tone: 'violet', go: 'goUsage', period: week.label }
+    ].map(stat => <button className={`hd-stat hd-tone-${stat.tone}`} key={stat.label} onClick={() => onShortcut(stat.go)} title={stat.period ? TIME_HINT : stat.note}><span className="hd-stat-icon"><stat.icon size={23} /></span><span className="hd-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span>{stat.period && <small className="hd-period">{stat.period}</small>}<small>{stat.note}</small></span></button>)}
+      {idle && <div className="hd-stat hd-idle hd-tone-purple"><span className="hd-stat-icon"><CheckCheck size={23} /></span><span className="hd-stat-copy"><strong>Nothing running</strong><small>No open tasks or agents / {tasks.filter(t => !t.teamParentId).length} completed tasks</small><span className="hd-idle-actions"><button onClick={() => onShortcut('goTasks')}>View tasks</button><button onClick={() => onShortcut('goAgents')}>View agents</button></span></span></div>}
+    </section>
 
     {activityError && <div className="hd-data-error" role="status">Activity couldn’t be refreshed. <button onClick={() => setRetry(v => v + 1)}>Retry</button></div>}
     <section className="hd-grid" aria-label="Workspace dashboard">
       <section className="hd-panel hd-usage"><div className="hd-panel-head"><h2>AI Usage</h2><div className="hd-tabs" aria-label="Usage period">{(['week', 'month', 'all'] as const).map(value => <button key={value} aria-pressed={range === value} className={range === value ? 'active' : ''} onClick={() => setRange(value)}>{value === 'week' ? 'This Week' : value === 'month' ? 'This Month' : 'All Time'}</button>)}</div></div>
+        <p className="hd-period">{usage.label}</p>
+        <p className="hd-usage-total" role="status">{!activity ? activityError ? 'Activity unavailable. Retry to load this period.' : 'Loading activity...' : usage.events ? `Selected period total: ${timeLabel(usage.minutes)} / ${usage.events} activity events` : 'No activity in this period. Choose another period to see earlier chats.'}</p>
         {(['claude', 'codex'] as const).map(tool => {
-          const minutes = usageDays.filter(d => d.tool === tool).reduce((n, d) => n + d.activeMinutes, 0), bars = usageBars(daily, range, now, tool), max = Math.max(1, ...bars.map(b => b.minutes))
-          return <div className={`hd-usage-row hd-provider-${tool}`} key={tool}><span className="hd-provider-icon"><ProviderIcon tool={tool} /></span><span className="hd-provider-copy"><strong>{tool === 'claude' ? 'Claude' : 'Codex'}</strong><span title={TIME_HINT}>{activity ? timeLabel(minutes) : '—'}</span></span><span className="hd-provider-share" title="Share of estimated active chat time">{activity && usageMinutes ? `${Math.round(minutes / usageMinutes * 100)}%` : '—'}</span><div className="hd-week-bars" role="img" aria-label={`${tool} estimated active time by ${range === 'week' ? 'day' : 'date range'}`}>{bars.map((bar, i) => <span className="hd-week-day" key={i} title={`${bar.title}: ${timeLabel(bar.minutes)}`}><i style={{ height: `${bar.minutes ? Math.max(8, bar.minutes / max * 100) : 2}%`, opacity: bar.minutes ? 1 : .2 }} /><small>{bar.label}</small></span>)}</div></div>
-        })}<p className="hd-usage-note" title={TIME_HINT}>Estimated chat activity · idle gaps excluded</p>
+          const { minutes, events } = usage.providers[tool], display = durationPresentation(minutes, events)
+          const bars = usageBars(usage.days, range, now, tool), max = Math.max(1, ...bars.map(b => b.minutes))
+          return <div className={`hd-usage-row hd-provider-${tool}`} key={tool}><span className="hd-provider-icon"><ProviderIcon tool={tool} /></span><span className="hd-provider-copy"><strong>{tool === 'claude' ? 'Claude' : 'Codex'}</strong><span title={TIME_HINT}>{activity ? display.value : '—'}</span></span>
+            {activity && minutes > 0 ? <><span className="hd-provider-share" title="Share of selected-period estimated active chat time">{Math.round(minutes / usage.minutes * 100)}%</span><div className="hd-week-bars" role="img" aria-label={`${tool} estimated active time / ${usage.label}`}>{bars.map((bar, i) => <span className="hd-week-day" key={i} title={`${bar.title}: ${timeLabel(bar.minutes)}`}><i style={{ height: `${bar.minutes ? Math.max(8, bar.minutes / max * 100) : 0}%` }} /><small>{bar.label}</small></span>)}</div></> : <span className="hd-provider-state">{activity ? display.note : activityError ? 'Unavailable' : 'Loading...'}</span>}
+          </div>
+        })}<p className="hd-usage-note">{TIME_HINT}</p>
       </section>
-      <section className="hd-panel hd-activity"><div className="hd-panel-head"><h2>Activity</h2><select className="hd-select" value={heatRange} onChange={e => setHeatRange(Number(e.target.value))} aria-label="Activity date range"><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option></select></div><Heatmap days={daily} count={heatRange} pending={!activity && !activityError} unavailable={!activity && activityError} /><p className="hd-usage-note">Claude + Codex · each square is one day</p></section>
+      <section className="hd-panel hd-activity"><div className="hd-panel-head"><h2>Activity</h2><select className="hd-select" value={heatRange} onChange={e => setHeatRange(Number(e.target.value))} aria-label="Activity date range"><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option><option value={180}>Last 180 days</option></select></div><Heatmap days={daily} count={heatRange} pending={!activity && !activityError} unavailable={!activity && activityError} /><p className="hd-usage-note" role="status">{!activity ? activityError ? 'Activity unavailable' : 'Loading activity...' : daily.some(d => d.day >= dayKey(calendarDay(now, -(heatRange - 1))) && d.events > 0) ? 'Claude + Codex / each square is one day' : 'No activity in the selected date range'}</p></section>
       <section className="hd-panel hd-quick"><div className="hd-panel-head"><h2>Quick Actions</h2></div><div className="hd-quick-grid">{[
         { label: 'Open Projects', icon: FolderOpen, action: () => onShortcut('goProjects'), tone: 'indigo' },
         { label: 'Workspace Files', icon: FileText, action: () => onShortcut('tabDocs'), tone: 'purple', needsProject: true },
