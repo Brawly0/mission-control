@@ -9,6 +9,11 @@ function on<T>(channel: string, cb: (value: T) => void): () => void {
 }
 
 const api: MissionControlApi = {
+  getGuidedSetup: () => ipcRenderer.invoke('setup:get'),
+  updateGuidedSetup: (patch) => ipcRenderer.invoke('setup:update', patch),
+  checkConnections: (request) => ipcRenderer.invoke('readiness:connections', request),
+  checkProjectReadiness: (request) => ipcRenderer.invoke('readiness:project', request),
+  cancelReadiness: (requestId) => ipcRenderer.invoke('readiness:cancel', requestId),
   addProjectPath: (path) => ipcRenderer.invoke('projects:addPath', path),
   mergeReviewedWorktree: (wt, fingerprint) => ipcRenderer.invoke('review:merge', wt, fingerprint),
   projectReview: (path, base) => ipcRenderer.invoke('review:get', path, base),

@@ -586,6 +586,9 @@ export interface KnowledgeHit {
 
 /** Claude Code on this computer: installed, version, logged in. */
 export interface ClaudeStatus {
+  /** Unknown diagnostic outcomes are exposed here; booleans remain conservative compatibility fields. */
+  installation?: import('./readiness').ReadinessCheck
+  authentication?: import('./readiness').ReadinessCheck
   installed: boolean
   version?: string
   loggedIn: boolean
@@ -914,6 +917,11 @@ export interface MissionControlApi {
   deleteNote(id: string): Promise<void>
   knowledgeDocs(): Promise<KnowledgeDoc[]>
   searchKnowledge(query: string): Promise<KnowledgeHit[]>
+  getGuidedSetup(): Promise<GuidedSetupState>
+  updateGuidedSetup(patch: Partial<Pick<GuidedSetupState, 'providers' | 'status' | 'step'>>): Promise<GuidedSetupState>
+  checkConnections(request: ConnectionReadinessRequest): Promise<ReadinessResult>
+  checkProjectReadiness(request: ProjectReadinessRequest): Promise<ReadinessResult>
+  cancelReadiness(requestId: string): Promise<boolean>
   claudeStatus(force?: boolean): Promise<ClaudeStatus>
   codexStatus(force?: boolean): Promise<ClaudeStatus>
   reorderProjects(paths: string[]): Promise<void>
@@ -1061,3 +1069,5 @@ export interface MissionControlApi {
   /** True while the self-test runs (MC_SMOKE); the UI then exposes a small test handle. */
   smoke: boolean
 }
+import type { ConnectionReadinessRequest, GuidedSetupState, ProjectReadinessRequest, ReadinessResult } from './readiness'
+export type { ConnectionReadinessRequest, GuidedSetupState, ProjectReadinessRequest, ReadinessResult, ReadinessCheck, ReadinessOutcome, ReadinessReason, CommandSuggestion } from './readiness'

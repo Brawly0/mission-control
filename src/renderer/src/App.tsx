@@ -19,6 +19,12 @@ import type {
   PlanRate,
   WorktreeInfo
 } from '@shared/types'
+import { ReadinessContext, useReadiness } from './app/useReadiness'
+import GuidedSetup from './components/GuidedSetup'
+import FirstTaskGuide from './components/FirstTaskGuide'
+import { deriveProblems, visibleProblems, type ProblemState, type ProblemAction } from './problems'
+import { recordTaskInspection, type TaskInspection } from './firstTaskGuidance'
+import './setup.css'
 import TasksView from './components/TasksView'
 import TaskComposer from './components/TaskComposer'
 import TaskDrawer from './components/TaskDrawer'
@@ -106,6 +112,21 @@ export default function App() {
   const [broadcastOpen, setBroadcastOpen] = useState(false)
   const [inboxDismissed, setInboxDismissed] = useState<string[]>([])
   const [showDismissed, setShowDismissed] = useState(false)
+
+  const diagnosticError = useCallback(() => toast('error', 'Readiness unavailable', 'Recheck when the tool or folder is available.'), [toast])
+  const readiness = useReadiness(selectedPath, diagnosticError)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [guideTaskId, setGuideTaskId] = useState<string | undefined>(() => { try { return localStorage.getItem('mc.guideTaskId') || undefined } catch { return undefined } })
+  const [guideDraft, setGuideDraft] = useState(false)
+  const [inspection, setInspection] = useState<TaskInspection>()
+  const inspectResult = useCallback((next: TaskInspection) => setInspection(previous => recordTaskInspection(previous, next, 'result')), [])
+  const inspectChanges = useCallback((next: TaskInspection) => setInspection(previous => recordTaskInspection(previous, next, 'changes')), [])
+  const [taskTab, setTaskTab] = useState<'activity' | 'changes'>('activity')
+  const [problemState, setProblemState] = useState<ProblemState>({})
+  const resumeSetup = () => { void readiness.updateSetup({ status: 'active' }); setSetupOpen(true); void readiness.check(); if (selectedPath) void readiness.check(selectedPath) }
+
+  const resumeSetupRef = useRef(resumeSetup)
+  resumeSetupRef.current = resumeSetup
 
   // Monthly budgets: refresh when the index changes (new spend), when projects change (new budgets), and on warnings.
   const refreshBudgets = useCallback(() => {
@@ -288,7 +309,7 @@ export default function App() {
   // Self-test handle: lets smoke.ts drive a real agent through the UI and read its status.
   useEffect(() => {
     if (!window.mc.smoke) return
-    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), closeAgent, runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current, openSession: (projectPath: string, sessionId: string) => openSessionRef.current(projectPath, sessionId) }
+    ;(window as any).__mcSmoke = { launch, agents: () => agentsRef.current, setView, openPalette: () => setPaletteOpen(true), selectProject: setSelectedPath, refresh: refreshProjects, openSetup: () => resumeSetupRef.current(), openComposer: () => setComposerOpen(true), openTask: setOpenTaskId, openTemplates: () => setTemplatesOpen(true), openSettings: () => setSettingsOpen(true), openShortcuts: () => setShortcutsOpen(true), closeAgent, runShortcut: (id: string) => runShortcutRef.current(id), startTask, tasks: () => tasksRef.current, openSession: (projectPath: string, sessionId: string) => openSessionRef.current(projectPath, sessionId) }
   }, [launch, refreshProjects, startTask, closeAgent])
 
 
@@ -385,7 +406,7 @@ export default function App() {
       const id = combo ? shortcutIndex.current.get(combo) : undefined
       if (!id) return
       // Open dialogs handle their own keys; only the palette opens over them.
-      if (document.querySelector('.overlay') && id !== 'palette') return
+      if (document.querySelector('.overlay, .setup-overlay') && id !== 'palette') return
       if (!allowedIn(combo, e.target)) return
       e.preventDefault()
       e.stopPropagation()
@@ -585,12 +606,50 @@ export default function App() {
     [workspaces, update, selected, layout, notify, agents, projects, showWorktrees, recentForPalette, newInSelected, launchWorktree, handOff, launch, toggleNotify, addProject, refreshProjects, focusAgent, openProject, resumeRecent, shortcutKeys] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
+  useEffect(() => {
+    setProblemState(previous => {
+      const next = deriveProblems(previous, { diagnostics: readiness.diagnostics, tasks })
+      for (const snapshot of readiness.diagnostics) {
+        const result = snapshot.result
+        if (!result || result.requestId !== snapshot.latestRequestId || ['checking', 'cancelled', 'stale'].includes(result.outcome) || !result.checks.length || result.checks.some(c => c.id === 'diagnostic')) continue
+        const id = JSON.stringify(['readiness', snapshot.scope.kind, snapshot.scope.kind === 'project' ? snapshot.scope.projectPath : '', 'diagnostic'])
+        if (next[id] && next[id].version < result.startedAt) delete next[id]
+      }
+      return next
+    })
+  }, [readiness.connections, readiness.projects, tasks])
+  const problems = visibleProblems(problemState).filter(problem => {
+    try {
+      const [kind, scope, , checkId] = JSON.parse(problem.id)
+      return kind !== 'readiness' || scope !== 'connections' || !['claude', 'codex'].some(provider => String(checkId).includes(provider) && !readiness.providers.includes(provider as AgentTool))
+    } catch { return true }
+  })
+  const problemAction = async (action: ProblemAction) => {
+    try {
+      if (action.kind === 'recheck') await readiness.check(action.scope.kind === 'project' ? action.scope.projectPath : undefined)
+      else if (action.kind === 'setup') { if (action.scope.kind === 'project') openProject(action.scope.projectPath); resumeSetup() }
+      else if (action.kind === 'open-project') openProject(action.projectPath)
+      else if (action.kind === 'open-task') { setTaskTab('activity'); setView('tasks'); setOpenTaskId(action.taskId) }
+      else if (action.kind === 'retry-checks') await window.mc.rerunChecks(action.taskId)
+      else { const task = tasks.find(t => t.id === action.taskId); if (task) await startTask(task) }
+    } catch { toast('error', 'Problem action could not finish', 'Open the task or project and try again.') }
+  }
+  const firstGuide = <FirstTaskGuide projectPath={selectedPath ?? undefined} taskId={guideTaskId} tasks={tasks} inspection={inspection}
+    reviewFingerprint={inspection?.changesFingerprint}
+    onOpenProject={() => { setSetupOpen(false); setNewProjectOpen(true) }}
+    onCreateTask={initial => { setSetupOpen(false); setGuideDraft(true); setComposerInitial({ ...initial, tool: readiness.providers[0] }); setComposerOpen(true) }}
+    onOpenTask={(id, tab = 'activity') => { setSetupOpen(false); setTaskTab(tab); setView('tasks'); setOpenTaskId(id) }}
+    onSkip={() => { readiness.cancel(); void readiness.updateSetup({ status: 'skipped' }); setSetupOpen(false) }}
+    onDismiss={() => { readiness.cancel(); void readiness.updateSetup({ status: 'dismissed' }); setSetupOpen(false) }} />
+
   return (
+    <ReadinessContext.Provider value={readiness}>
     <ShortcutContext.Provider value={shortcutKeys}>
     <LookContext.Provider value={lookUp}>
     <PlanRateContext.Provider value={planRate}>
     <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${maximizedAgent ? 'agent-maximized' : ''}`}>
       <Sidebar
+        onSetup={resumeSetup}
         projects={projects}
         budgets={budgets}
         git={git}
@@ -642,6 +701,8 @@ export default function App() {
         )}
         <div className="view-body">
           <div className={view === 'home' ? 'view-pane' : 'view-pane hidden'}>
+            <div className="setup-entry"><Button size="sm" onClick={resumeSetup}>Start or resume guided setup</Button><Button size="sm" onClick={() => setView('inbox')}>Fix problems ({problems.length})</Button></div>
+            {readiness.setup?.status === 'active' && firstGuide}
             <HomeView
               agents={agents}
               lastOutput={lastOutput}
@@ -678,6 +739,7 @@ export default function App() {
           </div>
           <div className={view === 'inbox' ? 'view-pane' : 'view-pane hidden'}>
             <InboxView
+              problemsCenter={{ problems, onAction: action => void problemAction(action), busy: readiness.connections.busy || Object.values(readiness.projects).some(s => s.busy) }}
               visible={view === 'inbox'}
               items={showDismissed ? visibleInbox(allInbox, inboxDismissed, true) : inbox}
               hiddenCount={allInbox.length - inbox.length}
@@ -828,6 +890,7 @@ export default function App() {
             </OnceShown>
           </div>
           <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
+            {readiness.setup?.status === 'active' && firstGuide}
             <TasksView
               tasks={tasks}
               agents={agents}
@@ -862,6 +925,9 @@ export default function App() {
         <BottomDock context={dockContext} request={dockRequest} visible={view === 'project' || view === 'agents'} onChanged={refreshProjects} onLaunch={launch} />
         {openTask && view === 'tasks' && (
           <TaskDrawer
+            initialTab={taskTab}
+            onInspectResult={inspectResult}
+            onInspectChanges={inspectChanges}
             task={openTask}
             all={tasks}
             onOpenTask={(t) => setOpenTaskId(t.id)}
@@ -901,6 +967,10 @@ export default function App() {
           }}
         />
       </main>
+      {setupOpen && <GuidedSetup onClose={() => setSetupOpen(false)} projectName={selected?.name}
+        onTerminal={() => { setSetupOpen(false); openProjectTerminal() }} onUsage={() => { setSetupOpen(false); setView('usage') }}
+        onAdd={() => { setSetupOpen(false); void addProject() }} onNew={() => { setSetupOpen(false); setNewProjectOpen(true) }}
+        onOpenProject={() => { setSetupOpen(false); if (selectedPath) openProject(selectedPath) }}>{firstGuide}</GuidedSetup>}
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
       {broadcastOpen && <BroadcastDialog agents={agents.filter((a) => a.kind !== 'shell' && !a.exited)} lastOutput={lastOutput} onClose={() => setBroadcastOpen(false)} />}
       {workspacesOpen && (
@@ -924,12 +994,22 @@ export default function App() {
           onCancel={() => {
             setComposerOpen(false)
             setComposerInitial(undefined)
+            setGuideDraft(false)
           }}
           onCreate={async (input, then) => {
+            const task = await window.mc.createTask({ ...input, queued: then === 'queue' }).catch(() => {
+              toast('error', 'Could not create task', 'Your draft is still open. Review the project and try again.')
+              return null
+            })
+            if (!task) return
             setComposerOpen(false)
             setComposerInitial(undefined)
             setView('tasks')
-            const task = await window.mc.createTask({ ...input, queued: then === 'queue' })
+            if (guideDraft) {
+              setGuideTaskId(task.id); setGuideDraft(false); setOpenTaskId(task.id)
+              try { localStorage.setItem('mc.guideTaskId', task.id) } catch { /* optional resume hint */ }
+              void readiness.updateSetup({ step: 'task' })
+            }
             if (then === 'start') startTask(task)
             if (then === 'team') {
               setOpenTaskId(task.id)
@@ -968,6 +1048,7 @@ export default function App() {
       {settingsOpen && (
         <Suspense fallback={null}>
           <SettingsDialog
+            onResumeSetup={() => { setSettingsOpen(false); resumeSetup() }}
             initialTab={settingsTab}
             onClose={() => {
               setSettingsOpen(false)
@@ -999,5 +1080,6 @@ export default function App() {
     </PlanRateContext.Provider>
     </LookContext.Provider>
     </ShortcutContext.Provider>
+    </ReadinessContext.Provider>
   )
 }

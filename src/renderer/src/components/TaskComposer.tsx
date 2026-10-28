@@ -3,6 +3,8 @@ import { FileStack, GitFork, Link2, ListPlus, Play, Plus, ShieldAlert, SquareTer
 import type { AgentTool, GitInfo, NewTask, Project, Task, TaskMode, TaskPermission } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 import { dueFrom, dueInputs } from '../due'
+import { STARTER_TASK } from '../firstTaskGuidance'
+import '../guidance.css'
 
 interface Props {
   projects: Project[]
@@ -119,6 +121,12 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
               rows={6}
             />
           </label>
+          {!prompt.trim() && <Button type="button" size="sm" variant="ghost" onClick={() => {
+            setPrompt(STARTER_TASK.prompt ?? '')
+            setTitle(STARTER_TASK.title ?? '')
+            setPermission('plan')
+            promptRef.current?.focus()
+          }}>Use editable project exploration prompt (read-only)</Button>}
           <div className="team-compose-action">
             <div><strong>Give a larger task to a team</strong><p className="field-hint">Preview assignments sized to the work, then run them together in an isolated worktree.</p></div>
             <Button type="button" icon={Users} disabled={!valid || !isRepo} onClick={() => submit('team')} title={isRepo ? 'Uses the selected agent to inspect the project and plan assignments.' : 'Agent teams need a git repository for their isolated worktree.'}>Split into agents</Button>
@@ -171,6 +179,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
               <span className={`field-hint ${permission === 'bypassPermissions' ? 'warn' : ''}`}>
                 {permission === 'bypassPermissions' && <ShieldAlert size={12} />} {permissions.find((p) => p.value === permission)?.hint}
               </span>
+              <span className="field-hint">Permissions control what the agent may do. Review them before starting; a background run cannot pause to ask you for approval.</span>
             </label>
             <label className="field">
               <span className="field-label">Model</span>
@@ -253,7 +262,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
             <span>
               Run in its own worktree
               <span className="field-hint block">
-                {isRepo ? 'A separate branch, so it can’t clash with other agents. Review and merge it when it’s done.' : 'Needs a git repository.'}
+                {isRepo ? 'A separate checkout and branch keeps edits apart from your working folder. It is not a security sandbox. Inspect the result and Changes before deciding to merge.' : 'Needs a git repository. Without isolation, permitted edits affect the selected folder directly.'}
               </span>
             </span>
           </label>

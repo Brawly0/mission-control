@@ -6,6 +6,18 @@
 - [x] Watch agents from task cards and team controls; waiting dependencies and completed output remain visible
 - [x] Keyboard navigation, compact layout, both themes and isolated native fixture verification
 
+## Guided setup and readiness verification (2026-10-28)
+
+- [x] Add a dedicated `MC_SMOKE_ONBOARDING` dispatch with fail-closed local Claude/Codex version/auth/task fixtures, a restricted child PATH and provider/package-manager sentinels.
+- [x] Verify provider selection, auth uncertainty/offline recovery, cancellation, non-Git/valid Git and invalid/unsupported manifests through production preload/IPC/readiness paths.
+- [x] Verify explicit command review/edit/save without execution and preservation of existing project metadata; run real local task children, isolate edits in a Git worktree and display the real result/diff.
+- [x] Exercise local task failure, interruption and retry; capture dark/light setup at the actual 960x600 minimum with overflow checks.
+- [x] Verify missing-Git recovery and actual second-process setup/settings/project persistence; retain partial evidence on tour failures and scan captured application logs for diagnostic canaries.
+- [x] Run existing free team, project-command/review and Codex fixture smoke coverage; typecheck, 273 tests and build passed (bundle-size warning remains).
+- [x] Document reproducible free fixture commands, profile/repository isolation, supported manifests and ADR 0030.
+- [x] Complete first-task guidance after the actual result is displayed and the current diff is explicitly acknowledged; preserve run identity and invalidate changed or unavailable review evidence.
+- [x] Verify the connected flow through local provider fixtures, separate-process persistence, both themes and the minimum window size; retain reports and documented limits in development instructions.
+
 ## ✅ v0.1: Foundation
 - [x] Project discovery from `~/.claude/projects` plus manual folders
 - [x] Pinning, filter, hidden worktrees and scratch folders

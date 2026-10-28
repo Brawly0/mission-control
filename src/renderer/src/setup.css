@@ -1,0 +1,14 @@
+.setup-overlay { position: fixed; inset: 0; z-index: 120; background: #0008; display: flex; justify-content: center; align-items: center; padding: 20px; }
+.setup-surface { background: var(--bg, Canvas); color: var(--text, CanvasText); border: 1px solid var(--border); border-radius: 12px; width: min(760px, 100%); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; box-shadow: 0 16px 64px #0005; }
+.setup-surface header, .setup-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.setup-surface header { justify-content: space-between; }
+.setup-surface h1 { font-size: 22px; }
+.setup-surface h2, .project-readiness h2 { font-size: 16px; margin: 18px 0 10px; }
+.setup-surface .agent-connections { margin: 0; }
+.setup-surface fieldset { display: flex; gap: 20px; border: 1px solid var(--border); padding: 10px; }
+.project-readiness { margin: 12px 20px; padding: 14px; flex-shrink: 0; max-height: 230px; overflow: auto; }
+.project-readiness li { margin-bottom: 6px; }
+.setup-entry { padding: 8px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.setup-surface :focus-visible, .project-readiness :focus-visible { outline: 2px solid var(--accent, Highlight); outline-offset: 3px; }
+
+.setup-sidebar-entry { margin: 8px 14px; padding: 7px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-align: left; cursor: pointer; }

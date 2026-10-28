@@ -1,54 +1,22 @@
-import { useEffect, useState } from 'react'
-import { ChevronDown, RefreshCw, Terminal } from 'lucide-react'
-import type { ClaudeStatus } from '@shared/types'
-import { Button, IconButton, ToolBadge } from './ui'
+import { useState } from 'react'
+import { Button, ToolBadge } from './ui'
+import { useSharedReadiness } from '../app/useReadiness'
 
-export default function AgentConnections({ onUsage, onTerminal }: { onUsage: () => void; onTerminal: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<Record<string, ClaudeStatus | null>>({})
-  const load = async (force = false) => {
-    setBusy(true)
-    const results = await Promise.allSettled([window.mc.claudeStatus(force), window.mc.codexStatus(force)])
-    setStatus(Object.fromEntries(results.map((r, i) => [i ? 'codex' : 'claude', r.status === 'fulfilled' ? r.value : null])))
-    if (!force && results.every(r => r.status === 'rejected' || !r.value.installed)) setOpen(true)
-    setBusy(false)
-  }
-  useEffect(() => {
-    void load()
-    const timer = setInterval(() => void load(), 300_000)
-    return () => clearInterval(timer)
-  }, [])
-  return (
-    <section className="agent-connections" aria-label="Agent connections">
-      <button className="connection-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span>Agent connections</span><ChevronDown size={14} />
-      </button>
-      {(['claude', 'codex'] as const).map(tool => {
-        const s = status[tool]
-        // A refresh keeps the last result on screen instead of flashing "Checking" every 5 minutes.
-        const label = s === undefined ? 'Checking...' : !s ? 'Check failed' : !s.installed ? 'Not installed' : s.loggedIn ? 'Connected' : 'Sign in needed'
-        return <button key={tool} className="connection-row" onClick={() => setOpen(!open)} aria-expanded={open}>
-          <ToolBadge tool={tool} /><span className={s?.loggedIn ? 'connection-ok' : 'muted'}>{label}</span>
-        </button>
-      })}
-      {open && <div className="connection-details">
-        <p className="muted small">Use Claude, Codex, or both. Install and sign in to the CLI you want to use.</p>
-        {(['claude', 'codex'] as const).map(tool => {
-          const s = status[tool]
-          return <div key={tool} className="small">
-            <strong>{tool === 'claude' ? 'Claude Code' : 'Codex'}</strong>
-            <div className="muted">{s?.version || 'Version unavailable'}{s?.plan ? ` · ${s.plan[0].toUpperCase()}${s.plan.slice(1)} plan` : ''}</div>
-            {s && !s.installed ? <><a href={tool === 'claude' ? 'https://code.claude.com/docs/en/setup' : 'https://developers.openai.com/codex/cli/'} target="_blank" rel="noreferrer">Installation guide</a><div className="muted">Restart Mission Control after installing so it can find the updated PATH.</div></> : s && !s.loggedIn ? <><span className="muted">Run in a terminal:</span><code>{tool === 'claude' ? 'claude auth login' : 'codex login'}</code></> : null}
-            {!s && <div className="muted">Refresh to try again.</div>}
-          </div>
-        })}
-        <div className="connection-actions">
-          <Button size="sm" onClick={onUsage}>Usage</Button>
-          <IconButton icon={Terminal} label="Open terminal for setup commands" onClick={onTerminal} />
-          <IconButton icon={RefreshCw} label="Refresh agent connections" disabled={busy} className={busy ? 'spinning' : ''} onClick={() => void load(true)} />
-        </div>
-      </div>}
-    </section>
-  )
+export default function AgentConnections({ onUsage, onTerminal, expanded = false, selection = false }: { onUsage: () => void; onTerminal: () => void; expanded?: boolean; selection?: boolean }) {
+  const [open, setOpen] = useState(expanded)
+  const { providers, connections, check, cancel, updateSetup } = useSharedReadiness()
+  return <section className="agent-connections" aria-label="Agent connections" aria-busy={connections.busy}>
+    <button className="connection-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>Agent connections</button>
+    {selection && <fieldset><legend>Tools to connect</legend>{(['claude', 'codex'] as const).map(tool => <label key={tool}><input type="checkbox" checked={providers.includes(tool)} disabled={providers.length === 1 && providers.includes(tool)} onChange={e => void updateSetup({ providers: e.target.checked ? [...providers, tool] : providers.filter(p => p !== tool) })} />{tool === 'claude' ? 'Claude' : 'Codex'}</label>)}</fieldset>}
+    <div role="status" aria-live="polite">{connections.busy ? 'Checking connections…' : !connections.result ? 'Connections have not been verified.' : connections.result.outcome === 'ready' ? 'Selected connection requirements verified.' : 'Review connection requirements below.'}</div>
+    {(['claude', 'codex'] as const).map(tool => <div key={tool} className="connection-row"><ToolBadge tool={tool} /><span>{connections.busy ? 'Checking…' : connections.result?.checks.filter(c => c.id.includes(tool)).map(c => `${c.id.split('.').pop()}: ${c.explanation}`).join(' ') || 'Not verified'}</span></div>)}
+    {open && <div className="connection-details">
+      {connections.result?.checks.filter(c => !providers.some(p => c.id.includes(p))).map(c => <p key={c.id}>{c.explanation}</p>)}
+      {providers.map(tool => <div key={tool}><strong>{tool === 'claude' ? 'Claude Code' : 'Codex'}</strong><p className="muted small">Install the CLI, then sign in in a terminal. Recheck after making changes. Offline or unavailable checks remain unknown.</p><a href={tool === 'claude' ? 'https://code.claude.com/docs/en/setup' : 'https://developers.openai.com/codex/cli/'} target="_blank" rel="noreferrer">{tool} installation guide</a><p>Sign in: <code>{tool === 'claude' ? 'claude auth login' : 'codex login'}</code></p></div>)}
+      <p className="muted small">Git is required for isolated worktrees. Install Git and restart the app if a new tool is not found.</p>
+      <div className="connection-actions"><Button size="sm" onClick={onTerminal}>Open setup terminal</Button><Button size="sm" onClick={onUsage}>Usage</Button></div>
+    </div>}
+    <Button size="sm" disabled={connections.busy} onClick={() => void check()}>Recheck connections</Button>
+    {connections.busy && <Button size="sm" onClick={() => cancel('connections')}>Cancel connection check</Button>}
+  </section>
 }

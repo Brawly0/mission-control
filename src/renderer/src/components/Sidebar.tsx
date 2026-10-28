@@ -11,6 +11,7 @@ import { Avatar, IconButton, Kbd } from './ui'
 import { useKeyFor, withKey } from '../shortcuts'
 
 interface Props {
+  onSetup: () => void
   projects: Project[]
   git: Record<string, GitInfo>
   loading: boolean
@@ -370,6 +371,7 @@ export default function Sidebar(props: Props) {
           Show worktrees &amp; scratch ({hiddenCount})
         </label>
       )}
+      <button className="setup-sidebar-entry" onClick={props.onSetup}>Guided setup</button>
       <AgentConnections onUsage={() => props.onNavigate('usage')} onTerminal={() => props.onTerminal()} />
       {actions.overlay}
     </aside>

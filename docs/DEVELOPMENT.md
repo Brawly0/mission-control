@@ -197,3 +197,69 @@ Agent-team changes are covered by `node node_modules/vitest/vitest.mjs run src/s
 ### Home dashboard verification
 
 `MC_SMOKE_HOME=1` with the same isolated profile and screenshot options checks the Home redesign in dark/light themes at 1440 and 960 pixels, including page/panel overflow, keyboard access, usage periods, activity ranges, task/team filters, launch dialogs, project files, the Run dock and navigation. Local Claude/Codex CLI fixtures verify provider-specific chat cards through real terminals without model calls. Screenshots include upper/lower Home layouts. `src/main/dashboardData.test.ts` checks the SQLite activity aggregates separately; no transcript scan or database schema change is required.
+
+### Free guided onboarding tour (Windows)
+
+Prerequisites: installed development dependencies and Electron, a desktop session, Node on PATH and Git for Windows on PATH. No Claude/Codex CLI, login, subscription or API key is required. Build first. Resolve Electron through Node so this also works when dependencies are inherited from a parent checkout.
+
+```powershell
+npm run typecheck
+npm test
+npm run build
+$electronPath = node -p "require('electron')"
+$env:MC_SMOKE_PROFILE = Join-Path $env:TEMP ('mc-onboarding-' + [guid]::NewGuid().ToString('N'))
+$env:MC_SMOKE_CLEAN = '1'
+$env:MC_SMOKE_ONBOARDING = '1'
+$env:MC_SMOKE = Join-Path $env:MC_SMOKE_PROFILE 'onboarding.png'
+$env:MC_SMOKE_LOG = Join-Path $env:MC_SMOKE_PROFILE 'smoke.log'
+$onboardingProcess = Start-Process -FilePath $electronPath -ArgumentList '.' -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $env:MC_SMOKE_PROFILE 'stdout.log') -RedirectStandardError (Join-Path $env:MC_SMOKE_PROFILE 'stderr.log')
+$onboardingProcess.WaitForExit()
+Get-Content $env:MC_SMOKE_LOG
+# Only after the first tour creates onboarding-checkpoint.json:
+Remove-Item Env:MC_SMOKE_CLEAN
+$env:MC_SMOKE_ONBOARDING = 'restart'
+$onboardingProcess = Start-Process -FilePath $electronPath -ArgumentList '.' -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $env:MC_SMOKE_PROFILE 'restart-stdout.log') -RedirectStandardError (Join-Path $env:MC_SMOKE_PROFILE 'restart-stderr.log')
+$onboardingProcess.WaitForExit()
+Get-Content $env:MC_SMOKE_LOG
+```
+
+Read the log, not just the process exit code: the existing smoke dispatcher sets process.exitCode but Electron's app.quit may still return zero on Windows. Any `[smoke] FAILED` means failure. The first pass must contain the onboarding fixture-tour success line; the second must report actual-process restart preservation. Screenshots, `onboarding-report.json`, the persistence checkpoint and `provider-invocations.jsonl` remain under this TEMP profile for inspection. The disposable Git repository is adjacent to TEMP at `%LOCALAPPDATA%/mc-onboarding-<GUID>-repositories/project` because the composer intentionally excludes TEMP scratch folders; the report records its exact path. Do not treat missing reports or missing assertions as a pass.
+
+The bootstrap refuses non-Windows hosts, profiles outside TEMP/mc-onboarding-*, reused store files for an initial run, unavailable Node/Git, real provider executables in required system/Git PATH directories, or wrappers that fail their self-test. It establishes Claude/Codex fixtures before app ready and renderer effects. Child PATH is restricted to fixture/system/Git directories; inherited provider API credentials are removed in this process. Fake CLIs implement version, auth, task streams, deliberate failure and interruption using actual child processes. Unexpected prompts fail closed. A provider sentinel records each local invocation without prompts or tokens. Package-manager wrappers fail if invoked. Diagnostic version/auth output contains a private canary which must not appear in rendered diagnostic text, returned readiness snapshots or the smoke log. No personal Claude/Codex configuration is written. A process-local empty Git global config disables inherited credential helpers, signing and hooks.
+
+Clean smoke settings disable queue execution, automatic briefings, updates and hotkeys; existing MC_SMOKE startup disables recurring runs and plan polling. The tour also blocks renderer HTTP(S) requests. All model execution resolves locally. The app may still read existing local chat history through its normal indexer; the smoke profile is not a separate Windows account. Do not use screenshots from a machine with private chat titles as public documentation without inspecting them.
+
+The tour selects Claude-only, Codex-only and both through real checkboxes; checks missing CLI and Git, signed-out, unsupported auth output, offline, cancellation and recovery; exercises skipped/dismissed/resumed setup; verifies non-Git, valid Git, malformed/unsupported manifests; reviews/edits/saves suggestions and preserves existing metadata; creates an explicit permission/worktree task and observes streamed progress, final output and a real diff; runs Codex failure, interruption and retry. Resolved connection problems are rechecked through Inbox. Dark/light screenshots use the actual 960x600 outer window and assert horizontal overflow bounds. Restart is a separate process and checks saved provider selection, setup status, user setting and project preservation. Captured application `.log` files are also checked for the private diagnostic canary. A failed run retains a failure screenshot and `onboarding-failure.json` with its last verified assertion, rather than implying later steps passed.
+
+Command inference supports root `package.json` only, using `dev`, `start` and `test` scripts where present, with npm/pnpm/yarn/bun selection from metadata/lockfiles. Conflicting lockfiles are ambiguous. `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `build.gradle` and `Makefile` are recognized but inference is unsupported. Diagnostics do not install dependencies, create Git history or run scripts. Suggested commands remain untrusted and require explicit review/edit/save; saving does not change automatic check commands. `SHOULD_NOT_RUN.cjs`, the absence of node_modules/.git in negative fixtures, and package-manager sentinel records prove the no-execution checks.
+
+To complete first-task guidance, create the starter task, follow its activity until its final result is displayed, open **Changes**, inspect the diff and select **Reviewed this diff and results**. Resume setup to see the completed guide. The tour waits for the displayed result rather than merely backend completion, then acknowledges the actual current diff through the review UI. Completion leaves the task in Review and does not merge. New or failed review snapshots invalidate diff evidence; a new run needs fresh result and diff inspection. Inspection observations are session-local, so after restarting, reopen the result and review surface. The tracked task identity and setup preferences persist.
+
+Integration verification on 2026-10-28: typecheck, all 273 tests in 28 files, and production build passed (existing chunk-size warning). The complete onboarding tour now includes first-task guide completion, missing-Git recovery, keyboard trap/focus return, task-problem retry and verified removal. `mc-onboarding-78fd378e213f4976801722ac02f4864d` passed the complete tour and its separate restart process. A final run and surrounding regression profiles are recorded below. Tests also cover merging result/diff observations in either order, resetting observations for other runs, changed/unavailable fingerprints, and resolving verified checks when another requirement remains unavailable. No standalone fixture-helper unit tests were added: this module's helpers orchestrate Electron/filesystem/process behavior and are exercised through the real tour.
+
+Final integration evidence: `mc-onboarding-aab8ed867d2e44f1b224c2f8872d4c35` contains the complete passing report with no defects, minimum-size dark/light screenshots, and `restart.log` confirming second-process preservation. Free surrounding tours passed in `mc-free-cf23f53e33c54250ae8ca72cf98b0b5c` (TEAM), `mc-free-e92a065dbd1847edbb9d808c8857b630` (RUN, including stale-review/check rejection and a fresh checked merge), and `mc-free-f565eabac1b648b481562a4cb2974b14` (Codex tasks/search fixtures). Profiles are under this machine's TEMP directory and are disposable verification artifacts, not repository fixtures. The paid-provider path was intentionally not exercised; authentication readiness is based on supported CLI status output rather than a model call.
+
+### Additional free regression tours
+
+Use a fresh profile for each invocation and clear the onboarding flag before switching dispatch modes. These use existing fixtures; do not substitute `MC_SMOKE_TASKS`, `MC_SMOKE_CODEX_TASKS=1` or `=review`, which call real providers.
+
+```powershell
+Remove-Item Env:MC_SMOKE_ONBOARDING -ErrorAction SilentlyContinue
+$env:MC_SMOKE_CLEAN = '1'
+foreach ($tour in @('TEAM', 'RUN', 'CODEX_TASKS')) {
+    $env:MC_SMOKE_PROFILE = Join-Path $env:TEMP ('mc-free-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $env:MC_SMOKE_PROFILE | Out-Null
+    $env:MC_SMOKE = Join-Path $env:MC_SMOKE_PROFILE 'smoke.png'
+    $env:MC_SMOKE_LOG = Join-Path $env:MC_SMOKE_PROFILE 'smoke.log'
+    [Environment]::SetEnvironmentVariable('MC_SMOKE_' + $tour, $(if ($tour -eq 'CODEX_TASKS') {'fixtures'} else {'1'}), 'Process')
+    $fixtureProcess = Start-Process -FilePath $electronPath -ArgumentList '.' -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $env:MC_SMOKE_PROFILE 'stdout.log') -RedirectStandardError (Join-Path $env:MC_SMOKE_PROFILE 'stderr.log')
+    $fixtureProcess.WaitForExit()
+    Get-Content $env:MC_SMOKE_LOG
+    [Environment]::SetEnvironmentVariable('MC_SMOKE_' + $tour, $null, 'Process')
+}
+Get-ChildItem Env:MC_SMOKE* | Remove-Item
+```
+
+TEAM exercises a real local planner/worker CLI, shared worktree, integration, checks and commit; RUN exercises real PowerShell streaming/failure/stop and guarded Git review/merge; CODEX_TASKS=fixtures covers templates/dependencies/cap rejection and search indexing, with synthetic task results only in that legacy tour. The new onboarding tour does not use synthetic task results.
+
+Troubleshooting: a missing fixture prerequisites error is intentional; install development Node/Git and rebuild, never remove the guard or allow fallback to a real CLI. A timeout should be investigated using the last verified assertion and isolated log; keep the failed profile and rerun with a new GUID. Unsupported auth output is unknown, not signed-out or ready. Recheck after changing the fixture state, tool installation or project contents. Do not delete or move personal CLI directories to simulate missing tools. Cleanup is optional: retain evidence, then remove only the specific TEMP profile/repositories you created after verifying their resolved paths. No automatic broad cleanup runs.

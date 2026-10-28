@@ -1,3 +1,4 @@
+import { readiness } from './readiness'
 import { stopAllProjectCommands } from './projectCommands'
 import { app, BrowserWindow } from 'electron'
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
@@ -162,6 +163,7 @@ process.on('exit', () => quitStage('process exit'))
 
 app.on('before-quit', () => {
   quitStage('before-quit')
+  readiness.shutdown()
   setQuitting()
   stopAllTasks()
   stopAllProjectCommands()

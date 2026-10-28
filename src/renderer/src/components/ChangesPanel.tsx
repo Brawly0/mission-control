@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GitBranch, GitCommitHorizontal, GitMerge, RefreshCw, Trash2, X } from 'lucide-react'
 import type { GitChanges, ProjectReview, WorktreeInfo } from '@shared/types'
 import { errorMessage } from '../util'
@@ -16,11 +16,13 @@ interface Props {
   /** Called after the worktree was deleted. */
   onDiscarded?: () => void
   onClose?: () => void
+  /** Current displayed snapshot and explicit review acknowledgement; undefined on failure. */
+  onInspectChanges?: (fingerprint: string | undefined, inspected: boolean) => void
 }
 
 const STATUS_LABEL: Record<string, string> = { A: 'Added', M: 'Modified', D: 'Deleted', R: 'Renamed', C: 'Copied', T: 'Type changed', U: 'Conflict', '?': 'New' }
 
-export default function ChangesPanel({ path, worktree, visible, onChanged, onDiscarded, onClose }: Props) {
+export default function ChangesPanel({ path, worktree, visible, onChanged, onDiscarded, onClose, onInspectChanges }: Props) {
   const toast = useToast()
   const [changes, setChanges] = useState<GitChanges | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,23 +32,34 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
   const [review, setReview] = useState<ProjectReview | null>(null)
   const [checkDraft, setCheckDraft] = useState<string | null>(null)
   const [approved, setApproved] = useState<string | null>(null)
+  const generation = useRef(0)
+  const latestLoad = useRef(0)
 
   const load = useCallback(async () => {
+    const owner = generation.current
+    const request = ++latestLoad.current
     try {
       const snapshot = await window.mc.projectReview(path, worktree?.base)
+      if (generation.current !== owner || latestLoad.current !== request) return
       setReview(snapshot)
       setChanges(snapshot.changes)
       setError(null)
     } catch (e) {
+      if (generation.current !== owner || latestLoad.current !== request) return
       setError(errorMessage(e))
     }
   }, [path, worktree?.base])
 
   useEffect(() => {
+    generation.current++
+    setReview(null)
+    setChanges(null)
+    setApproved(null)
+    setError(null)
     if (!visible) return
     load()
     const timer = setInterval(load, 5000)
-    return () => clearInterval(timer)
+    return () => { generation.current++; clearInterval(timer) }
   }, [visible, load])
 
   const fileDiffs = useMemo(() => parseDiff(changes?.diff ?? ''), [changes])
@@ -57,6 +70,9 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
   const checksPassed = !review?.checkCommand || (review.check?.state === 'passed' && !review.checkStale)
   const approvalKey = review ? `${review.fingerprint}:${review.check?.id ?? ''}:${review.check?.state ?? ''}:${review.review?.id ?? ''}:${review.review?.run?.finishedAt ?? ''}` : ''
   const approvedNow = !!review && approved === approvalKey
+  useEffect(() => {
+    if (visible) onInspectChanges?.(error ? undefined : review?.fingerprint, !error && approvedNow)
+  }, [visible, error, review?.fingerprint, approvedNow, onInspectChanges])
   const canMerge = approvedNow && checksPassed && files.length === 0 && !!changes?.commits.length
   const checkTone = !review?.checkCommand ? 'neutral' : review.checkStale ? 'warning' : review.check?.state === 'passed' ? 'success' : review.check?.state === 'failed' ? 'danger' : review.check?.state === 'running' || review.check?.state === 'stopping' ? 'info' : 'neutral'
   const checkLabel = !review?.checkCommand ? 'Not configured' : review.checkStale ? 'Out of date' : !review.check ? 'Not run' : { running: 'Running', stopping: 'Stopping', passed: 'Passed', failed: 'Failed', stopped: 'Stopped' }[review.check.state]

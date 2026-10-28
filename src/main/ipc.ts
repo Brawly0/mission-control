@@ -1,3 +1,6 @@
+import { readiness } from './readiness'
+import { validRequestId } from '../shared/readiness'
+import { getGuidedSetup, updateGuidedSetup } from './store'
 import { mergeReviewedWorktree, projectReview, startReviewChecks, startCodeReview } from './projectReview'
 import { projectBriefing, draftProjectBriefing, saveProjectBriefing } from './projectBriefing'
 import { projectCommandReport, projectRuns, startProjectCommand, stopProjectCommand } from './projectCommands'
@@ -78,6 +81,25 @@ export const uiSummary = (): { agents: number; attention: number } => summary
 
 /** Every handler behind the renderer's `window.mc` API (see MissionControlApi in shared/types.ts). */
 export function registerIpc(): void {
+  const diagnosticRenderers = new WeakSet<Electron.WebContents>()
+  const owner = (event: Electron.IpcMainInvokeEvent): number => {
+    const id = event.sender.id
+    if (!diagnosticRenderers.has(event.sender)) {
+      diagnosticRenderers.add(event.sender)
+      event.sender.once('destroyed', () => readiness.cancel(id))
+      event.sender.on('render-process-gone', () => readiness.cancel(id))
+      event.sender.on('did-start-navigation', (_event, _url, _inPlace, mainFrame) => { if (mainFrame) readiness.cancel(id) })
+    }
+    return id
+  }
+  ipcMain.handle('setup:get', () => getGuidedSetup())
+  ipcMain.handle('setup:update', (_e, patch) => updateGuidedSetup(patch))
+  ipcMain.handle('readiness:connections', (e, request) => readiness.connections(owner(e), request))
+  ipcMain.handle('readiness:project', (e, request) => readiness.project(owner(e), request))
+  ipcMain.handle('readiness:cancel', (e, requestId) => {
+    if (!validRequestId(requestId)) throw new Error('Invalid readiness request id')
+    return readiness.cancel(owner(e), requestId)
+  })
   ipcMain.handle('projects:list', () => listProjects())
   ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
   ipcMain.handle('review:merge', (_e, wt: WorktreeInfo, fingerprint: string) => { assertTeamWorktreeIdle(wt.path); return mergeReviewedWorktree(wt, fingerprint) })
