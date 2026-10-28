@@ -43,7 +43,7 @@ process.stdin.on('end', () => {
   } else if (input.includes('Your assignment:\\nFIXTURE_BACKEND') || input.includes('Your assignment:\\nFIXTURE_FRONTEND')) {
     if (!process.cwd().toLowerCase().startsWith(${JSON.stringify(join(repo, '.claude', 'worktrees').toLowerCase())} + require('node:path').sep)) process.exit(3);
     const file = input.includes('Your assignment:\\nFIXTURE_BACKEND') ? 'backend.txt' : 'frontend.txt';
-    fs.writeFileSync(file, 'Implemented by the scoped fixture worker.\\n'); result = 'Completed ' + file; delay = 3500;
+    fs.writeFileSync(file, 'Implemented by the scoped fixture worker.\\n'); result = 'Completed ' + file; delay = 10000;
   } else result = 'Fixture idle';
   console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'Working on the assigned scope'}]}}));
   setTimeout(() => console.log(JSON.stringify({type:'result',subtype:'success',result,total_cost_usd:0.01,num_turns:1})), delay);
@@ -93,10 +93,24 @@ process.stdin.on('end', () => {
     await click('.team-panel-actions button', 'Start 2 agents')
     await until(() => listTasks().filter(t => t.teamParentId === root.id && t.teamRole === 'worker' && t.column === 'running').length === 2)
     await shot('running')
-    // Tasks → Terminals: each background agent's live CLI output, side by side.
+    // Starting a team opens its task-owned agent workspace, never the Agents page.
     const termText = `[...document.querySelectorAll('.task-term')].map(t => t.querySelector('.xterm-rows')?.textContent ?? '')`
-    await js('window.__mcSmoke.openTask(null)')
-    await js(`[...document.querySelectorAll('.tasks-layout-switch button')].find(b => b.textContent.startsWith('Terminals')).click()`)
+    await until(() => js(`!!document.querySelector('.task-agent-workspace') && !document.querySelector('.drawer')`))
+    await js(`document.querySelector('.task-workspace-toolbar button[aria-label="Task and team controls"]').click()`)
+    await click('.team-panel button', 'Watch agents')
+    await until(() => js(`document.querySelectorAll('.task-agent-tab').length === 4 && !document.querySelector('.drawer')`))
+    await click('.task-agent-layout button', 'Tabs')
+    await until(() => js(`document.querySelectorAll('.task-agent-stage.tabs .task-term:not(.stacked-hidden)').length === 1`))
+    const pending = listTasks().find(t => t.teamParentId === root.id && t.teamRole === 'integrator')!
+    await js(`document.querySelector('[data-member-id="${pending.id}"]').click()`)
+    await until(() => js(`document.querySelector('.task-term:not(.stacked-hidden) .task-agent-waiting')?.textContent.includes('Runs after:')`))
+    await shot('agents-waiting-tab')
+    // Keyboard tab navigation selects the planner, without leaving Tasks.
+    await js(`document.querySelector('.task-agent-tab[aria-selected="true"]').focus()`)
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Home' })
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Home' })
+    await until(() => js(`document.querySelector('.task-agent-tab[aria-selected="true"]')?.textContent.includes('Planner')`))
+    await click('.task-agent-layout button', 'Grid')
     await until(() => js(`${termText}.filter(t => t.includes('Working on the assigned scope') && t.includes('claude -p')).length >= 2`))
     await shot('terminals-running')
     await js(`window.__mcSmoke.openTask(${JSON.stringify(root.id)})`)
@@ -107,9 +121,39 @@ process.stdin.on('end', () => {
     await until(() => js(`document.querySelector('.team-phase')?.textContent.includes('Ready for your review')`))
     await shot('review')
     await js('window.__mcSmoke.openTask(null)')
-    await until(() => js(`${termText}.filter(t => t.includes('✓ Done') && t.includes('process exited with code 0')).length >= 3`))
+    await click('.task-agent-layout button', 'Tabs')
+    for (const member of listTasks().filter(t => t.teamParentId === root.id)) {
+      await js(`document.querySelector('[data-member-id="${member.id}"]').click()`)
+      await until(() => js(`(() => { const text = document.querySelector('.task-term:not(.stacked-hidden) .xterm-rows')?.textContent ?? ''; return text.includes('✓ Done') && text.includes('process exited with code 0'); })()`))
+    }
     await shot('terminals-done')
-    // An interactive task: its real PTY shows in Tasks → Terminals and takes input once.
+    await click('.task-agent-layout button', 'Grid')
+    await js(`document.querySelector('.task-agent-stage button[aria-label="Maximize"]').click()`)
+    await until(() => js(`document.querySelectorAll('.task-agent-stage.has-max .task-term:not(.stacked-hidden)').length === 1`))
+    await js(`document.querySelector('.task-agent-stage button[aria-label="Restore"]').click()`)
+    await until(() => js(`document.querySelectorAll('.task-agent-stage .task-term:not(.stacked-hidden)').length === 4`))
+    for (const theme of ['dark', 'light']) {
+      await js(`if (document.documentElement.dataset.theme !== '${theme}') window.__mcSmoke.runShortcut('toggleTheme')`)
+      for (const width of [1440, 960]) {
+        win.setSize(width, width === 960 ? 600 : 900)
+        for (const mode of ['Tabs', 'Grid']) {
+          await click('.task-agent-layout button', mode)
+          await pause(150)
+          const overflow = await js(`(() => { const el = document.querySelector('.task-agent-workspace'); return el.scrollWidth - el.clientWidth })()`)
+          if (overflow > 1) throw new Error(`Task agents overflow at ${width} in ${theme}/${mode}`)
+          await shot(`agents-${theme}-${width}-${mode.toLowerCase()}`)
+        }
+      }
+    }
+    // A finished historical planner remains selectable, and selecting a worker reveals its own output.
+    await click('.task-agent-layout button', 'Tabs')
+    const worker = listTasks().find(t => t.teamParentId === root.id && t.teamRole === 'worker')!
+    await js(`document.querySelector('[data-member-id="${worker.id}"]').click()`)
+    await until(() => js(`document.querySelector('.task-term:not(.stacked-hidden)')?.getAttribute('data-task-id') === '${worker.id}'`))
+    await js(`[...document.querySelectorAll('.tasks-layout-switch button')].find(b => b.textContent.trim() === 'Board').click()`)
+    await click('.task-card button', 'Watch agents')
+    await until(() => js(`!!document.querySelector('.task-agent-workspace') && document.querySelector('.view-pane:not(.hidden) .tasks-view')`))
+    // An interactive task: its real PTY stays in Tasks and takes input once.
     const live = createTask({ title: 'Interactive terminal check', prompt: 'Say hello.', tool: 'claude', projectPath: repo, projectName: 'Team test', mode: 'interactive', permission: 'auto', useWorktree: false })
     await until(() => js(`window.__mcSmoke.tasks().some(t => t.id === ${JSON.stringify(live.id)})`))
     await js(`window.__mcSmoke.startTask(window.__mcSmoke.tasks().find(t => t.id === ${JSON.stringify(live.id)}))`)
@@ -139,7 +183,7 @@ process.stdin.on('end', () => {
     await shot('composer')
     const composerOverflow = await js(`(() => { const d = document.querySelector('.composer'); return d.scrollWidth - d.clientWidth })()`)
     if (composerOverflow > 1) throw new Error('Task composer overflows')
-    log('agent team: PASS — real IPC, fixture planner/workers, shared worktree, integration/checks/commit, live task terminals (background + interactive, single input), parent navigation, dark/light at 1440/960, composer')
+    log('agent team: PASS — real IPC and fixture planner/workers, task-owned Tabs/Grid, waiting/completed agents, keyboard navigation, maximize/restore, board/drawer entry, integration/checks/commit, interactive single input, dark/light at 1440/960x600')
   } finally {
     process.env.PATH = oldPath
     updateStore(s => Object.assign(s, before))

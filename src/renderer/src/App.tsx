@@ -92,6 +92,7 @@ export default function App() {
   const [taskFilter, setTaskFilter] = useState('')
   const [tasksLayout, setTasksLayout] = useState<'board' | 'terminals'>('board')
   const [terminalFocus, setTerminalFocus] = useState<string | null>(null)
+  const [terminalFocusRequest, setTerminalFocusRequest] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'general' | 'spending' | undefined>()
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
@@ -253,6 +254,7 @@ export default function App() {
   const showTaskTerminal = useCallback((task: Task) => {
     setTasksLayout('terminals')
     setTerminalFocus(task.id)
+    setTerminalFocusRequest(n => n + 1)
   }, [])
   // Starting a task from the Tasks page brings its terminal up, so you can watch it work.
   const startTask = useCallback(async (task: Task) => {
@@ -853,6 +855,7 @@ export default function App() {
               }}
               onShowTerminal={showTaskTerminal}
               terminalFocus={terminalFocus}
+              terminalFocusRequest={terminalFocusRequest}
             />
           </div>
         </div>
@@ -862,6 +865,7 @@ export default function App() {
             task={openTask}
             all={tasks}
             onOpenTask={(t) => setOpenTaskId(t.id)}
+            onWatchAgents={(t) => { setOpenTaskId(null); showTaskTerminal(t) }}
             onAddAfter={(t) => {
               setComposerInitial({ projectPath: t.projectPath, dependsOn: [t.id], mode: t.mode, permission: t.permission, useWorktree: t.useWorktree, model: t.model })
               setComposerOpen(true)

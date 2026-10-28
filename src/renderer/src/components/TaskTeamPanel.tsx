@@ -11,6 +11,7 @@ interface Props {
   task: Task
   all: Task[]
   onOpenTask: (task: Task) => void
+  onWatchAgents: (task: Task) => void
 }
 
 const PHASE_LABEL: Record<TaskTeam['phase'], string> = {
@@ -37,7 +38,7 @@ function MemberIcon({ task }: { task: Task }) {
 }
 
 /** The original task remains the team's home; child runs link back to it. */
-export default function TaskTeamPanel({ task, all, onOpenTask }: Props) {
+export default function TaskTeamPanel({ task, all, onOpenTask, onWatchAgents }: Props) {
   const root = task.teamParentId ? all.find(t => t.id === task.teamParentId) : task
   const team = root?.team
   const toast = useToast()
@@ -72,7 +73,10 @@ export default function TaskTeamPanel({ task, all, onOpenTask }: Props) {
     setBusy(true)
     setError('')
     try {
-      if (action === 'start') await window.mc.startTaskTeam(root.id)
+      if (action === 'start') {
+        await window.mc.startTaskTeam(root.id)
+        if (generation === requestGeneration.current) onWatchAgents(root)
+      }
       else if (action === 'stop') await window.mc.stopTaskTeam(root.id)
       else await window.mc.planTaskTeam(root.id)
     } catch (e) {
@@ -103,6 +107,7 @@ export default function TaskTeamPanel({ task, all, onOpenTask }: Props) {
         <h3><Users size={15} /> Agent team</h3>
         <span className="team-phase" role="status">{active && <Loader2 size={12} className="spin" />}{PHASE_LABEL[team.phase]}</span>
       </div>
+      <Button size="sm" icon={Users} onClick={() => onWatchAgents(task)}>Watch agents</Button>
 
       {isChild && <button className="team-parent-link" onClick={() => onOpenTask(root)}><ArrowUpRight size={13} /> <span>Back to {root.title}</span></button>}
 

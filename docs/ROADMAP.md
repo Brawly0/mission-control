@@ -1,5 +1,11 @@
 # Roadmap
 
+## Task agent workspace (2026-10-28)
+
+- [x] Task-owned planner, worker and integrator tabs, with Tabs/Grid layouts and live provider output
+- [x] Watch agents from task cards and team controls; waiting dependencies and completed output remain visible
+- [x] Keyboard navigation, compact layout, both themes and isolated native fixture verification
+
 ## ✅ v0.1: Foundation
 - [x] Project discovery from `~/.claude/projects` plus manual folders
 - [x] Pinning, filter, hidden worktrees and scratch folders

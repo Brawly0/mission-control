@@ -33,7 +33,7 @@ import { useKeyFor, withKey } from '../shortcuts'
 import { dueLabel } from '../due'
 import { useLook } from '../projectLook'
 import { PlanShare } from '../planRate'
-import TaskTerminals from './TaskTerminals'
+import TaskAgentWorkspace from './TaskAgentWorkspace'
 
 export type TasksLayout = 'board' | 'terminals'
 
@@ -60,6 +60,7 @@ interface Props {
   /** Shows one task's live terminal. */
   onShowTerminal: (task: Task) => void
   terminalFocus: string | null
+  terminalFocusRequest: number
 }
 
 const COLUMNS: { id: TaskColumn; title: string; icon: typeof Circle; hint: string }[] = [
@@ -100,7 +101,7 @@ function TaskCard({
       className={`task-card ${running ? 'is-running' : ''} ${run?.error && !running ? 'has-error' : ''} ${agentStatus?.cls === 'needs-input' ? 'needs-you' : ''}`}
       draggable={!task.team && (!running || task.mode === 'interactive')}
       onDragStart={onDragStart}
-      onClick={() => onOpen(task)}
+      onClick={() => task.team ? onShowTerminal(task) : onOpen(task)}
     >
       <div className="task-card-top">
         <ToolBadge tool={task.tool ?? 'claude'} /><span className="task-title">{task.title}</span>
@@ -192,7 +193,7 @@ function TaskCard({
           {run?.costUsd ? ' · ' : ''}
           {run?.finishedAt ? `finished ${timeAgo(run.finishedAt)}` : `added ${timeAgo(task.createdAt)}`}
         </span>
-        {task.team && <Button size="sm" icon={Users} onClick={() => onOpen(task)}>Open team</Button>}
+        {task.team && <><Button size="sm" icon={Users} onClick={() => onShowTerminal(task)}>Watch agents</Button><Button size="sm" onClick={() => onOpen(task)}>Team controls</Button></>}
         {!task.team && task.column === 'todo' && task.mode === 'headless' && (
           <Button
             size="sm"
@@ -273,7 +274,7 @@ export default function TasksView(props: Props) {
       <header className="tasks-head">
         <div>
           <h1>Tasks</h1>
-          <p className="muted">Queue work for Claude or Codex and watch every run live in Terminals; you review the result.</p>
+          <p className="muted">Give a task to Claude or Codex, then watch its agents work in Tabs or Grid.</p>
         </div>
         <div className="toolbar">
           <div className="segmented tasks-layout-switch" role="group" aria-label="Tasks layout">
@@ -283,7 +284,7 @@ export default function TasksView(props: Props) {
             </button>
             <button type="button" aria-pressed={props.layout === 'terminals'} className={props.layout === 'terminals' ? 'active' : ''} onClick={() => props.onLayout('terminals')} title="Live terminals of running tasks">
               <TerminalSquare size={14} strokeWidth={2} />
-              <span>Terminals</span>
+              <span>Task agents</span>
               {runningCount > 0 && <span className="count-pill">{runningCount}</span>}
             </button>
           </div>
@@ -332,17 +333,17 @@ export default function TasksView(props: Props) {
         </div>
       </header>
 
-      {/* Kept mounted on the board too, so terminals and dismissals survive switching. */}
+      {/* Keep the workspace mounted so selection and terminal output survive Board switches. */}
       <div className={props.layout === 'terminals' ? 'task-terminals-pane' : 'task-terminals-pane hidden'}>
-        <TaskTerminals
+        <TaskAgentWorkspace
           tasks={tasks}
           agents={agents}
           visible={props.visible && props.layout === 'terminals'}
           projectFilter={projectFilter}
           focusId={props.terminalFocus}
+          focusRequest={props.terminalFocusRequest}
           onOpen={props.onOpen}
           onStop={props.onStop}
-          onOpenAgent={props.onOpenAgent}
         />
       </div>
       {props.layout === 'terminals' ? null : tasks.length === 0 ? (

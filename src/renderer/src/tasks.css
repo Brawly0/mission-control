@@ -693,3 +693,35 @@
   flex-direction: column;
 }
 .task-terminals-pane.hidden { display: none; }
+
+/* Task-owned agent workspace: the task remains the home of all coordinated runs. */
+.task-agent-workspace { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; padding: 0 24px; }
+.task-workspace-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
+.task-workspace-picker { min-width: 0; max-width: min(420px, 60%); flex: 1; }
+.task-agent-layout { margin-left: auto; }
+.task-agent-layout button { display: inline-flex; align-items: center; gap: 6px; }
+.task-agent-tabs { display: flex; gap: 5px; flex: 0 0 auto; overflow-x: auto; padding: 5px 0 10px; }
+.task-agent-tab { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; max-width: 330px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); padding: 8px 10px; font: inherit; cursor: pointer; }
+.task-agent-tab.active { border-color: var(--accent); background: var(--accent-soft); }
+.task-agent-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.task-agent-tab-status { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.task-agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.task-agent-dot.working { background: var(--green); box-shadow: 0 0 7px rgba(74,222,128,.35); }
+.task-agent-dot.done { background: var(--accent); }
+.task-agent-dot.error { background: var(--red); }
+.task-agent-stage { padding: 0 0 18px; }
+.task-agent-stage.tabs { display: flex; overflow: hidden; }
+.task-agent-stage.tabs > .task-term { flex: 1; }
+.task-agent-stage .stacked-hidden { display: none; }
+.task-agent-stage .task-term-status { gap: 7px; align-items: center; }
+.task-agent-waiting { padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; color: var(--muted); }
+.task-agent-waiting p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-agent-waiting summary { cursor: pointer; padding: 6px 0; }
+@media (max-width: 1000px) {
+  .task-agent-workspace { padding: 0 14px; }
+  .tasks-head { padding: 12px 14px 8px; gap: 8px; }
+  .tasks-head h1 { font-size: 18px; }
+  .tasks-head p { display: none; }
+  .task-workspace-summary { display: none; }
+  .task-agent-stage .task-term-stats { display: none; }
+}

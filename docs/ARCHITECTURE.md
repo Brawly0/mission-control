@@ -72,7 +72,7 @@ src/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
       Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, VaultView (VaultGraph, NoteMarkdown), PlanMeter, SkillsView
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
-      SearchView, UsageView, TasksView, TaskTerminals, TaskConsole, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
+      SearchView, UsageView, TasksView, TaskAgentWorkspace, TaskTerminal, TaskConsole, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
       TopBar, ProjectsView, NotebookView, KnowledgeView, DocViewer, NewProjectDialog
     src/organize.css         styles for groups, tags, overview, search and usage
     src/tasks.css            styles for the task board, dialogs, task drawer, meters
@@ -106,7 +106,7 @@ When the process exits, the task moves to **Review**, whether it succeeded, fail
 
 **Interactive run.** The main process prepares the folder and returns the launch arguments (the prompt is claude's first message). The UI opens a normal agent and links it to the task (`run.agentId`). The card mirrors that agent's hook status, and closing the agent moves the task to Review.
 
-**Live terminals (ADR 0030).** Tasks → Terminals and the drawer's Terminal tab show each run live. For background runs, `shared/taskConsole.ts` turns every JSON line into CLI-like text. `tasks.ts` keeps it per task for the app session (`getTaskOutput`) and streams it (`tasks:output`) to a read-only xterm (`TaskConsole`). Interactive runs show the agent's own PTY (`TerminalPane`). `terminalBus` replays a terminal's history to every pane showing it and lets only one pane send input.
+**Task agent workspace (ADRs 0030, 0031).** Tasks → Task agents groups each task's planner, workers and integrator in Tabs or Grid. Starting/resuming a team opens its workspace; team cards and drawers also provide Watch agents. Waiting agents explain their dependencies; completed runs remain selectable. `renderer/src/taskWorkspace.ts` derives groups and statuses from the existing typed task list. For background runs, `shared/taskConsole.ts` formats JSON events as CLI-like text. `tasks.ts` retains per-task output (`getTaskOutput`) and streams it (`tasks:output`) to a read-only xterm (`TaskConsole`). Interactive tasks show the agent's own PTY (`TerminalPane`). `terminalBus` replays a terminal's history to every pane showing it and lets only one pane send input. Navigation never launches duplicate runs or changes coordinator ownership.
 
 ## Templates, schedules and the queue
 

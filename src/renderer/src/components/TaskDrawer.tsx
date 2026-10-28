@@ -29,7 +29,7 @@ import { elapsed, errorMessage, formatCost } from '../util'
 import { useToast } from '../toast'
 import ChangesPanel from './ChangesPanel'
 import TaskTeamPanel from './TaskTeamPanel'
-import { TaskTerminal } from './TaskTerminals'
+import { TaskTerminal } from './TaskTerminal'
 import { Avatar, Button, IconButton, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
 import { dueFrom, dueInputs, dueLabel } from '../due'
@@ -40,6 +40,7 @@ interface Props {
   /** All tasks, for the dependency chain. */
   all: Task[]
   onOpenTask: (task: Task) => void
+  onWatchAgents: (task: Task) => void
   /** Opens New task with this task as its "run after". */
   onAddAfter: (task: Task) => void
   agent?: Agent
@@ -74,7 +75,7 @@ function statusIcon(t: Task) {
   return <Lock size={12} className="muted" />
 }
 
-export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
+export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAddAfter, agent, onClose, onStart, onStop, onContinue, onOpenAgent, onDone, onDelete, onGitChanged }: Props) {
   const look = useLook()
   const toast = useToast()
   const [tab, setTab] = useState<'activity' | 'terminal' | 'changes'>(task.column === 'running' && !task.team ? 'terminal' : 'activity')
@@ -249,7 +250,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         <button className={tab === 'activity' ? 'active' : ''} onClick={() => setTab('activity')}>
           Task &amp; activity
         </button>
-        <button className={tab === 'terminal' ? 'active' : ''} onClick={() => setTab('terminal')} disabled={!canTerminal} title={canTerminal ? 'The run’s terminal, live' : task.team ? 'Each agent has its own terminal: open one from the team list, or use Tasks → Terminals.' : 'Start the task to see its terminal'}>
+        <button className={tab === 'terminal' ? 'active' : ''} onClick={() => setTab('terminal')} disabled={!canTerminal} title={canTerminal ? 'The run’s terminal, live' : task.team ? 'Use Watch agents to see the team in Tabs or Grid.' : 'Start the task to see its terminal'}>
           Terminal
         </button>
         <button className={tab === 'changes' ? 'active' : ''} onClick={() => setTab('changes')} disabled={!canChanges} title={task.team && !canChanges ? 'Combined changes become available when integration finishes.' : task.worktree ? '' : 'Only for tasks run in a worktree'}>
@@ -267,7 +268,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onAddAfter, agent, o
         </div>
       ) : (
         <div className="drawer-body scroll">
-          {managed && <TaskTeamPanel task={task} all={all} onOpenTask={onOpenTask} />}
+          {managed && <TaskTeamPanel task={task} all={all} onOpenTask={onOpenTask} onWatchAgents={onWatchAgents} />}
           {(before.length > 0 || after.length > 0) && (
             <section>
               <h3>
