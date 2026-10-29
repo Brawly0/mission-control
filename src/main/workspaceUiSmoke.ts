@@ -97,6 +97,7 @@ export async function workspaceUiSmoke(win: BrowserWindow, outFile: string, log:
         if (geometry.height > 61 || geometry.overflow || geometry.outside || (width === 960 && !geometry.rail)) throw new Error('Compact shell geometry: ' + JSON.stringify(geometry))
         await js(`document.querySelector('.provider-chip').open=false; document.querySelector('.provider-chip summary').focus()`)
         win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+        win.webContents.sendInputEvent({ type: 'char', keyCode: '\r' })
         win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
         await until(`document.querySelector('.provider-chip').open`)
         await js(`document.querySelector('.provider-details button:last-child').focus()`)
