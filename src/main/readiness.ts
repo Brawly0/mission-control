@@ -127,10 +127,13 @@ export class ReadinessService {
     try {
       const aborted = new Promise<never>((_, reject) => { abortListener = () => reject(new Error('cancelled')); signal.addEventListener('abort', abortListener, { once: true }) })
       const acquire = async () => {
-        while (this.active >= 2) await new Promise<void>(resolve => {
-          const wake = () => { signal.removeEventListener('abort', wake); const i = this.waiters.indexOf(wake); if (i >= 0) this.waiters.splice(i, 1); resolve() }
-          this.waiters.push(wake); signal.addEventListener('abort', wake, { once: true })
-        })
+        while (this.active >= 2) {
+          signal.throwIfAborted()
+          await new Promise<void>(resolve => {
+            const wake = () => { signal.removeEventListener('abort', wake); const i = this.waiters.indexOf(wake); if (i >= 0) this.waiters.splice(i, 1); resolve() }
+            this.waiters.push(wake); signal.addEventListener('abort', wake, { once: true })
+          })
+        }
         signal.throwIfAborted(); this.active++; acquired = true
       }
       await Promise.race([acquire(), aborted])

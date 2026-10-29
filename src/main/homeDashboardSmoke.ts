@@ -1,4 +1,6 @@
-import { app, type BrowserWindow } from 'electron'
+import { app, ipcMain, type BrowserWindow } from 'electron'
+import type { DashboardActivity, DashboardDay } from '../shared/types'
+import { queryIndex } from './indexer'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -79,12 +81,85 @@ export async function homeDashboardSmoke(win: BrowserWindow, outFile: string, lo
     const selected = existing?.path ?? scratch
     await js('window.__mcSmoke.refresh()')
     await js(`window.__mcSmoke.selectProject(${JSON.stringify(selected)}); window.__mcSmoke.setView('home'); window.mc.setZoom(1)`)
-    await until(`document.querySelectorAll('.home.hd .hd-launch').length === 5 && document.querySelectorAll('.home.hd .hd-stat').length === 5 && document.querySelectorAll('.home.hd .hd-grid > .hd-panel').length === 6`)
+    await until(`document.querySelectorAll('.home.hd .hd-launch').length === 5 && document.querySelectorAll('.home.hd .hd-stat').length >= 4 && document.querySelectorAll('.home.hd .hd-grid > .hd-panel').length === 6`)
     await until(`(async () => { const status = await window.mc.indexStatus(); return !status.indexing && !!status.lastRun })()`, 600)
     const indexed = await js(`(async () => ({ status: await window.mc.indexStatus(), activity: await window.mc.dashboardActivity() }))()`)
     if (indexed.status.sessions > 0 && indexed.activity.sessions <= 0) throw new Error('Completed nonempty index returned no dashboard activity')
     log('home indexed activity', indexed.activity.sessions, 'sessions', indexed.activity.activeDays, 'days', indexed.activity.activeMinutes, 'estimated minutes')
     await until(`!document.querySelector('.hd-activity .hd-heatmap[aria-busy="true"]')`)
+
+    // Override only the read endpoint in this isolated no-model smoke process.
+    // Native SQLite aggregation has its own regression tests; these fixtures prove presentation.
+    const today = new Date(), monday = new Date(today)
+    monday.setDate(today.getDate() - (today.getDay() + 6) % 7)
+    const old = new Date(monday); old.setDate(old.getDate() - 7)
+    const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const row = (date: Date, tool: 'claude' | 'codex', activeMinutes: number, events = 2): DashboardDay => ({ day: dateKey(date), tool, activeMinutes, events, sessions: 1 })
+    const history = row(old, 'claude', 120)
+    const fixtureData = (days: DashboardDay[]): DashboardActivity => ({ days, sessions: days.length, activeDays: new Set(days.map(d => d.day)).size, activeMinutes: days.reduce((n, d) => n + d.activeMinutes, 0) })
+    let response: () => Promise<DashboardActivity> = async () => fixtureData([history])
+    ipcMain.removeHandler('index:dashboard')
+    ipcMain.handle('index:dashboard', () => response())
+    const reload = async () => {
+      await js(`window.__mcSmoke.setView('usage')`)
+      await until(`!document.querySelector('.view-pane:not(.hidden) .home.hd')`)
+      await home()
+    }
+    await reload()
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('No activity in this period')`)
+    await until(`document.querySelector('.hd-summary').textContent.includes('2h')`)
+    if (await js(`document.querySelectorAll('.hd-heatmap').length !== 1 || !!document.querySelector('.hd-spark, .hd-spark-bars, .hd-launch-arrow') || document.querySelector('.hd-stats').textContent.includes('-100%') || !!document.querySelector('.hd-week-bars')`)) throw new Error('Historical-only Home fabricated a trend or duplicated visualizations')
+    await clickText('.hd-tabs[aria-label="Usage period"] button', 'All Time')
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('2h') && document.querySelector('.hd-usage .hd-period').textContent.includes('All indexed history')`)
+    await clickText('.hd-tabs[aria-label="Usage period"] button', 'This Week')
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('No activity in this period')`)
+    if (await js(`window.__mcSmoke.tasks().every(t => t.column === 'done') && window.__mcSmoke.agents().every(a => a.exited)`)) {
+      await until(`!!document.querySelector('.hd-idle') && document.querySelectorAll('.hd-stats .hd-stat').length === 4`)
+      for (const label of ['View tasks', 'View agents']) { await clickText('.hd-idle-actions button', label); await until(`!document.querySelector('.view-pane:not(.hidden) .home.hd')`); await home() }
+    }
+    // Empty-period copy and the combined idle card must fit in both themes and widths.
+    for (const theme of ['dark', 'light']) {
+      await js(`if (document.documentElement.dataset.theme !== '${theme}') window.__mcSmoke.runShortcut('toggleTheme')`)
+      for (const [width, height] of [[1440, 900], [960, 720]]) {
+        win.setSize(width, height); await pause(350)
+        const overflow = await js(`[...document.querySelectorAll('.home.hd, .hd-grid > .hd-panel, .hd-stat, .hd-launch')].filter(el => el.scrollWidth > el.clientWidth + 1).map(el => el.className)`)
+        if (overflow.length) throw new Error(`Empty Home overflow at ${theme}/${width}: ${JSON.stringify(overflow)}`)
+        await shot(`home-empty-${theme}-${width}`)
+      }
+    }
+    response = async () => fixtureData([])
+    await reload()
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('No activity in this period') && document.querySelector('.hd-summary dd').textContent === '0'`)
+    response = async () => fixtureData([history, row(today, 'claude', 30)])
+    await reload()
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('30m') && document.querySelector('.hd-provider-codex').textContent.includes('No activity in this period')`)
+    if (await js(`document.querySelectorAll('.hd-week-bars').length !== 1`)) throw new Error('Inactive provider rendered an empty chart')
+    response = async () => fixtureData([history, row(today, 'claude', 30), row(today, 'codex', 15)])
+    await reload()
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('45m') && document.querySelector('.hd-provider-claude').textContent.includes('30m') && document.querySelector('.hd-provider-codex').textContent.includes('15m')`)
+    await clickText('.hd-tabs[aria-label="Usage period"] button', 'All Time')
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('2h 45m') && document.querySelector('.hd-provider-claude').textContent.includes('2h 30m')`)
+    await clickText('.hd-tabs[aria-label="Usage period"] button', 'This Month')
+    await until(`document.querySelector('.hd-usage .hd-period').textContent.includes('This month')`)
+    await clickText('.hd-tabs[aria-label="Usage period"] button', 'This Week')
+    response = async () => fixtureData([row(today, 'codex', 0, 1)])
+    await reload()
+    await until(`document.querySelector('.hd-provider-codex').textContent.includes('0m') && document.querySelector('.hd-provider-codex').textContent.includes('no measurable duration') && !document.querySelector('.hd-week-bars')`)
+    let release: ((value: DashboardActivity) => void) | undefined
+    response = () => new Promise(resolve => { release = resolve })
+    await reload()
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('Loading') && !document.querySelector('.hd-week-bars')`)
+    release?.(fixtureData([]))
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('No activity in this period')`)
+    response = async () => { throw new Error('Home activity fixture unavailable') }
+    await reload()
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('unavailable') && !!document.querySelector('.hd-data-error button')`)
+    response = async () => fixtureData([history, row(today, 'claude', 30), row(today, 'codex', 15)])
+    await clickText('.hd-data-error button', 'Retry')
+    await until(`document.querySelector('.hd-usage-total').textContent.includes('45m') && !document.querySelector('.hd-data-error')`)
+    const launchStyle = await js(`[...document.querySelectorAll('.hd-launch')].map(el => { const s = getComputedStyle(el); return { border: s.borderWidth, outline: s.outlineStyle, transform: s.transform, arrow: !!el.querySelector('.hd-launch-arrow') } })`)
+    if (launchStyle.some((style: unknown) => JSON.stringify(style) !== JSON.stringify(launchStyle[0]))) throw new Error('Launch cards have unequal resting treatment')
+    log('Home deterministic activity states, period totals and idle card: PASS')
 
     const common = { projectPath: scratch, projectName: 'Dashboard workspace', mode: 'headless' as const, permission: 'plan' as const, useWorktree: false, prompt: 'Local display fixture. Never launch an agent.' }
     const todo = createTask({ ...common, title: 'Review the dashboard wiring', dueAt: Date.now() + 86_400_000 })
@@ -96,6 +171,8 @@ export async function homeDashboardSmoke(win: BrowserWindow, outFile: string, lo
     running.team = { phase: 'running', plannerId: 'home-display-only', memberIds: [], plan: { size: 'small', summary: 'A display-only team fixture; no processes are launched.', agents: [{ id: 'dashboard', title: 'Dashboard wiring', prompt: 'Display fixture only.', files: ['src/'], dependsOn: [] }] } }
     for (const title of ['Check activity and provider totals', 'Polish the compact Home layout', 'Verify the complete task and review flow']) taskIds.push(createTask({ ...common, title, dueAt: Date.now() + 2 * 86_400_000 }).id)
     await until(`window.__mcSmoke.tasks().some(t => t.id === ${JSON.stringify(running.id)})`)
+
+    await until(`!document.querySelector('.hd-idle') && document.querySelectorAll('.hd-stats .hd-stat').length === 5`)
 
     // Genuine keyboard input, rather than synthetic DOM keyboard events.
     await js(`document.querySelector('.hd-launch').focus()`)
@@ -191,6 +268,8 @@ export async function homeDashboardSmoke(win: BrowserWindow, outFile: string, lo
     throw error
   } finally {
     for (const id of ownedAgents) { try { await js(`window.__mcSmoke.closeAgent(${JSON.stringify(id)})`) } catch { /* Window may be closing. */ } }
+    ipcMain.removeHandler('index:dashboard')
+    ipcMain.handle('index:dashboard', () => queryIndex('dashboardActivity'))
     ptyTaps.delete(tap)
     for (const id of taskIds) if (listTasks().some(task => task.id === id)) deleteTask(id)
     flushTasks()

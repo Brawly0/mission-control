@@ -124,7 +124,13 @@ export default function SearchView({ visible, projects, status, onOpen, onResume
         {loading && <LoadingState>Searching chats…</LoadingState>}
         {hits === null && !error && !loading && (
           <EmptyState icon={TextSearch} title="Search all your chats">
-            Find any prompt or answer across every project. All words must match; the last word also matches as a prefix.
+            <p>Find a prompt or reply across your projects. Try words you remember, or start with an example below.</p>
+            <div className="search-examples" role="group" aria-label="Example searches">
+              {['fix tests', 'deployment', 'explain code', 'database migration'].map((example) => (
+                <Button key={example} variant="secondary" onClick={() => { setQuery(example); inputRef.current?.focus() }}>{example}</Button>
+              ))}
+            </div>
+            <p className="small muted">Suggestions may not match your chats. All words must match; the last word also matches as a prefix.</p>
           </EmptyState>
         )}
         {hits !== null && grouped.length === 0 && !error && (

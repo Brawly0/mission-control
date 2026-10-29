@@ -15,10 +15,10 @@ import { loadStore, updateStore } from './store'
  * connection status, your name for the greeting, quick chats and new projects.
  */
 
-function run(file: string, args: string[], timeout = 15_000): Promise<string> {
+function run(file: string, args: string[], timeout = 15_000, acceptFailureOutput = false): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(file, args, { env: agentEnv(), windowsHide: true, timeout, shell: /\.(cmd|bat)$/i.test(file) }, (err, stdout) =>
-      err ? reject(err) : resolve(String(stdout))
+      err && !(acceptFailureOutput && String(stdout).trim()) ? reject(err) : resolve(String(stdout))
     )
   })
 }
@@ -121,9 +121,18 @@ export async function searchKnowledge(query: string, listDocs: (projectPath: str
  * No cache: a forced refresh cannot race with an older cached authentication result.
  */
 export async function claudeStatus(force = false): Promise<ClaudeStatus> {
+  if (process.env.MC_SMOKE && process.env.MC_SMOKE_WORKSPACE) {
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.MC_SMOKE_PROVIDER_DELAY || 0)))
+    if (process.env.MC_SMOKE_CONNECTION_FIXTURE === 'failure') throw new Error('Fixture Claude status failure')
+    return { installed: true, loggedIn: true, version: 'fixture' }
+  }
   return legacyStatus(await readiness.connections(-1, { requestId: randomUUID(), providers: ['claude'], force }), 'claude')
 }
 export async function codexStatus(force = false): Promise<ClaudeStatus> {
+  if (process.env.MC_SMOKE && process.env.MC_SMOKE_WORKSPACE) {
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.MC_SMOKE_PROVIDER_DELAY || 0)))
+    return { installed: true, loggedIn: true, version: 'fixture' }
+  }
   return legacyStatus(await readiness.connections(-2, { requestId: randomUUID(), providers: ['codex'], force }), 'codex')
 }
 let windowsName: string | null = null
@@ -132,6 +141,8 @@ let windowsName: string | null = null
 export async function userName(): Promise<string> {
   const own = loadStore().settings.userName?.trim()
   if (own) return own
+  // Clean fixtures must never expose the Windows identity.
+  if (process.env.MC_SMOKE_CLEAN) return ''
   if (windowsName === null) {
     try {
       const full = await run('powershell.exe', ['-NoProfile', '-Command', "(Get-CimInstance Win32_UserAccount -Filter \"Name='$env:USERNAME'\").FullName"], 8000)

@@ -103,6 +103,12 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
             const g = git[p.path]
             const n = openTasks(p)
             const live = running(p)
+            const description = p.description?.trim()
+            const repeatsName = !description || [p.name, p.folderName].some((name) => name.trim().toLowerCase() === description.toLowerCase())
+            const summary = repeatsName
+              ? live > 0 ? `${live} ${live === 1 ? 'session' : 'sessions'} open now`
+                : p.lastActivity ? `Last active ${timeAgo(p.lastActivity)}` : 'No chats yet. Start your first session.'
+              : description
             return (
               <div key={p.path} className={`card big-project ${layout}`} {...actions.events(p)}>
                 <button className="big-project-main" onClick={() => onOpen(p.path)} title={p.path}>
@@ -113,9 +119,7 @@ export default function ProjectsView({ projects, tasks, agents, git, showWorktre
                       {p.pinned && <Star size={13} className="pin-star" fill="currentColor" />}
                       {p.meta.status && <span className={`status-chip status-${p.meta.status}`}>{p.meta.status}</span>}
                     </span>
-                    {layout === 'grid' && (p.description || p.folderName.toLowerCase() !== p.name.toLowerCase()) && (
-                      <span className="muted small clamp-2">{p.description || p.folderName}</span>
-                    )}
+                    {layout === 'grid' && <span className="muted small clamp-2 big-project-summary">{summary}</span>}
                     <span className="muted small big-project-meta">
                       {p.sessionCount} {p.sessionCount === 1 ? 'chat' : 'chats'} • {n} {n === 1 ? 'task' : 'tasks'}
                       {g?.isRepo && ` • ${g.branch}${g.dirty ? ` (${g.dirty} changed)` : ''}`}

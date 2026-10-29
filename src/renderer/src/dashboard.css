@@ -1275,3 +1275,33 @@ input[type='time'] {
     width: 36px;
   }
 }
+/* Compact shell: fixed geometry across loading, unavailable, retry and ready states. */
+.app .topbar { height: 60px; flex-wrap: nowrap; min-height: 60px; }
+.topbar-search { min-width: 0; }
+.provider-chip { position: relative; flex: 0 0 255px; width: 255px; font-size: 12px; }
+.provider-chip > summary { list-style: none; display: flex; justify-content: center; align-items: center; height: 36px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer; white-space: nowrap; }
+.provider-chip > summary::-webkit-details-marker, .connection-toggle::-webkit-details-marker { display: none; }
+.provider-chip > summary:focus-visible, .connection-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.provider-details, .agent-connections > .connection-details { position: absolute; z-index: 200; top: 100%; margin: 0; padding: 16px; width: 360px; max-width: calc(100vw - 90px); background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 12px 35px #0004; text-align: left; white-space: normal; }
+.provider-details { right: 0; }
+.provider-details section, .connection-details section { padding: 8px 0; }
+.provider-details p, .connection-details p { margin: 6px 0; }
+.plan-limits-empty { min-height: 190px; }
+.agent-connections { position: relative; flex: 0 0 auto; border: 0; padding: 0; margin: 0; }
+.agent-connections > .connection-toggle { list-style: none; padding: 6px; width: 24px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 0; background: none; }
+.connection-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px var(--surface-2); }
+.connection-dot.connected { background: var(--green); }
+.agent-connections > .connection-details { left: 0; }
+.connection-details .connection-row { display: flex; gap: 8px; padding: 6px 0; }
+.connection-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.connection-brand { position: relative; }
+.sidebar.rail { overflow: visible; }
+.connection-brand > .agent-connections { position: absolute; right: -7px; bottom: -2px; }
+.brand { gap: 6px; }
+@media (max-width: 1099px) {
+  .app .topbar { padding: 0 14px; gap: 10px; }
+  .topbar-search { flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; padding: 0; justify-content: center; }
+  .topbar-search > span, .topbar-search > kbd, .topbar-search .key-combo { display: none; }
+}
+.plan-placeholder { display: grid; grid-template-columns: 60px 1fr 20px; gap: 12px; align-items: center; height: 42px; color: var(--muted); font-size: 12px; }
+.plan-placeholder > span:nth-child(2) { height: 6px; border-radius: 4px; background: var(--surface-2); }

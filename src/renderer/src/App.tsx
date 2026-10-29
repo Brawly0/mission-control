@@ -102,6 +102,18 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'general' | 'spending' | undefined>()
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
+  const [planLoading, setPlanLoading] = useState(true)
+  const planInFlight = useRef<Promise<void> | null>(null)
+  const refreshPlan = useCallback((): Promise<void> => {
+    if (planInFlight.current) return planInFlight.current
+    setPlanLoading(true)
+    planInFlight.current = window.mc.refreshRateLimit().then(info => {
+      setRateLimit(last => info?.windows.length || info?.error ? info : { at: Date.now(), status: '', windows: [], ...last, error: 'Claude returned no plan readings.' })
+    }).catch(() => {
+      setRateLimit(last => ({ at: Date.now(), status: '', windows: [], ...last, error: 'Could not refresh Claude plan limits. Try again.' }))
+    }).finally(() => { setPlanLoading(false); planInFlight.current = null })
+    return planInFlight.current
+  }, [])
   const [templates, setTemplates] = useState<TaskTemplate[]>([])
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [composerInitial, setComposerInitial] = useState<Partial<NewTask> | undefined>()
@@ -143,7 +155,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    window.mc.getRateLimit().then(setRateLimit)
+    let active = true
+    window.mc.getRateLimit().then(info => {
+      if (!active) return
+      if (info) { setRateLimit(info); setPlanLoading(false) }
+      else void refreshPlan()
+    }).catch(() => { if (active) void refreshPlan() })
     const offRate = window.mc.onRateLimit(setRateLimit)
     // The tray menu and notifications can send the UI somewhere.
     const offNav = window.mc.onNavigate((target) => {
@@ -153,6 +170,7 @@ export default function App() {
       if (target.taskId) setOpenTaskId(target.taskId)
     })
     return () => {
+      active = false
       offRate()
       offNav()
     }
@@ -167,6 +185,13 @@ export default function App() {
   const warnAt = appSettings?.contextWarnTokens ?? 200_000
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [narrowShell, setNarrowShell] = useState(() => window.matchMedia('(max-width: 1099px)').matches)
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 1099px)')
+    const update = () => setNarrowShell(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [newNoteRequest, setNewNoteRequest] = useState(0)
   const [userName, setUserName] = useState('')
@@ -647,7 +672,7 @@ export default function App() {
     <ShortcutContext.Provider value={shortcutKeys}>
     <LookContext.Provider value={lookUp}>
     <PlanRateContext.Provider value={planRate}>
-    <div className={`app ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${maximizedAgent ? 'agent-maximized' : ''}`}>
+    <div className={`app ${sidebarCollapsed || narrowShell ? 'sidebar-collapsed' : ''} ${maximizedAgent ? 'agent-maximized' : ''}`}>
       <Sidebar
         onSetup={resumeSetup}
         projects={projects}
@@ -666,7 +691,7 @@ export default function App() {
         onAdd={addProject}
         onTerminal={openProjectTerminal}
         onOpenTemplates={() => setTemplatesOpen(true)}
-        collapsed={sidebarCollapsed}
+        collapsed={sidebarCollapsed || narrowShell}
         onToggleCollapsed={() => setSidebarCollapsed((c) => !c)}
         inbox={inboxBadge}
         taskCounts={{
@@ -676,6 +701,7 @@ export default function App() {
       />
       <main className="main">
         <TopBar userName={userName} currentProject={sessionProject?.name}
+          planLoading={planLoading} onRetryPlan={refreshPlan}
           rateLimit={rateLimit}
           codexLimits={codexUsage?.limits ?? null}
           update={update}
@@ -846,7 +872,7 @@ export default function App() {
           </div>
           <div className={view === 'usage' ? 'view-pane' : 'view-pane hidden'}>
             <OnceShown show={view === 'usage'}>
-              <UsageView visible={view === 'usage'} status={indexStatus} rateLimit={rateLimit} onOpenProject={openProject} onOpenSession={openSession} />
+              <UsageView visible={view === 'usage'} status={indexStatus} rateLimit={rateLimit} planLoading={planLoading} onRetryPlan={refreshPlan} onOpenProject={openProject} onOpenSession={openSession} />
             </OnceShown>
           </div>
           <div className={view === 'projects' ? 'view-pane' : 'view-pane hidden'}>

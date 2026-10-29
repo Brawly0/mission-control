@@ -12,6 +12,8 @@ import { useLook } from '../projectLook'
 interface Props {
   visible: boolean
   status: IndexStatus | null
+  planLoading: boolean
+  onRetryPlan: () => Promise<void>
   rateLimit: RateLimitInfo | null
   onOpenProject: (path: string) => void
   onOpenSession: (projectPath: string, sessionId: string) => void
@@ -158,23 +160,20 @@ function BarRow({ label, avatar, total, max, onClick, sub }: { label: string; av
 }
 
 /** Plan limits from your Claude account: one meter per window, what's left and when it resets. */
-function PlanLimits({ info }: { info: RateLimitInfo | null }) {
-  const [refreshing, setRefreshing] = useState(false)
-  const refresh = (): void => {
-    setRefreshing(true)
-    window.mc.refreshRateLimit().finally(() => setRefreshing(false))
-  }
+function PlanLimits({ info, refreshing, refresh }: { info: RateLimitInfo | null; refreshing: boolean; refresh: () => Promise<void> }) {
   // Still loading or unavailable: keep the card so Claude's and Codex's limits stay side by side.
   if (!info || !info.windows.length) {
     return (
-      <section className="card usage-card">
+      <section className="card usage-card plan-limits-empty">
         <div className="usage-card-head">
           <h2>
             <span className="tool-badge tool-claude">Claude</span> Plan limits
           </h2>
           <IconButton icon={RefreshCw} label="Check now" size={13} onClick={refresh} disabled={refreshing} />
         </div>
-        <p className={`small ${info?.error ? 'plan-error' : 'muted'}`}>{info?.error ?? 'Checking your plan limits…'}</p>
+        <p className={`small ${info?.error ? 'plan-error' : 'muted'}`}>{refreshing ? (info?.error ? 'Retrying Claude plan limits...' : 'Loading Claude plan limits...') : info?.error ?? 'Claude plan limits unavailable. Try again.'}</p>
+        <div className="plan-placeholder" aria-hidden><span>Session</span><span /><span>—</span></div>
+        <div className="plan-placeholder" aria-hidden><span>Weekly</span><span /><span>—</span></div>
       </section>
     )
   }
@@ -186,7 +185,7 @@ function PlanLimits({ info }: { info: RateLimitInfo | null }) {
           <span className="tool-badge tool-claude">Claude</span> Plan limits{info.plan ? ` · ${info.plan[0].toUpperCase()}${info.plan.slice(1)}` : ''}
         </h2>
         <span className="muted small">
-          updated {timeAgo(info.at)}
+          {refreshing ? 'Refreshing · ' : info.error || Date.now() - info.at > 900_000 ? 'Stale reading · ' : ''}updated {timeAgo(info.at)}
           <IconButton icon={RefreshCw} label="Check now" size={13} onClick={refresh} disabled={refreshing} />
         </span>
       </div>
@@ -389,7 +388,7 @@ function PlanCost() {
   )
 }
 
-export default function UsageView({ visible, status, rateLimit, onOpenProject, onOpenSession }: Props) {
+export default function UsageView({ visible, status, rateLimit, planLoading, onRetryPlan, onOpenProject, onOpenSession }: Props) {
   const look = useLook()
   const [range, setRange] = useState<Range>('30')
   const [report, setReport] = useState<UsageReport | null>(null)
@@ -487,7 +486,7 @@ export default function UsageView({ visible, status, rateLimit, onOpenProject, o
 
       {/* Claude's and Codex's limits side by side; Claude's spans the row when Codex hasn't been used. */}
       <div className="usage-pair">
-        <PlanLimits info={rateLimit} />
+        <PlanLimits info={rateLimit} refreshing={planLoading} refresh={onRetryPlan} />
         <CodexCard since={since} visible={visible} onOpenProject={onOpenProject} />
       </div>
       <PlanCost />

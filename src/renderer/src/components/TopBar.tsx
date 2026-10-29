@@ -11,6 +11,8 @@ interface Props {
   userName: string
   /** Name of the project "New session" starts in. */
   currentProject?: string
+  planLoading: boolean
+  onRetryPlan: () => Promise<void>
   rateLimit: RateLimitInfo | null
   /** Codex's limits from its session files; null until Codex has run here. */
   codexLimits: RateLimitInfo | null
@@ -54,7 +56,7 @@ function UpdateButton({ update }: { update: UpdateState }) {
 }
 
 /** Search, Eco, plan limits, the New menu and Settings (your initials), across the top of every page. */
-export default function TopBar({ userName, currentProject, rateLimit, codexLimits, eco, update, onEcoSettings, onShortcut }: Props) {
+export default function TopBar({ userName, currentProject, rateLimit, codexLimits, planLoading, onRetryPlan, eco, update, onEcoSettings, onShortcut }: Props) {
   const keyFor = useKeyFor()
   const ecoTip = eco?.enabled
     ? [
@@ -71,7 +73,7 @@ export default function TopBar({ userName, currentProject, rateLimit, codexLimit
     : 'Eco mode is off. Click to use less of your plan in new chats and tasks · right-click for settings'
   return (
     <header className="topbar">
-      <button className="topbar-search" onClick={() => onShortcut('palette')}>
+      <button className="topbar-search" aria-label="Search projects, chats and tasks" onClick={() => onShortcut('palette')}>
         <Search size={16} />
         <span>Search projects, chats, tasks…</span>
         {keyFor('palette') && <KeyCombo combo={keyFor('palette')} />}
@@ -88,8 +90,7 @@ export default function TopBar({ userName, currentProject, rateLimit, codexLimit
         <Leaf size={15} />
         <span>Eco</span>
       </button>
-      <PlanMeter info={rateLimit} label={codexLimits ? 'Claude' : undefined} onOpen={() => onShortcut('goUsage')} />
-      {codexLimits && <PlanMeter info={codexLimits} label="Codex" reportedOnly onOpen={() => onShortcut('goUsage')} />}
+      <PlanMeter info={rateLimit} codex={codexLimits} loading={planLoading} onRetry={onRetryPlan} onOpen={() => onShortcut('goUsage')} />
       <UpdateButton update={update} />
       <div className="topbar-actions">
         <MenuButton

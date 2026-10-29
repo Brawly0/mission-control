@@ -76,6 +76,23 @@ function fail(error: string): void {
 
 async function fetchOnce(): Promise<void> {
   lastFetch = Date.now()
+  // Smoke scenarios must never read credentials or contact the real account.
+  if (process.env.MC_SMOKE && !process.env.MC_SMOKE_PLAN) {
+    if (process.env.MC_SMOKE_WORKSPACE) {
+      await new Promise(resolve => setTimeout(resolve, Number(process.env.MC_SMOKE_PROVIDER_DELAY || 0)))
+      const scenario = process.env.MC_SMOKE_PLAN_FIXTURE
+      if (scenario === 'missing') return fail('Fixture: no saved Claude credentials.')
+      if (scenario === 'empty') return fail('Claude returned no plan readings. Try again later.')
+      if (scenario === 'timeout') return fail('Fixture: usage request timed out.')
+      if (scenario === 'failure') return fail('Fixture: usage service unavailable.')
+      setRateLimit({ at: Date.now(), status: 'allowed', source: 'plan', error: undefined, windows: [
+        { name: 'five_hour', utilization: 0.41, resetsAt: Date.now() + 3600_000 },
+        { name: 'seven_day', utilization: 0.23, resetsAt: Date.now() + 86400_000 }
+      ] })
+      return
+    }
+    return fail('Plan polling is disabled in this smoke scenario.')
+  }
   const login = await readLogin()
   if (!login) return fail('Not logged in to Claude Code with a Claude account (API-key logins have no plan limits).')
   if (login.expiresAt && login.expiresAt < Date.now()) return fail('Login expired. Run any Claude chat once and it refreshes.')
@@ -92,6 +109,7 @@ async function fetchOnce(): Promise<void> {
     if (!res.ok) return fail(`Usage check failed (HTTP ${res.status}).`)
     backoff = 0
     const info = withForecast(parsePlanUsage(await res.json(), Date.now(), login.plan))
+    if (!info.windows.length) return fail('Claude returned no plan readings. Try again later.')
     setRateLimit({ ...info, error: undefined })
     recordPlanReading(info)
     onFresh?.(info)

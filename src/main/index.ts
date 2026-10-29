@@ -39,7 +39,7 @@ if (process.env.MC_SMOKE) {
     /* no settings yet */
   }
   app.setPath('userData', own)
-  if (process.env.MC_SMOKE_CLEAN) updateStore(s => { s.settings.userName = 'Developer'; s.settings.autoUpdate = false; s.settings.queueEnabled = false; s.settings.autoBriefings = false; s.settings.hotkey = '' })
+  if (process.env.MC_SMOKE_CLEAN) updateStore(s => { s.settings.userName = ''; s.settings.autoUpdate = false; s.settings.queueEnabled = false; s.settings.autoBriefings = false; s.settings.hotkey = '' })
   if (process.env.MC_SMOKE_PERF === 'fresh') for (const ext of ['', '-wal', '-shm']) rmSync(join(own, `index-perf.db${ext}`), { force: true })
 }
 perfMark('main loaded')

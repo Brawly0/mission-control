@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import { writeFileSync } from 'node:fs'
 import { listProjects, normalizePath } from './claudeData'
 import { loadStore, updateStore } from './store'
+import { setRateLimit } from './tasks'
 
 /** Free UI regression test: uses only local CLI status checks and PowerShell. */
 export async function workspaceUiSmoke(win: BrowserWindow, outFile: string, log: (...values: unknown[]) => void) {
@@ -26,12 +27,93 @@ export async function workspaceUiSmoke(win: BrowserWindow, outFile: string, log:
   win.webContents.setBackgroundThrottling(false)
   await until('!!window.__mcSmoke')
   try {
+    // The shell scenario uses deterministic IPC fixtures only, including delayed refreshes.
+    const reload = async () => {
+      win.webContents.reload()
+      await pause(400)
+      await until('!!window.__mcSmoke && !!document.querySelector(".provider-chip")')
+    }
+    const retry = async () => {
+      await js(`document.querySelector('.provider-chip').open = true; document.querySelector('.provider-details button:last-child').click()`)
+      await until(`!document.querySelector('.provider-details button:last-child').disabled`)
+    }
+    win.setContentSize(1440, 900)
+    await until(`document.querySelector('.provider-chip summary').textContent.includes('41%')`)
+    await js(`window.__mcSmoke.setView('home')`)
+    if (process.env.MC_SMOKE_CLEAN && await js(`!!document.querySelector('.hd-name')`)) throw new Error('Clean fixture exposed a greeting name')
+    // Test unavailable -> retry -> success, including rejected renderer IPC.
+    for (const scenario of ['missing', 'empty', 'timeout', 'reject']) {
+      process.env.MC_SMOKE_PLAN_FIXTURE = scenario
+      setRateLimit({ at: Date.now(), status: '', windows: [] })
+      await retry()
+      await until(`document.querySelector('.provider-chip summary').textContent.includes('Unavailable')`)
+      if (await js(`document.querySelector('.provider-details').textContent.includes('Waiting for the first reading')`)) throw new Error('Settled failure remained loading')
+      process.env.MC_SMOKE_PLAN_FIXTURE = ''
+      process.env.MC_SMOKE_PROVIDER_DELAY = '500'
+      await js(`document.querySelector('.provider-details button:last-child').click()`)
+      await until(`document.querySelector('.provider-chip summary').textContent.includes('Retrying')`)
+      await until(`document.querySelector('.provider-chip summary').textContent.includes('41%') && !document.querySelector('.provider-details button:last-child').disabled`)
+      process.env.MC_SMOKE_PROVIDER_DELAY = ''
+    }
+    process.env.MC_SMOKE_PLAN_FIXTURE = 'failure'
+    await retry()
+    await until(`document.querySelector('.provider-chip summary').textContent.includes('41%') && document.querySelector('.provider-details').textContent.includes('last good reading')`)
+    await js(`window.__mcSmoke.setView('usage')`)
+    await until(`document.querySelector('.plan-error')?.textContent.includes('unavailable')`)
+    process.env.MC_SMOKE_PLAN_FIXTURE = ''
+    await retry()
+    // A restart immediately shows the validated cached status while checks are delayed.
+    process.env.MC_SMOKE_PROVIDER_DELAY = '2500'
+    const cached = { at: Date.now() - 600_000, status: { installed: true, loggedIn: true, email: 'must-not-survive@example.invalid' } }
+    await js(`localStorage.setItem('mc.connectionStatus.v1', ${JSON.stringify(JSON.stringify({ claude: cached, codex: cached }))})`)
+    await reload()
+    await until(`document.querySelector('.connection-toggle').getAttribute('aria-label').includes('Connected')`)
+    await js(`document.querySelector('.connection-toggle').click()`)
+    if (!await js(`document.querySelector('.connection-details').textContent.includes('Refreshing quietly')`)) throw new Error('Cached status did not render before refresh')
+    await until(`!document.querySelector('.connection-details').textContent.includes('Refreshing quietly')`)
+    if (await js(`localStorage.getItem('mc.connectionStatus.v1').includes('email')`)) throw new Error('Connection cache retained sensitive fields')
+    process.env.MC_SMOKE_CONNECTION_FIXTURE = 'failure'
+    process.env.MC_SMOKE_PROVIDER_DELAY = ''
+    await js(`document.querySelector('[aria-label="Refresh agent connections"]').click()`)
+    await until(`document.querySelector('.connection-toggle').getAttribute('aria-label').includes('check failed')`)
+    if (!await js(`document.querySelector('.connection-toggle').getAttribute('aria-label').includes('Claude Connected')`)) throw new Error('Failure discarded prior status')
+    process.env.MC_SMOKE_CONNECTION_FIXTURE = ''
+    // Malformed cache is an unknown state, never a disconnected assertion.
+    process.env.MC_SMOKE_PROVIDER_DELAY = '2500'
+    await js(`localStorage.setItem('mc.connectionStatus.v1', '{broken')`)
+    await reload()
+    if (!await js(`document.querySelector('.connection-toggle').getAttribute('aria-label').includes('Unknown')`)) throw new Error('Malformed cache was trusted')
+    await until(`document.querySelector('.connection-toggle').getAttribute('aria-label').includes('Connected')`)
+    process.env.MC_SMOKE_PROVIDER_DELAY = ''
+    const savedSidebar = loadStore().ui.sidebarCollapsed
+    for (const theme of ['dark', 'light']) {
+      await js(`if (document.documentElement.dataset.theme !== ${JSON.stringify(theme)}) window.__mcSmoke.runShortcut('toggleTheme')`)
+      await until(`document.documentElement.dataset.theme === ${JSON.stringify(theme)}`)
+      for (const width of [1440, 960, 1440]) {
+        win.setContentSize(width, 900)
+        await pause(400)
+        const geometry = await js(`(() => { const bar=document.querySelector('.topbar'), r=bar.getBoundingClientRect(); return {height:r.height, overflow:bar.scrollWidth>bar.clientWidth+1, outside:[...bar.children].some(c=>{ const b=c.getBoundingClientRect(); return b.top<r.top || b.bottom>r.bottom+1 }), rail:!!document.querySelector('.sidebar.rail')}; })()`)
+        if (geometry.height > 61 || geometry.overflow || geometry.outside || (width === 960 && !geometry.rail)) throw new Error('Compact shell geometry: ' + JSON.stringify(geometry))
+        await js(`document.querySelector('.provider-chip').open=false; document.querySelector('.provider-chip summary').focus()`)
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' })
+        await until(`document.querySelector('.provider-chip').open`)
+        await js(`document.querySelector('.provider-details button:last-child').focus()`)
+        if (!await js(`document.activeElement.textContent.includes('Retry Claude')`)) throw new Error('Retry is not focusable')
+        await shot(`shell-${theme}-${width}`)
+        await js(`document.querySelector('.provider-chip').open=false`)
+      }
+    }
+    if (loadStore().ui.sidebarCollapsed !== savedSidebar) throw new Error('Responsive rail overwrote saved preference')
+    log('shell: provider failures/retry/stale, cached restart/malformed/partial failure, keyboard details and responsive themes PASS')
+    if (process.env.MC_SMOKE_SHELL) return
+    win.setContentSize(1440, 900)
     const project = (await listProjects()).find(p => p.folderName === 'claude-hub')!
     if (!project) throw new Error('Missing test project')
     const path = JSON.stringify(project.path)
     await js(`window.__mcSmoke.selectProject(${path}); window.__mcSmoke.setView('projects')`)
     await until(`!!document.querySelector('.big-project[data-project-path]')`)
-    // Expand real connection status and verify both providers have completed a check.
+    // Expand the logo status indicator and verify both providers have completed a check.
     await js(`document.querySelector('.connection-toggle').click()`)
     await until(`document.querySelectorAll('.connection-row').length === 2 && ![...document.querySelectorAll('.connection-row')].some(e => e.textContent.includes('Checking'))`)
     log('connections:', await js(`document.querySelector('.agent-connections').textContent`))
@@ -130,6 +212,9 @@ export async function workspaceUiSmoke(win: BrowserWindow, outFile: string, log:
     await js(`window.__mcSmoke.agents().filter(a => a.projectName === 'UI smoke').forEach(a => window.__mcSmoke.closeAgent(a.id))`)
     log('workspace UI: PASS')
   } finally {
+    delete process.env.MC_SMOKE_PLAN_FIXTURE
+    delete process.env.MC_SMOKE_CONNECTION_FIXTURE
+    delete process.env.MC_SMOKE_PROVIDER_DELAY
     await js(`window.mc.setSettings({theme:${JSON.stringify(themeBefore)}})`)
     updateStore(s => { s.projectMeta = before })
   }

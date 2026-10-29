@@ -271,9 +271,12 @@ export default function Sidebar(props: Props) {
   if (props.collapsed) {
     return (
       <aside className="sidebar rail">
-        <button className="brand-mark rail-brand" title={withKey('Show sidebar', keyFor('toggleSidebar'))} onClick={props.onToggleCollapsed}>
-          <BrandMark size={34} />
-        </button>
+        <div className="connection-brand">
+          <button className="brand-mark rail-brand" title={withKey('Show sidebar', keyFor('toggleSidebar'))} onClick={props.onToggleCollapsed}>
+            <BrandMark size={34} />
+          </button>
+          <AgentConnections onUsage={() => props.onNavigate('usage')} onTerminal={() => props.onTerminal()} />
+        </div>
         <button className="rail-item" title={withKey('Command palette', keyFor('palette'))} onClick={props.onOpenPalette}>
           <Search size={17} />
         </button>
@@ -312,6 +315,7 @@ export default function Sidebar(props: Props) {
         <div className="brand-mark">
           <BrandMark />
         </div>
+        <AgentConnections onUsage={() => props.onNavigate('usage')} onTerminal={() => props.onTerminal()} />
         <div className="brand-text">
           <div className="brand-name">Mission Control</div>
           <div className="brand-sub">for Claude &amp; Codex</div>
@@ -372,7 +376,6 @@ export default function Sidebar(props: Props) {
         </label>
       )}
       <button className="setup-sidebar-entry" onClick={props.onSetup}>Guided setup</button>
-      <AgentConnections onUsage={() => props.onNavigate('usage')} onTerminal={() => props.onTerminal()} />
       {actions.overlay}
     </aside>
   )

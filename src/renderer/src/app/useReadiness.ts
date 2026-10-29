@@ -54,7 +54,8 @@ export function useReadiness(projectPath: string | null, onError: () => void) {
   useEffect(() => {
     if (!setup) return
     void check()
-    return () => cancel('connections')
+    const timer = setInterval(() => void check(), 300_000)
+    return () => { clearInterval(timer); cancel('connections') }
   }, [!!setup, providers.join(',')])
   useEffect(() => {
     if (projectPath) void check(projectPath)

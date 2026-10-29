@@ -589,6 +589,8 @@ export interface ClaudeStatus {
   /** Unknown diagnostic outcomes are exposed here; booleans remain conservative compatibility fields. */
   installation?: import('./readiness').ReadinessCheck
   authentication?: import('./readiness').ReadinessCheck
+  /** Failed check means unknown, not disconnected. */
+  error?: string
   installed: boolean
   version?: string
   loggedIn: boolean

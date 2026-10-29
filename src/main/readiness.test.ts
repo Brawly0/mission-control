@@ -79,6 +79,22 @@ describe('read-only provider probes', () => {
 })
 
 describe('lifetime and concurrency', () => {
+  it('removes cancelled queued waiters while active probes remain occupied', async () => {
+    const { service, connections, deps } = fixture()
+    const gate = deferred<string | null>()
+    vi.mocked(deps.discover).mockImplementation(() => gate.promise)
+    const first = connections('first', ['claude'], 1)
+    const second = connections('second', ['claude'], 2)
+    await Promise.resolve(); await Promise.resolve()
+    for (let i = 0; i < 40; i++) {
+      const queued = connections(`queued-${i}`, ['claude'], 3)
+      service.cancel(3, `queued-${i}`)
+      expect((await queued).outcome).toBe('cancelled')
+    }
+    expect((service as unknown as { waiters: unknown[] }).waiters).toHaveLength(0)
+    service.cancel(1); service.cancel(2); gate.resolve(null)
+    await Promise.all([first, second])
+  })
   it('scopes cancellation to the requesting renderer and ignores a late completion', async () => {
     const { connections, deps, service } = fixture(); const slow = deferred<string | null>()
     vi.mocked(deps.discover).mockReturnValue(slow.promise)

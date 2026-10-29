@@ -183,9 +183,11 @@ export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab, o
                 </button>
               ))}
             </nav>
-          <div className="dialog-body settings-pane">
+          <div className="dialog-body settings-pane" data-settings-tab={tab}>
             {onResumeSetup && <Button onClick={onResumeSetup}>Resume guided setup</Button>}
             {tab === 'general' && (<>
+            <section className="settings-section" aria-labelledby="settings-profile">
+            <h3 id="settings-profile">Profile</h3>
             <label className="field">
               <span className="field-label">Your name</span>
               <input
@@ -198,6 +200,9 @@ export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab, o
               />
               <span className="field-hint">Leave empty to use the first name of your Windows account.</span>
             </label>
+            </section>
+            <section className="settings-section" aria-labelledby="settings-notifications">
+            <h3 id="settings-notifications">Notifications</h3>
             <label className="check-row">
               <input type="checkbox" checked={settings.autoBriefings} onChange={(e) => apply({ autoBriefings: e.target.checked })} />
               <span>
@@ -219,6 +224,9 @@ export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab, o
                 <span className="field-hint block">A notification with yesterday in review (chats, share of your week, tasks) and what’s waiting today. If the app isn’t running then, it shows when you next open it. The Inbox always has it.</span>
               </span>
             </label>
+            </section>
+            <section className="settings-section" aria-labelledby="settings-window">
+            <h3 id="settings-window">Window</h3>
             <div className="field">
               <span className="field-label">Global shortcut to show or hide Mission Control</span>
               <div className="hotkey-row">
@@ -254,6 +262,7 @@ export default function SettingsDialog({ onClose, onOpenShortcuts, initialTab, o
                 <span className="field-hint block">Only while agents or tasks are running. Quit from the tray icon's menu.</span>
               </span>
             </label>
+            </section>
             </>)}
             {tab === 'tasks' && (<>
             <div className="field">
