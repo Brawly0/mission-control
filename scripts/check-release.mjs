@@ -27,7 +27,7 @@ Object.assign(env, { USERPROFILE: home, APPDATA: join(output, 'roaming'), LOCALA
 async function run(name, options) {
   const dir = join(output, name); mkdirSync(dir)
   const log = join(dir, 'smoke.log')
-  const child = spawn(exe, dev ? ['.'] : [], { cwd: root, windowsHide: true, env: { ...env, ...options,
+  const child = spawn(exe, dev ? [root] : [], { cwd: dir, windowsHide: true, env: { ...env, ...options,
     MC_SMOKE: join(dir, 'ui.png'), MC_SMOKE_LOG: log, MC_SMOKE_PROFILE: join(dir, 'profile') }, stdio: ['ignore', 'pipe', 'pipe'] })
   const captured = []
   child.stdout?.on('data', data => { captured.push(data); appendFileSync(join(dir, 'process.log'), data) })
