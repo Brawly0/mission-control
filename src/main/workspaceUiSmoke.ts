@@ -39,6 +39,7 @@ export async function workspaceUiSmoke(win: BrowserWindow, outFile: string, log:
     }
     win.setContentSize(1440, 900)
     await until(`document.querySelector('.provider-chip summary').textContent.includes('41%')`)
+    if (!await js(`document.querySelectorAll('.provider-chip summary .plan-meter-track').length === 4 && ['claude','codex'].every(tool => document.querySelector('[data-provider="'+tool+'"]')?.textContent.includes('Week'))`)) throw new Error('Both providers must show their session and weekly bars directly in the header')
     await js(`window.__mcSmoke.setView('home')`)
     if (process.env.MC_SMOKE_CLEAN && await js(`!!document.querySelector('.hd-name')`)) throw new Error('Clean fixture exposed a greeting name')
     // Test unavailable -> retry -> success, including rejected renderer IPC.

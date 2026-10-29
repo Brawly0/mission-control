@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { RateLimitInfo } from '@shared/types'
-import { windowLabel } from '@shared/planUsage'
+import { duration, resetsIn, windowLabel } from '@shared/planUsage'
 import { timeAgo } from '../util'
 
 interface Props {
@@ -22,21 +22,33 @@ export default function PlanMeter({ info, codex, loading, onRetry, onOpen }: Pro
     return () => clearInterval(timer)
   }, [])
   const providers = [{ label: 'Claude', reading: info, reported: false }, { label: 'Codex', reading: codex, reported: true }]
-  const percent = (reading: RateLimitInfo | null, reported: boolean) => {
-    const w = reading?.windows.find(w => w.name === 'five_hour') ?? reading?.windows.find(w => w.name === 'seven_day') ?? reading?.windows[0]
-    return w ? `${Math.round((reported && w.resetsAt > 0 && w.resetsAt < now ? 0 : w.utilization) * 100)}%` : null
-  }
   return <details className="provider-chip"
-    onMouseEnter={e => { e.currentTarget.open = true }}
     onMouseLeave={e => { if (!e.currentTarget.contains(document.activeElement)) e.currentTarget.open = false }}
-    onFocus={e => { e.currentTarget.open = true }}
     onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false }}
     onKeyDown={e => { if (e.key === 'Escape') e.currentTarget.open = false }}>
     <summary aria-label="Provider plan limits details" onClick={e => { e.preventDefault(); e.currentTarget.parentElement!.setAttribute('open', '') }}>
-      {providers.map(({ label, reading, reported }, i) => <span key={label}>
-        {i > 0 && <span aria-hidden> · </span>}{label} {percent(reading, reported) ?? (reported ? '—' : loading ? (info?.error ? 'Retrying…' : 'Loading…') : 'Unavailable')}
-        {reading?.error || (!reported && reading?.windows.length && now - reading.at > 900_000) ? ' !' : ''}
-      </span>)}
+      {providers.map(({ label, reading, reported }) => {
+        const preferred = reading?.windows.filter(w => w.name === 'five_hour' || w.name === 'seven_day') ?? []
+        const windows = preferred.length ? preferred : reading?.windows.slice(0, 1) ?? []
+        const stale = !!reading && !reported && now - reading.at > 900_000
+        return <span key={label} className={`plan-meter ${stale ? 'stale' : ''}`} data-provider={label.toLowerCase()}>
+          <span className="plan-meter-tool">{label}</span>
+          {!windows.length && <span>{reported ? 'No limits reported' : loading ? (info?.error ? 'Retrying…' : 'Loading…') : 'Unavailable'}</span>}
+          {windows.map(w => {
+            const reset = reported && w.resetsAt > 0 && w.resetsAt < now
+            const pct = Math.round((reset ? 0 : w.utilization) * 100)
+            const outIn = !reset && w.forecast?.runsOutAt && pct < 100 ? Math.max(0, w.forecast.runsOutAt - now) : null
+            const projected = !reset && w.forecast ? Math.min(100, Math.round(w.forecast.atReset * 100)) : 0
+            return <span key={w.name} className="plan-meter-item" title={`${windowLabel(w.name, true)}: ${pct}% used${w.resetsAt ? ` · resets ${new Date(w.resetsAt).toLocaleString()}` : ''}`}>
+              <span className="plan-meter-name">{windowLabel(w.name)}</span>
+              <span className="plan-meter-track" aria-hidden>{projected > pct && <span className={`plan-meter-projected ${levelClass(projected)}`} style={{ width: `${projected}%` }} />}<span className={`plan-meter-fill ${levelClass(pct)}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></span>
+              <span className={`plan-meter-pct ${levelClass(pct)}`}>{pct}%</span>
+              {outIn !== null ? <span className="plan-meter-reset plan-meter-out">out in {duration(outIn)}</span> : !reset && w.resetsAt > 0 && <span className="plan-meter-reset">{resetsIn(w.resetsAt, now)}</span>}
+            </span>
+          })}
+          {reading?.error && <span className="plan-meter-error" title={reading.error}>!</span>}
+        </span>
+      })}
     </summary>
     <div className="provider-details">
       <p className="muted small">Chip: 5-hour session usage; otherwise all-model weekly usage, then the first reported window below.</p>

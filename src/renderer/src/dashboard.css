@@ -1278,8 +1278,18 @@ input[type='time'] {
 /* Compact shell: fixed geometry across loading, unavailable, retry and ready states. */
 .app .topbar { height: 60px; flex-wrap: nowrap; min-height: 60px; }
 .topbar-search { min-width: 0; }
-.provider-chip { position: relative; flex: 0 0 255px; width: 255px; font-size: 12px; }
-.provider-chip > summary { list-style: none; display: flex; justify-content: center; align-items: center; height: 36px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer; white-space: nowrap; }
+.provider-chip { position: relative; flex: 0 1 auto; min-width: 0; font-size: 12px; }
+.provider-chip > summary { list-style: none; display: flex; gap: 10px; align-items: center; cursor: pointer; white-space: nowrap; }
+.provider-chip .plan-meter { gap: 10px; padding: 0 10px; }
+@media (max-width: 1650px) {
+  .provider-chip .plan-meter-reset { display: none; }
+  .topbar-search { flex-basis: 120px; }
+}
+@media (max-width: 1100px) {
+  .provider-chip .plan-meter { gap: 7px; padding: 0 8px; }
+  .provider-chip .plan-meter-item { gap: 4px; }
+  .provider-chip .plan-meter-track { width: 30px; }
+}
 .provider-chip > summary::-webkit-details-marker, .connection-toggle::-webkit-details-marker { display: none; }
 .provider-chip > summary:focus-visible, .connection-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .provider-details, .agent-connections > .connection-details { position: absolute; z-index: 200; top: 100%; margin: 0; padding: 16px; width: 360px; max-width: calc(100vw - 90px); background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 12px 35px #0004; text-align: left; white-space: normal; }

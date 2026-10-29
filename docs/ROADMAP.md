@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Restore always-visible Claude/Codex Session and Week usage bars in the top header (0.29.1)
+
 ## v0.29: Completed task integration
 
 - [x] Release guided setup, project readiness, first-task guidance and Fix problems together with the UI-improvement task
