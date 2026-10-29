@@ -115,7 +115,7 @@ export async function onboardingSmoke(win: BrowserWindow, outFile: string, log: 
   })
   const pass = (message: string) => { passed.push(message); log('onboarding verified:', message) }
   const setState = (auth = 'ready', task = 'success') => writeFileSync(state, JSON.stringify({ auth, task }))
-  const click = (selector: string, label: string) => js(`(() => { const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.trim()===${JSON.stringify(label)}); if(!e || e.disabled) throw Error('Missing enabled control: '+${JSON.stringify(label)}); e.click() })()`)
+  const click = (selector: string, label: string) => until(() => js(`(() => { const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.trim()===${JSON.stringify(label)}); if(!e || e.disabled) return false; e.click(); return true })()`), `enabled control: ${label}`)
   const fill = async (selector: string, value: string) => {
     await js(`(() => { const e=document.querySelector(${JSON.stringify(selector)}); if(!e) throw Error('Missing input'); const proto=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto,'value').set.call(e,${JSON.stringify(value)}); e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true})) })()`)
     await pause(150)
@@ -234,7 +234,6 @@ export async function onboardingSmoke(win: BrowserWindow, outFile: string, log: 
   pass('non-Git, malformed/unsupported manifests, valid history and read-only command inference')
   await js(`(() => { window.__mcSmoke.selectProject(${JSON.stringify(repo)}); window.__mcSmoke.setView('project') })()`)
   await until(() => js('!!document.querySelector(".project-readiness")'), 'project readiness UI')
-  await until(() => js(`![...document.querySelectorAll('.project-readiness button')].find(e=>e.textContent==='Recheck project readiness')?.disabled`), 'automatic project check settled')
   await click('.project-readiness button', 'Recheck project readiness')
   await until(() => js(`document.querySelector('.project-readiness').getAttribute('aria-busy')==='false'`), 'project verification')
   await click('.project-readiness button', 'Review project commands')
