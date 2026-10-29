@@ -1,5 +1,11 @@
 # Roadmap
 
+## v0.29: Completed task integration
+
+- [x] Release guided setup, project readiness, first-task guidance and Fix problems together with the UI-improvement task
+- [x] Use one connection diagnostic source with a compact, sanitized last-known display; preserve Home and task-agent workspaces
+- [x] Remove cancelled queued readiness waiters and cover repeated cancellation with a regression test
+
 ## Tasks, Search, Projects and Settings clarity (2026-10-28)
 
 - [x] Put the bounded Tasks project filter beside the title; align toolbar controls and wrap them at narrower widths
