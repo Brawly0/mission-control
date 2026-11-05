@@ -14,6 +14,8 @@ export function taskWorkspaces(tasks: Task[], projectFilter: string): TaskWorksp
 
 export function workspaceAgentStatus(task: Task, all: Task[]): { label: string; tone: string; detail: string } {
   if (task.run?.checks?.status === 'running') return { label: 'Checking', tone: 'working', detail: 'Running project checks before completing the assignment.' }
+  if (task.column === 'running' && task.run?.cliState === 'idle') return { label: 'Your turn', tone: 'waiting', detail: 'Chat in the CLI, or finish this assignment to release the next agents.' }
+  if (task.column === 'running' && task.run?.cliState === 'needs-input') return { label: 'Needs input', tone: 'waiting', detail: 'Respond directly in the CLI terminal.' }
   if (task.column === 'running') return { label: 'Working', tone: 'working', detail: task.run?.activity || 'Starting agent…' }
   if (taskSucceeded(task)) return { label: 'Finished', tone: 'done', detail: 'Assignment complete' }
   if (taskFailed(task)) return { label: 'Needs attention', tone: 'error', detail: task.run?.error || task.run?.checks?.output || 'Verification failed' }

@@ -6,6 +6,7 @@ import { displayStatus } from '../agentStatus'
 import { elapsed, formatCost } from '../util'
 import { EmptyState, IconButton, ToolBadge } from './ui'
 import { TaskTerminal } from './TaskTerminal'
+import { TaskCliControls } from './TaskCliControls'
 import { taskWorkspaces, workspaceAgentStatus } from '../taskWorkspace'
 
 interface Props {
@@ -38,6 +39,7 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
     if (!focus) return
     setRootId(focus.teamParentId ?? focus.id)
     setAgentId(focus.team ? null : focus.id)
+    if (focus.team?.mode === 'interactive') setLayout('grid')
     setMaximized(null)
   }, [focusId, focusRequest])
 
@@ -82,6 +84,7 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
       </select>
       <span className="task-workspace-summary muted small">{members.filter(t => t.column === 'running').length} working · {group.root.team?.phase ?? group.root.column}</span>
       <IconButton icon={PanelRightOpen} label="Task and team controls" onClick={() => onOpen(group.root)} />
+      <button className="btn btn-secondary btn-sm" onClick={() => setMode('grid')} title="Show every agent in this task together">View all CLI agents</button>
       <div className="segmented task-agent-layout" role="group" aria-label="Task agents layout">
         <button type="button" aria-pressed={layout === 'tabs'} className={layout === 'tabs' ? 'active' : ''} onClick={() => setMode('tabs')}><Rows2 size={14} /> Tabs</button>
         <button type="button" aria-pressed={layout === 'grid'} className={layout === 'grid' ? 'active' : ''} onClick={() => setMode('grid')}><LayoutGrid size={14} /> Grid</button>
@@ -110,11 +113,12 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
         const run = t.run
         const status = workspaceAgentStatus(t, tasks)
         const agent = run?.agentId ? agents.find(a => a.id === run.agentId) : undefined
-        const hidden = max ? t.id !== max : layout === 'tabs' && t.id !== active?.id
+        const archivedPlanner = layout === 'grid' && group.root.team?.mode === 'interactive' && t.teamRole === 'planner' && t.column !== 'running' && active?.id !== t.id && members.some(member => member.teamRole === 'worker')
+        const hidden = max ? t.id !== max : archivedPlanner || layout === 'tabs' && t.id !== active?.id
         return <section key={t.id} id={`task-agent-panel-${t.id}`} role={layout === 'tabs' ? 'tabpanel' : 'region'} aria-labelledby={`task-agent-tab-${t.id}`} className={`task-term ${t.column === 'running' ? 'is-running' : status.tone === 'error' ? 'has-error' : 'is-done'} ${hidden ? 'stacked-hidden' : ''}`} data-task-id={t.id}>
           <header className="task-term-head">
             <ToolBadge tool={t.tool ?? 'claude'} />
-            <div className="task-term-title"><button className="link-plain ellipsis strong" onClick={() => onOpen(t)} title="Open assignment details">{t.title}</button><span className="muted small">{t.teamRole ?? 'Task agent'} · {t.mode === 'interactive' ? 'Interactive terminal' : 'Coordinated run · read-only'}</span></div>
+            <div className="task-term-title"><button className="link-plain ellipsis strong" onClick={() => onOpen(t)} title="Open assignment details">{t.title}</button><span className="muted small">{t.teamRole ?? 'Task agent'} · {t.mode === 'interactive' ? 'Live CLI · type to chat' : 'Coordinated run · read-only'}</span></div>
             <span className="spacer" />
             {run && <span className="muted small task-term-stats">{elapsed(run.finishedAt ? Date.now() - (run.finishedAt - run.startedAt) : run.startedAt)}{run.toolCalls > 0 && ` · ${run.toolCalls} tools`}{run.costUsd ? ` · ${formatCost(run.costUsd)}` : ''}</span>}
             {t.column === 'running' && t.mode === 'headless' && !t.teamParentId && <IconButton icon={Square} size={13} label="Stop the run" onClick={() => onStop(t)} />}
@@ -122,6 +126,7 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
             {layout === 'grid' && <IconButton icon={max === t.id ? Shrink : Maximize2} size={13} label={max === t.id ? 'Restore' : 'Maximize'} onClick={() => { setAgentId(t.id); setMaximized(max === t.id ? null : t.id) }} />}
           </header>
           <div className="task-term-status" role="status">{t.column === 'running' && <Loader2 size={12} className="spin" />}<span className="ellipsis">{agent ? displayStatus(agent, undefined).label : status.label} · {status.detail}</span></div>
+          <TaskCliControls task={t} />
           <div className="task-term-body">{run ? <TaskTerminal task={t} visible={visible && !hidden} /> : <div className="task-agent-waiting"><Users size={28} /><strong>{status.label}</strong><p>{status.detail}</p><details><summary>Assigned task</summary><p>{t.prompt}</p></details></div>}</div>
         </section>
       })}

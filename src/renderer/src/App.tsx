@@ -66,6 +66,7 @@ const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
 const SearchView = lazy(() => import('./components/SearchView'))
 const UsageView = lazy(() => import('./components/UsageView'))
 const SkillsView = lazy(() => import('./components/SkillsView'))
+const PromptStudioView = lazy(() => import('./components/PromptStudioView'))
 const NotebookView = lazy(() => import('./components/NotebookView'))
 const KnowledgeView = lazy(() => import('./components/KnowledgeView'))
 
@@ -910,6 +911,26 @@ export default function App() {
               />
             </OnceShown>
           </div>
+          <div className={view === 'prompts' ? 'view-pane' : 'view-pane hidden'}>
+            <OnceShown show={view === 'prompts'}>
+              <PromptStudioView
+                visible={view === 'prompts'}
+                projects={projects}
+                selectedProject={selected && !selected.worktree ? selected : undefined}
+                onSend={(tool, prompt, project) => {
+                  void (async () => {
+                    try {
+                      const cwd = project?.path ?? (await window.mc.quickChatFolder())
+                      const name = project?.name ?? 'Quick chat'
+                      launch({ kind: tool, cwd, projectName: name, projectPath: cwd, title: `${name} · prompt`, args: [prompt] })
+                    } catch (e) {
+                      toast('error', 'Could not start the agent', errorMessage(e))
+                    }
+                  })()
+                }}
+              />
+            </OnceShown>
+          </div>
           <div className={view === 'knowledge' ? 'view-pane' : 'view-pane hidden'}>
             <OnceShown show={view === 'knowledge'}>
               <KnowledgeView visible={view === 'knowledge'} onStartFromBriefing={(projectPath, file) => void startFromBriefing(projectPath, file)} />
@@ -1022,7 +1043,7 @@ export default function App() {
             setComposerInitial(undefined)
             setGuideDraft(false)
           }}
-          onCreate={async (input, then) => {
+          onCreate={async (input, then, teamMode) => {
             const task = await window.mc.createTask({ ...input, queued: then === 'queue' }).catch(() => {
               toast('error', 'Could not create task', 'Your draft is still open. Review the project and try again.')
               return null
@@ -1039,7 +1060,7 @@ export default function App() {
             if (then === 'start') startTask(task)
             if (then === 'team') {
               setOpenTaskId(task.id)
-              try { await window.mc.planTaskTeam(task.id) }
+              try { await window.mc.planTaskTeam(task.id, teamMode ?? 'interactive'); if (teamMode !== 'headless') { setOpenTaskId(null); showTaskTerminal(task) } }
               catch (e) { toast('error', 'Could not split the task into agents', errorMessage(e)) }
             }
             if (then === 'queue') toast('info', 'Added to the queue', queue?.enabled ? task.title : 'Turn on “Auto-run queue” to start it automatically.')

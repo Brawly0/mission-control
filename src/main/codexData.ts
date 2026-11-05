@@ -134,10 +134,17 @@ async function readChat(file: string, titles: Map<string, string>): Promise<Code
     updatedAt: st.mtimeMs,
     sizeBytes: st.size
   }
+  // Totals are running counts, so only the newest one is right. If the tail holds none but the file has
+  // an unread middle, the head's would be an older, smaller count: read the whole file instead (rare).
+  let totals = newestFirst.map(codexTotals).find(Boolean) ?? null
+  if (st.size > headLen && !tail.some((e) => codexTotals(e))) {
+    const whole = parseLines(await readRange(file, 0, st.size), false, false)
+    totals = [...whole].reverse().map(codexTotals).find(Boolean) ?? totals
+  }
   const chat: CodexChat = {
     file,
     summary,
-    totals: newestFirst.map(codexTotals).find(Boolean) ?? null,
+    totals,
     limits: newestFirst.map(codexLimits).find(Boolean) ?? null,
     model: newestFirst.find((e) => e?.type === 'turn_context' && e.payload?.model)?.payload.model ?? ''
   }

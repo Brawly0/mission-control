@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { ArrowRight, Bot, Check, CheckCheck, CheckSquare, Clock3, CodeXml, FileText, Folder, FolderOpen, FolderPlus, LayoutGrid, ListChecks, MessageSquare, MoreVertical, Pin, Play, Settings2, Sun, Users } from 'lucide-react'
-import type { AgentTool, DashboardActivity, DashboardDay, Project, RateLimitInfo, RecentSession, Task } from '@shared/types'
+import type { AgentTool, DashboardActivity, DashboardDay, Project, RateLimitInfo, RecentSession, Task, VibeStats } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { timeAgo } from '../util'
 import { dueLabel } from '../due'
 import { taskSucceeded } from '@shared/deps'
 import { Avatar, MenuButton } from './ui'
-import { activityPeriod, calendarDay, comparisonLabel, DAY, dayKey, durationPresentation, TIME_HINT, timeLabel, weekStart, type UsageRange } from '../homeMetrics'
+import { activityPeriod, calendarDay, DAY, dayKey, durationPresentation, TIME_HINT, timeLabel, weekStart, type UsageRange } from '../homeMetrics'
+import VibeStatsPanel, { VIBE_HINT } from './VibeStatsPanel'
 import '../home.css'
 
 interface Props {
@@ -32,6 +33,7 @@ interface Props {
   currentProject?: string
 }
 type TaskFilter = 'open' | 'teams' | 'all'
+function weekChange(week: number, last: number): string { return last > 0 ? `${week >= last ? '+' : ''}${Math.round((week / last - 1) * 100)}% vs last week (${timeLabel(last)})` : week > 0 ? 'Nothing last week' : 'No chats yet this week' }
 function greeting(): string { const h = new Date().getHours(); return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 
 /** Shared by the project list's existing filters. */
@@ -76,6 +78,8 @@ export default function HomeView(props: Props) {
   const { agents, lastOutput, projects, tasks, visible, userName, onShortcut } = props
   const [activity, setActivity] = useState<DashboardActivity | null>(null)
   const [recent, setRecent] = useState<RecentSession[] | null>(null)
+  const [stats, setStats] = useState<VibeStats | null>(null)
+  const [statsError, setStatsError] = useState(false)
   const [activityError, setActivityError] = useState(false)
   const [recentError, setRecentError] = useState(false)
   const [retry, setRetry] = useState(0)
@@ -87,6 +91,8 @@ export default function HomeView(props: Props) {
     let current = true
     setActivity(null); setActivityError(false)
     window.mc.dashboardActivity().then(data => { if (current) { setActivity(data); setActivityError(false) } }).catch(() => { if (current) setActivityError(true) })
+    setStatsError(false)
+    window.mc.vibeStats().then(data => { if (current) setStats(data) }).catch(() => { if (current) setStatsError(true) })
     window.mc.recentSessions(8).then(data => { if (current) { setRecent(data); setRecentError(false) } }).catch(() => { if (current) { setRecent([]); setRecentError(true) } })
     return () => { current = false }
   }, [visible, props.indexRun, retry])
@@ -100,9 +106,6 @@ export default function HomeView(props: Props) {
   const openTasks = tasks.filter(t => t.column !== 'done' && !t.teamParentId)
   const working = live.filter(a => displayStatus(a, lastOutput[a.id]).cls === 'working').length, needYou = live.filter(a => a.hookStatus === 'needs-input').length
   const week = activityPeriod(daily, 'week', now), usage = activityPeriod(daily, range, now)
-  const previousStart = dayKey(calendarDay(monday, -7))
-  const priorMinutes = daily.filter(d => d.day >= previousStart && d.day < dayKey(monday)).reduce((n, d) => n + d.activeMinutes, 0)
-  const weekDisplay = durationPresentation(week.minutes, week.events)
   const shownProjects = [...real].sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 4)
   const idle = !live.length && !openTasks.length
   const compact = (n: number) => n.toLocaleString([], { notation: 'compact', maximumFractionDigits: 1 })
@@ -114,7 +117,7 @@ export default function HomeView(props: Props) {
   return <div className="home hd scroll">
     <header className="hd-hero">
       <div className="hd-heading"><h1>{greeting()}{userName && <>, <span className="hd-name">{userName}</span></>}</h1><p>Build faster. Smarter. All in one place.</p></div>
-      <dl className="hd-summary"><div><dd>{activity ? compact(activity.activeDays) : '—'}</dd><dt>active days / all time</dt></div><div><dd>{activity ? compact(activity.sessions) : '—'}</dd><dt>sessions / all time</dt></div><div title={TIME_HINT}><dd>{activity ? timeLabel(activity.activeMinutes) : '—'}</dd><dt>AI time / all time / est.</dt></div></dl>
+      <dl className="hd-summary"><div><dd>{activity ? compact(activity.activeDays) : '—'}</dd><dt>active days / all time</dt></div><div><dd>{activity ? compact(activity.sessions) : '—'}</dd><dt>sessions / all time</dt></div><div title={VIBE_HINT}><dd>{stats ? timeLabel(stats.time.minutes) : '—'}</dd><dt>vibe coding / all time</dt></div></dl>
     </header>
     <section className="hd-launch-grid" aria-label="Start something new">
       <button className="hd-launch hd-tone-claude" onClick={() => props.onChat('claude')} title={props.currentProject ? `Start Claude in ${props.currentProject}` : 'Start a quick chat with Claude'}><span className="hd-launch-icon"><ProviderIcon tool="claude" /></span><span className="hd-launch-copy"><strong>Chat with Claude</strong><small>Plan, build, debug</small></span></button>
@@ -130,11 +133,12 @@ export default function HomeView(props: Props) {
         { label: 'Tasks', value: tasks.filter(t => !t.teamParentId).length.toLocaleString(), note: `${openTasks.length} open`, icon: ListChecks, tone: 'purple', go: 'goTasks' },
         { label: 'Agents', value: String(live.length), note: needYou ? `${needYou} need your attention` : working ? `${working} working now` : 'Open in your workspace', icon: Bot, tone: 'orange', go: 'goAgents' }
       ] : []),
-      { label: 'AI Time / this week', value: activity ? weekDisplay.value : '—', note: activity ? comparisonLabel(week.minutes, priorMinutes) ?? weekDisplay.note : activityError ? 'Activity unavailable' : 'Loading activity...', icon: Clock3, tone: 'violet', go: 'goUsage', period: week.label }
-    ].map(stat => <button className={`hd-stat hd-tone-${stat.tone}`} key={stat.label} onClick={() => onShortcut(stat.go)} title={stat.period ? TIME_HINT : stat.note}><span className="hd-stat-icon"><stat.icon size={23} /></span><span className="hd-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span>{stat.period && <small className="hd-period">{stat.period}</small>}<small>{stat.note}</small></span></button>)}
+      { label: 'Vibe coding / this week', value: stats ? timeLabel(stats.time.weekMinutes) : '—', note: stats ? weekChange(stats.time.weekMinutes, stats.time.lastWeekMinutes) : statsError ? 'Stats unavailable' : 'Loading…', icon: Clock3, tone: 'violet', go: 'goUsage', period: week.label, hint: VIBE_HINT }
+    ].map(stat => <button className={`hd-stat hd-tone-${stat.tone}`} key={stat.label} onClick={() => onShortcut(stat.go)} title={'hint' in stat && stat.hint ? stat.hint : stat.note}><span className="hd-stat-icon"><stat.icon size={23} /></span><span className="hd-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span>{stat.period && <small className="hd-period">{stat.period}</small>}<small>{stat.note}</small></span></button>)}
       {idle && <div className="hd-stat hd-idle hd-tone-purple"><span className="hd-stat-icon"><CheckCheck size={23} /></span><span className="hd-stat-copy"><strong>Nothing running</strong><small>No open tasks or agents / {tasks.filter(t => !t.teamParentId).length} completed tasks</small><span className="hd-idle-actions"><button onClick={() => onShortcut('goTasks')}>View tasks</button><button onClick={() => onShortcut('goAgents')}>View agents</button></span></span></div>}
     </section>
 
+    <VibeStatsPanel stats={stats} error={statsError} onRetry={() => setRetry(v => v + 1)} />
     {activityError && <div className="hd-data-error" role="status">Activity couldn’t be refreshed. <button onClick={() => setRetry(v => v + 1)}>Retry</button></div>}
     <section className="hd-grid" aria-label="Workspace dashboard">
       <section className="hd-panel hd-usage"><div className="hd-panel-head"><h2>AI Usage</h2><div className="hd-tabs" aria-label="Usage period">{(['week', 'month', 'all'] as const).map(value => <button key={value} aria-pressed={range === value} className={range === value ? 'active' : ''} onClick={() => setRange(value)}>{value === 'week' ? 'This Week' : value === 'month' ? 'This Month' : 'All Time'}</button>)}</div></div>

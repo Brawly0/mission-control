@@ -157,6 +157,32 @@ function runClaude(deps: SmokeDeps, spec: TerminalSpec): Promise<{ output: strin
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * MC_SMOKE_STATS=1: waits for the chat index to finish, logs the exact token totals and time Home shows,
+ * and screenshots Home's Vibe Coding Stats. Read-only, no model calls.
+ */
+async function statsTour(win: BrowserWindow, outFile: string): Promise<void> {
+  const js = (code: string) => win.webContents.executeJavaScript(code)
+  for (let i = 0; i < 600 && (await js('window.mc.indexStatus()')).indexing; i++) await sleep(500)
+  const s = await js('window.mc.vibeStats()')
+  log('stats claude:', JSON.stringify({ total: s.claude.total, input: s.claude.input, output: s.claude.output, cacheWrite: s.claude.cacheWrite, cacheRead: s.claude.cacheRead, replies: s.claude.replies, costUsd: s.claude.costUsd.toFixed(2), cacheSavingsUsd: s.claude.cacheSavingsUsd.toFixed(2) }))
+  log('stats codex:', JSON.stringify({ total: s.codex.total, input: s.codex.input, cachedInput: s.codex.cachedInput, output: s.codex.output, sessions: s.codex.sessions }))
+  log('stats time (minutes):', JSON.stringify({ all: s.time.minutes.toFixed(2), claude: s.time.claudeMinutes.toFixed(2), codex: s.time.codexMinutes.toFixed(2), week: s.time.weekMinutes.toFixed(2), longestDay: s.time.longestDay, streak: s.time.longestStreak }))
+  await js("window.__mcSmoke.setView('home')")
+  for (let i = 0; i < 100 && !(await js("!!document.querySelector('.view-pane:not(.hidden) .hd-vibe-facts li')")); i++) await sleep(100)
+  log('stats facts:', await js("[...document.querySelectorAll('.view-pane:not(.hidden) .hd-vibe-facts li')].length"))
+  // Other smoke steps may switch pages meanwhile: show Home again just before the capture.
+  await js("window.__mcSmoke.setView('home')")
+  for (let i = 0; i < 50 && !(await js("!!document.querySelector('.view-pane:not(.hidden) .hd-vibe-facts li')")); i++) await sleep(100)
+  log('stats page shown:', await js("document.querySelector('.view-pane:not(.hidden)')?.firstElementChild?.className ?? 'none'"))
+  // A window in the background can hand back its last painted frame: repaint first.
+  win.webContents.invalidate()
+  await sleep(600)
+  const file = outFile.replace(/.png$/i, '') + '-stats.png'
+  writeFileSync(file, (await win.webContents.capturePage()).toPNG())
+  log('screenshot:', file)
+}
+
+/**
  * MC_SMOKE_UI=<git repo with a commit>: screenshots each screen, then runs the worktree flow on that
  * repo: create, change a file, read the diff, commit, merge into the base branch, delete.
  */
@@ -1553,6 +1579,11 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
       return
     }
     if (process.env.MC_SMOKE_TEAM) {
+      if (process.env.MC_SMOKE_TEAM === 'live') {
+        const { taskLiveCliSmoke } = await import('./taskLiveCliSmoke')
+        await taskLiveCliSmoke(win, outFile, log)
+        return
+      }
       const { taskTeamSmoke } = await import('./taskTeamSmoke')
       await taskTeamSmoke(win, outFile, log)
       return
@@ -1693,6 +1724,7 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
     const hits = await win.webContents.executeJavaScript(`window.mc.search('claude', { limit: 5 }).then(h => h.length)`)
     log('index search hits:', hits)
 
+    if (process.env.MC_SMOKE_STATS) await statsTour(win, outFile)
     if (process.env.MC_SMOKE_UI) await uiTour(win, outFile, process.env.MC_SMOKE_UI)
     if (process.env.MC_SMOKE_TASKS) await taskTour(win, outFile, process.env.MC_SMOKE_TASKS)
     if (process.env.MC_SMOKE_AUTOMATION) await automationTour(win, outFile, process.env.MC_SMOKE_AUTOMATION)

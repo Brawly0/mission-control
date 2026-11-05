@@ -1,4 +1,5 @@
 import type { ProjectIcon } from './projectLook'
+import type { PromptChatReply, PromptChatRequest, PromptResource, PromptSnippet, PromptTarget } from './promptStudio'
 export interface Project {
   /** Folder name under ~/.claude/projects (encoded path). Empty for manually added projects with no sessions yet. */
   key: string
@@ -128,6 +129,56 @@ export interface UsageReport {
   byProject: (UsageTotals & { projectKey: string; projectPath: string })[]
   byModel: (UsageTotals & { model: string })[]
   topSessions: (UsageTotals & { sessionId: string; projectKey: string; projectPath: string; title: string; updated: number })[]
+}
+
+/** Wall-clock time spent in chats (shared/vibeTime.ts): overlapping chats count once. */
+export interface VibeTime {
+  minutes: number
+  /** Each tool on its own; the two can overlap, so they may add up to more than `minutes`. */
+  claudeMinutes: number
+  codexMinutes: number
+  /** Extra chat time gained by running several chats at once (sum of every chat's time minus `minutes`). */
+  parallelMinutes: number
+  todayMinutes: number
+  /** Since Monday. */
+  weekMinutes: number
+  /** Monday to Sunday of the week before. */
+  lastWeekMinutes: number
+  activeDays: number
+  longestDay: { day: string; minutes: number } | null
+  longestStreak: { days: number; from: string; to: string } | null
+  /** Days in a row up to today (or yesterday) with at least one message. */
+  currentStreak: number
+  busiestHour: { hour: number; minutes: number } | null
+  /** First message ever (ms), 0 when there are none. */
+  firstAt: number
+}
+
+/** Exact Claude token counts from the chat index; dollars are estimates at API list prices. */
+export interface ClaudeTokenStats {
+  input: number
+  output: number
+  cacheWrite: number
+  cacheRead: number
+  total: number
+  /** API replies (one per message id). */
+  replies: number
+  sessions: number
+  costUsd: number
+  /** What the cache reads would have cost at the full input price, minus what they cost. */
+  cacheSavingsUsd: number
+  byModel: { model: string; total: number; output: number; costUsd: number }[]
+  topDay: { day: string; costUsd: number; total: number } | null
+  topChat: { sessionId: string; title: string; projectPath: string; costUsd: number; total: number } | null
+}
+
+export interface VibeStats {
+  claude: ClaudeTokenStats
+  /** Codex's own running totals per chat (input includes cached input; output includes reasoning). */
+  codex: CodexUsage['totals'] & { total: number; byModel: CodexUsage['byModel'] }
+  time: VibeTime
+  /** When the numbers were read. */
+  at: number
 }
 
 export interface DashboardDay {
@@ -325,6 +376,8 @@ export interface CodexUsage {
 
 /** A Claude Code hook call reported by one of the app's agents. */
 export interface HookEvent {
+  /** Stop hook's final reply, when supported by the CLI. */
+  lastReply?: string
   agentId: string
   /** hook_event_name, e.g. 'UserPromptSubmit', 'Stop', 'Notification'. */
   event: string
@@ -401,7 +454,7 @@ export interface GitChanges {
 /** UI state remembered between runs. */
 export interface UiState {
   selectedPath?: string
-  view?: 'home' | 'inbox' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills'
+  view?: 'home' | 'inbox' | 'project' | 'projects' | 'agents' | 'search' | 'usage' | 'tasks' | 'notebook' | 'knowledge' | 'skills' | 'prompts'
   layout?: 'tabs' | 'grid'
   showWorktrees?: boolean
   /** Sidebar shrunk to an icon rail. */
@@ -440,6 +493,8 @@ export interface TeamPlan {
 }
 
 export interface TaskTeam {
+  /** Missing on older teams, which retain their background runner. */
+  mode?: TaskMode
   phase: 'planning' | 'ready' | 'running' | 'paused' | 'review' | 'error'
   plannerId: string
   memberIds: string[]
@@ -457,6 +512,7 @@ export interface TaskEvent {
 }
 
 export interface TaskRun {
+  cliState?: 'starting' | 'working' | 'needs-input' | 'idle' | 'closed'
   sessionId?: string
   startedAt: number
   finishedAt?: number
@@ -896,6 +952,16 @@ export interface MissionControlApi {
   sessionRecap(sessionId: string): Promise<SessionRecap>
   /** Asks Claude (Haiku, a fraction of a cent) for a summary and a clear title; kept for next time. */
   summarizeChat(sessionId: string): Promise<AiRecap>
+  /** Prompt Studio: one generator turn (a question or the finished prompt), using the resource library. */
+  promptChat(req: PromptChatRequest): Promise<PromptChatReply>
+  listPromptResources(): Promise<PromptResource[]>
+  savePromptResource(r: Partial<PromptResource> & { title: string; content: string }): Promise<PromptResource>
+  deletePromptResource(id: string): Promise<void>
+  importPromptUrl(url: string): Promise<PromptResource>
+  importPromptFiles(): Promise<PromptResource[]>
+  listPromptSnippets(): Promise<PromptSnippet[]>
+  savePromptSnippet(s: { title: string; text: string; target: PromptTarget }): Promise<PromptSnippet>
+  deletePromptSnippet(id: string): Promise<void>
   /** Has Claude (Haiku, one call) give clear names to chats that only have their first prompt as a title; returns how many were named. */
   nameChats(sessionIds: string[]): Promise<number>
   getSession(projectKey: string, sessionId: string): Promise<SessionDetail>
@@ -984,6 +1050,8 @@ export interface MissionControlApi {
   search(query: string, opts?: { projectKey?: string | string[]; projectPath?: string; role?: 'user' | 'assistant'; limit?: number }): Promise<SearchHit[]>
   usageReport(sinceMs: number): Promise<UsageReport>
   dashboardActivity(): Promise<DashboardActivity>
+  /** Exact Claude and Codex token totals, time spent and the facts behind them (Home stats). */
+  vibeStats(): Promise<VibeStats>
   /** Per-session estimated cost and tokens for one project (from the index). */
   sessionUsage(projectKey: string | string[]): Promise<Record<string, UsageTotals>>
   indexStatus(): Promise<IndexStatus>
@@ -991,7 +1059,8 @@ export interface MissionControlApi {
   onIndexStatus(cb: (s: IndexStatus) => void): () => void
   listTasks(): Promise<Task[]>
   createTask(t: NewTask): Promise<Task>
-  planTaskTeam(id: string): Promise<void>
+  planTaskTeam(id: string, mode?: TaskMode): Promise<void>
+  finishTaskAgent(id: string): Promise<void>
   startTaskTeam(id: string): Promise<void>
   stopTaskTeam(id: string): Promise<void>
   updateTask(id: string, patch: Partial<Pick<Task, 'title' | 'prompt' | 'column' | 'order' | 'permission' | 'useWorktree' | 'budgetUsd' | 'model' | 'mode' | 'queued' | 'dueAt' | 'dueHasTime'>>): Promise<void>

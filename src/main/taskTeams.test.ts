@@ -11,6 +11,8 @@ const mock = vi.hoisted(() => ({
   cleanup: vi.fn(),
   budget: vi.fn(),
   usage: vi.fn(),
+  cliStart: vi.fn(),
+  cliResult: vi.fn(),
   store: { tasks: [] as Task[], projectMeta: {} as Record<string, { checkCommand?: string }>, settings: { queueEnabled: false, queueParallel: 3, queuePauseAtPercent: 95, defaultTaskBudgetUsd: 0 } }
 }))
 
@@ -26,6 +28,7 @@ vi.mock('./pty', () => ({ agentEnv: () => ({}), whichSync: (tool: string) => `${
 vi.mock('./store', () => ({ loadStore: () => mock.store, updateStore: (fn: (store: typeof mock.store) => void) => { fn(mock.store); return mock.store } }))
 vi.mock('./spend', () => ({ defaultModelFor: () => undefined, launchArgs: () => [] }))
 vi.mock('./planCost', () => ({ markEcoSession: vi.fn() }))
+vi.mock('./taskCli', () => ({ startTaskCli: mock.cliStart, taskCliResult: mock.cliResult }))
 
 class FakeChild extends EventEmitter {
   stdin = new PassThrough()
@@ -100,6 +103,8 @@ beforeEach(async () => {
   mock.commit.mockResolvedValue('abc123')
   mock.budget.mockResolvedValue(null)
   mock.usage.mockResolvedValue({ limits: { windows: [] } })
+  mock.cliStart.mockImplementation((task: Task) => ({ id: `cli-${task.id}`, sessionId: `session-${task.id}`, exited: false, close: vi.fn().mockResolvedValue(undefined) }))
+  mock.cliResult.mockResolvedValue('Written CLI handoff')
   mock.spawn.mockImplementation((file: string, args: string[], options: { cwd: string }) => {
     const child = new FakeChild(1000 + spawned.length)
     const isCheck = file === 'powershell.exe'
@@ -169,6 +174,129 @@ describe('agent team planning', () => {
     expect(planner.run?.error).toBe('Stopped by you.')
     expect(mock.commit).not.toHaveBeenCalled()
     expect(root.team?.memberIds).toEqual([])
+  })
+})
+
+describe('live CLI teams', () => {
+  it('converts an existing paused background team without replacing its plan, checkout or completed work', async () => {
+    const root = await planned(plan([assignment('first'), assignment('second', ['second.ts'], ['first'])]))
+    await api.startTaskTeam(root.id)
+    const first = runningWorkers(root)[0]
+    await finish(first, 'First assignment handoff')
+    api.stopTaskTeam(root.id); await settle()
+    const originalIds = [...root.team!.memberIds]
+    const originalPlan = JSON.stringify(root.team!.plan)
+    const originalWorktree = { ...root.worktree! }
+    const completedRun = structuredClone(first.run)
+    await api.resumeTaskTeamInCli(root.id)
+    expect(root.team).toMatchObject({ mode: 'interactive', phase: 'running' })
+    expect(root.team!.memberIds).toEqual(originalIds)
+    expect(JSON.stringify(root.team!.plan)).toBe(originalPlan)
+    expect(root.worktree).toEqual(originalWorktree)
+    expect(first.run).toEqual(completedRun)
+    expect(first.mode).toBe('headless')
+    expect(mock.createWorktree).toHaveBeenCalledOnce()
+    expect(mock.cliStart).toHaveBeenCalledOnce()
+    expect(mock.cliStart.mock.calls[0][2]).toContain('First assignment handoff')
+    expect(members(root).filter(t => t.id !== first.id).every(t => t.mode === 'interactive')).toBe(true)
+    await expect(api.resumeTaskTeamInCli(root.id)).rejects.toThrow('Pause the team')
+  })
+  async function liveTeam(tool: 'claude' | 'codex' = 'claude', value = plan()) {
+    const root = api.createTask(rootInput({ tool, budgetUsd: 2 }))
+    await api.planTaskTeam(root.id, 'interactive')
+    await finish(api.listTasks().find(t => t.id === root.team!.plannerId)!, JSON.stringify(value))
+    await api.startTaskTeam(root.id)
+    return root
+  }
+  function state(task: Task, value: 'working' | 'idle') {
+    const call = mock.cliStart.mock.calls.find(call => call[0].id === task.id)!
+    call[3](value, `session-${task.id}`)
+  }
+
+  it.each(['claude', 'codex'] as const)('opens real %s CLI workers in the shared checkout, without a hidden USD cap', async tool => {
+    const root = await liveTeam(tool)
+    expect(root.team).toMatchObject({ mode: 'interactive', phase: 'running' })
+    expect(root.team?.budgetUsd).toBeUndefined()
+    expect(mock.cliStart).toHaveBeenCalledTimes(2)
+    for (const worker of runningWorkers(root)) {
+      expect(worker).toMatchObject({ mode: 'interactive', tool, run: { agentId: `cli-${worker.id}`, cliState: 'starting' } })
+      const call = mock.cliStart.mock.calls.find(call => call[0].id === worker.id)!
+      expect(call[1]).toBe(worktree.path)
+      expect(call[2]).toContain('You own only these paths')
+    }
+    expect(spawned).toHaveLength(1) // Only the structured planner uses a background child.
+    expect(mock.commit).not.toHaveBeenCalled()
+  })
+
+  it('keeps conversations open and dependencies waiting until the user finishes each assignment', async () => {
+    const root = await liveTeam('claude', plan([assignment('first'), assignment('second', ['second.ts'], ['first'])]))
+    const first = runningWorkers(root)[0]
+    await expect(api.finishTaskAgent(first.id)).rejects.toThrow('finish its reply')
+    state(first, 'idle')
+    await settle()
+    expect(mock.cliStart).toHaveBeenCalledTimes(1)
+    expect(first.column).toBe('running')
+    state(first, 'working') // The user asks another question in the same CLI.
+    await expect(api.finishTaskAgent(first.id)).rejects.toThrow('finish its reply')
+    state(first, 'idle')
+    await api.finishTaskAgent(first.id); await settle()
+    expect(first.run?.result).toBe('Written CLI handoff')
+    expect(mock.cliStart).toHaveBeenCalledTimes(2)
+    expect(mock.cliStart.mock.calls[1][2]).toContain('Written CLI handoff')
+    expect(mock.cliStart.mock.results[0].value.close).toHaveBeenCalledOnce()
+    expect(mock.commit).not.toHaveBeenCalled()
+    const second = runningWorkers(root)[0]
+    state(second, 'idle'); await api.finishTaskAgent(second.id); await settle()
+    const integrator = members(root).find(t => t.teamRole === 'integrator')!
+    expect(integrator.column).toBe('running')
+    state(integrator, 'idle'); await api.finishTaskAgent(integrator.id); await settle()
+    expect(mock.commit).toHaveBeenCalledOnce()
+    expect(root.team?.phase).toBe('review')
+    expect(root.run?.result).toBe('Written CLI handoff')
+    await expect(api.finishTaskAgent(first.id)).rejects.toThrow('no live team CLI')
+  })
+
+  it('pauses on unexpected CLI exit and closes peers instead of starting integration', async () => {
+    const root = await liveTeam()
+    const first = runningWorkers(root)[0]
+    mock.cliStart.mock.calls[0][4](1)
+    await settle()
+    expect(root.team?.phase).toBe('paused')
+    expect(first.run?.error).toContain('CLI closed')
+    expect(mock.cliStart.mock.results[1].value.close).toHaveBeenCalled()
+    expect(mock.commit).not.toHaveBeenCalled()
+    expect(members(root).find(t => t.teamRole === 'integrator')?.run).toBeUndefined()
+  })
+
+  it('does not release dependencies when the transcript is unavailable or the team is paused', async () => {
+    const root = await liveTeam()
+    const first = runningWorkers(root)[0]
+    state(first, 'idle')
+    mock.cliResult.mockRejectedValueOnce(new Error('Reply not saved yet'))
+    await expect(api.finishTaskAgent(first.id)).rejects.toThrow('Reply not saved yet')
+    expect(first.column).toBe('running')
+    expect(mock.cliStart.mock.results[0].value.close).not.toHaveBeenCalled()
+    api.stopTaskTeam(root.id); await settle()
+    expect(root.team?.phase).toBe('paused')
+    expect(mock.commit).not.toHaveBeenCalled()
+    expect(api.runningTaskCount()).toBe(0)
+  })
+
+  it('closes the CLI if the team is paused while its final reply is being read', async () => {
+    const root = await liveTeam()
+    const first = runningWorkers(root)[0]
+    state(first, 'idle')
+    let reply: (text: string) => void
+    mock.cliResult.mockImplementationOnce(() => new Promise<string>(resolve => { reply = resolve }))
+    const finishing = api.finishTaskAgent(first.id)
+    const rejected = expect(finishing).rejects.toThrow('CLI or team changed')
+    api.stopTaskTeam(root.id)
+    reply!('Final handoff')
+    await rejected; await settle()
+    expect(mock.cliStart.mock.results[0].value.close).toHaveBeenCalled()
+    expect(api.runningTaskCount()).toBe(0)
+    expect(root.team?.phase).toBe('paused')
+    expect(mock.commit).not.toHaveBeenCalled()
   })
 })
 

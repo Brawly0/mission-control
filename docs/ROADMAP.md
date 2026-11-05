@@ -1,5 +1,18 @@
 # Roadmap
 
+## Vibe coding stats (0.30.0)
+
+- [x] Home: exact Claude and Codex token totals, clock time spent vibe coding (overlapping chats count once) and fun facts about spending (ADR 0036)
+- [x] Header and weekly time card use the same clock time; verified against a full read of the raw session files
+- [x] Visible **Briefing** button back on each Claude/Codex agent header; Write briefing now works for Codex too
+
+## Live CLI task teams (2026-10-29)
+
+- [x] Default Split into agents to real, writable Claude/Codex CLI terminals for workers and integration; retain background mode for unattended runs and USD caps
+- [x] View all CLI agents from task cards/team controls, with Tabs/Grid, direct conversation, and explicit Finish assignment to release dependencies
+- [x] Keep task-owned PTY lifetimes, shared worktree protections, bounded handoffs, pause/retry behavior and final checks/commit under the coordinator
+- [x] Verify both providers through local CLI fixtures: real PTYs and single input delivery, navigation continuity, completion, checks/commit and both themes at normal/compact widths
+
 - [x] Restore always-visible Claude/Codex Session and Week usage bars in the top header (0.29.1)
 
 ## v0.29: Completed task integration
@@ -237,7 +250,7 @@
 
 ## Next ideas
 - [ ] "Run this for me" for commands an agent can't run (works for both agents)
-- [ ] Prompt snippets you can insert into any agent
+- [x] Prompt snippets you can insert into any agent (Prompt Studio, ADR 0035)
 - [ ] Code signing so Windows SmartScreen stops warning
 - [ ] Parallel branches in a chain (fan-out / fan-in) with automatic merge of several branches
 

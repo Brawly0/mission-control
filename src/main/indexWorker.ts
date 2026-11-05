@@ -12,13 +12,14 @@ import { parentPort, workerData } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { costOf } from './pricing'
+import { costOf, priceFor } from './pricing'
 import { readDashboardActivity } from './dashboardData'
 import { titleFromPrompt, windowsPath } from '../shared/projectLook'
 import { skillUsesIn } from '../shared/skills'
 import { codexIdFromFile, codexPrompt, codexReply } from '../shared/codex'
 import { CALIBRATION_DAYS, calibrate, modelPrices, type CostPoint, type PlanReading } from '../shared/planCost'
-import type { IndexStatus, SearchHit, UsageReport, UsageTotals } from '../shared/types'
+import type { ClaudeTokenStats, IndexStatus, SearchHit, UsageReport, UsageTotals, VibeTime } from '../shared/types'
+import { vibeTime, type VibeEvent } from '../shared/vibeTime'
 
 const { dbPath, projectsDir, codexSessionsDir } = workerData as { dbPath: string; projectsDir: string; codexSessionsDir?: string }
 const SCHEMA_VERSION = 8
@@ -553,6 +554,71 @@ function usageReport(since: number): UsageReport {
   }
 }
 
+/**
+ * All-time Claude token counts for Home's stats. Costs are recomputed from the token counts with the
+ * current price table (pricing.ts), so a price change never leaves stale dollars from an older index.
+ */
+function claudeTokenStats(): ClaudeTokenStats {
+  const rows = db
+    .prepare(
+      `SELECT model, COUNT(*) replies, SUM(input) input, SUM(output) output, SUM(cw5) cw5, SUM(cw1h) cw1h, SUM(cread) cread
+       FROM msgs GROUP BY model`
+    )
+    .all() as { model: string; replies: number; input: number; output: number; cw5: number; cw1h: number; cread: number }[]
+  const out: ClaudeTokenStats = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0, replies: 0, sessions: 0, costUsd: 0, cacheSavingsUsd: 0, byModel: [], topDay: null, topChat: null }
+  for (const r of rows) {
+    const usage = { input: r.input, output: r.output, cacheWrite5m: r.cw5, cacheWrite1h: r.cw1h, cacheRead: r.cread }
+    const cost = costOf(r.model, usage)
+    const p = priceFor(r.model)
+    const total = r.input + r.output + r.cw5 + r.cw1h + r.cread
+    out.input += r.input
+    out.output += r.output
+    out.cacheWrite += r.cw5 + r.cw1h
+    out.cacheRead += r.cread
+    out.total += total
+    out.replies += r.replies
+    out.costUsd += cost
+    out.cacheSavingsUsd += (r.cread * (p.input - (p.cacheRead ?? p.input * 0.1))) / 1_000_000
+    out.byModel.push({ model: r.model, total, output: r.output, costUsd: cost })
+  }
+  out.byModel.sort((a, b) => b.costUsd - a.costUsd)
+  out.sessions = (db.prepare('SELECT COUNT(DISTINCT session_id) n FROM msgs').get() as { n: number }).n
+  // Per day and per chat, priced by model the same way.
+  const priced = (sql: string) => {
+    const acc = new Map<string, { key: string; costUsd: number; total: number }>()
+    for (const r of db.prepare(sql).all() as any[]) {
+      const cur = acc.get(r.k) ?? { key: r.k, costUsd: 0, total: 0 }
+      cur.costUsd += costOf(r.model, { input: r.input, output: r.output, cacheWrite5m: r.cw5, cacheWrite1h: r.cw1h, cacheRead: r.cread })
+      cur.total += r.input + r.output + r.cw5 + r.cw1h + r.cread
+      acc.set(r.k, cur)
+    }
+    return [...acc.values()].sort((a, b) => b.costUsd - a.costUsd)[0]
+  }
+  const cols = 'model, SUM(input) input, SUM(output) output, SUM(cw5) cw5, SUM(cw1h) cw1h, SUM(cread) cread'
+  const day = priced(`SELECT day k, ${cols} FROM msgs GROUP BY day, model`)
+  if (day) out.topDay = { day: day.key, costUsd: day.costUsd, total: day.total }
+  const chat = priced(`SELECT session_id k, ${cols} FROM msgs GROUP BY session_id, model`)
+  if (chat) {
+    const s = db.prepare('SELECT title, project_path FROM sessions WHERE session_id = ?').get(chat.key) as { title?: string; project_path?: string } | undefined
+    out.topChat = { sessionId: chat.key, title: s?.title || '(untitled chat)', projectPath: s?.project_path ?? '', costUsd: chat.costUsd, total: chat.total }
+  }
+  return out
+}
+
+/** Time spent in chats: every prompt and reply (both tools) plus every Claude API call, which covers long tool runs. */
+function vibeTimeStats(now = Date.now()): VibeTime {
+  const events = db
+    .prepare(
+      `SELECT f.session_id session, CASE WHEN s.project_key = 'codex' THEN 'codex' ELSE 'claude' END tool, CAST(f.ts AS INTEGER) ts
+       FROM fts f JOIN sessions s ON s.session_id = f.session_id
+       WHERE f.role IN ('user', 'assistant') AND CAST(f.ts AS INTEGER) > 0
+       UNION ALL
+       SELECT session_id, 'claude', ts FROM msgs WHERE ts > 0`
+    )
+    .all() as unknown as VibeEvent[]
+  return vibeTime(events, now)
+}
+
 /** Context size of the first reply in a project's most recent chats: what a new chat carries before you type. */
 function firstReplies(keys: string[], limit = 12): { tokens: number; model: string }[] {
   if (!keys.length) return []
@@ -724,6 +790,8 @@ function dayDigest(from: number, to: number): unknown {
 
 const handlers: Record<string, (...args: any[]) => unknown> = {
   dashboardActivity: () => readDashboardActivity(db),
+  claudeTokenStats,
+  vibeTimeStats,
   search,
   usageReport,
   sessionUsage,

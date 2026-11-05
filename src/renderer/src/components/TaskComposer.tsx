@@ -15,7 +15,7 @@ interface Props {
   /** Existing tasks this one can wait on. */
   tasks: Task[]
   onCancel: () => void
-  onCreate: (task: NewTask, then: 'todo' | 'queue' | 'start' | 'team') => void
+  onCreate: (task: NewTask, then: 'todo' | 'queue' | 'start' | 'team', teamMode?: TaskMode) => void
   onSaveTemplate: (task: NewTask) => void
 }
 
@@ -28,6 +28,7 @@ const PERMISSIONS: { value: TaskPermission; label: string; hint: string }[] = [
 
 export default function TaskComposer({ projects, git, defaultProject, initial, tasks, onCancel, onCreate, onSaveTemplate }: Props) {
   const [dependsOn, setDependsOn] = useState<string[]>(initial?.dependsOn ?? [])
+  const [teamMode, setTeamMode] = useState<TaskMode>('interactive')
   const [whenReady, setWhenReady] = useState<NonNullable<Task['whenReady']>>(initial?.whenReady ?? 'start')
   const choices = projects.filter((p) => !p.worktree)
   const startProject = initial?.projectPath ?? defaultProject
@@ -86,7 +87,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
     .sort((a, b) => Number(b.projectPath === projectPath) - Number(a.projectPath === projectPath) || b.createdAt - a.createdAt)
   const submit = (then: 'todo' | 'queue' | 'start' | 'team') => {
     const t = current()
-    if (t) onCreate(t, then)
+    if (t) onCreate(t, then, then === 'team' ? teamMode : undefined)
   }
 
   return (
@@ -128,7 +129,7 @@ export default function TaskComposer({ projects, git, defaultProject, initial, t
             promptRef.current?.focus()
           }}>Use editable project exploration prompt (read-only)</Button>}
           <div className="team-compose-action">
-            <div><strong>Give a larger task to a team</strong><p className="field-hint">Preview assignments sized to the work, then run them together in an isolated worktree.</p></div>
+            <div><strong>Give a larger task to a team</strong><p className="field-hint">Preview assignments, then watch and talk to each CLI in Tasks.</p><select className="select" aria-label="Agent team execution" value={teamMode} onChange={e => setTeamMode(e.target.value as TaskMode)}><option value="interactive">Live CLI · talk to agents</option><option value="headless">Background · read-only output</option></select><p className="field-hint">{teamMode === 'interactive' ? 'Live CLI teams have no USD cap. Finish assignments when ready.' : 'Background teams keep the configured USD cap.'}</p></div>
             <Button type="button" icon={Users} disabled={!valid || !isRepo} onClick={() => submit('team')} title={isRepo ? 'Uses the selected agent to inspect the project and plan assignments.' : 'Agent teams need a git repository for their isolated worktree.'}>Split into agents</Button>
           </div>
           <div className="field-row">

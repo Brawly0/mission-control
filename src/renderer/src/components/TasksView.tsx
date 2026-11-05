@@ -192,7 +192,7 @@ function TaskCard({
           {run?.costUsd ? ' · ' : ''}
           {run?.finishedAt ? `finished ${timeAgo(run.finishedAt)}` : `added ${timeAgo(task.createdAt)}`}
         </span>
-        {task.team && <><Button size="sm" icon={Users} onClick={() => onShowTerminal(task)}>Watch agents</Button><Button size="sm" onClick={() => onOpen(task)}>Team controls</Button></>}
+        {task.team && <><Button size="sm" icon={Users} onClick={() => onShowTerminal(task)}>{task.team.mode === 'interactive' ? 'View all CLI agents' : 'Watch agents'}</Button><Button size="sm" onClick={() => onOpen(task)}>Team controls</Button></>}
         {!task.team && task.column === 'todo' && task.mode === 'headless' && (
           <Button
             size="sm"

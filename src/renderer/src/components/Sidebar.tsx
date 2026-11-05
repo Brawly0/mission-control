@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, Pause, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
+import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, Pause, PenLine, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
 import BrandMark from './BrandMark'
 import AgentConnections from './AgentConnections'
 import { useProjectActions } from './useProjectActions'
@@ -245,6 +245,7 @@ export default function Sidebar(props: Props) {
     { view: 'templates', icon: FileStack, label: 'Templates', shortcut: 'templates' },
     { view: 'knowledge', icon: BookOpen, label: 'Knowledge', shortcut: 'goKnowledge' },
     { view: 'skills', icon: Wand2, label: 'Skills', shortcut: 'goSkills' },
+    { view: 'prompts', icon: PenLine, label: 'Prompt Studio', shortcut: 'goPrompts' },
     { view: 'usage', icon: BarChart3, label: 'Usage & Insights', shortcut: 'goUsage' }
   ]
   const go = (v: View | 'templates') => (v === 'templates' ? props.onOpenTemplates() : props.onNavigate(v))

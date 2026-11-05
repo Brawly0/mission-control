@@ -3,6 +3,7 @@ import type { GuidedSetupState } from '../shared/readiness'
 import { app } from 'electron'
 import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { PromptResource, PromptSnippet } from '../shared/promptStudio'
 import type { AiRecap, AppSettings, Note, Workspace, ProjectMeta, SavedAgent, Task, TaskTemplate, UiState } from '../shared/types'
 
 export interface WindowBounds {
@@ -57,6 +58,9 @@ export interface StoreData {
   digestShown: string
   /** Saved sets of agents (Agents → Workspaces). */
   workspaces: Workspace[]
+  /** Prompt Studio: reference material the prompt generator learns from, and saved prompts. */
+  promptResources: PromptResource[]
+  promptSnippets: PromptSnippet[]
 }
 
 const defaults: StoreData = {
@@ -81,6 +85,8 @@ const defaults: StoreData = {
   chatRecaps: {},
   digestShown: '',
   workspaces: [],
+  promptResources: [],
+  promptSnippets: [],
   settings: {
     defaultTaskBudgetUsd: 0,
     defaultTaskModel: '',
@@ -122,7 +128,7 @@ export function loadStore(): StoreData {
 function readStore(file: string): Partial<StoreData> {
   const data = JSON.parse(readFileSync(file, 'utf8'))
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid settings file')
-  for (const key of ['manualProjects', 'pinned', 'savedAgents', 'tasks', 'templates', 'notes', 'workspaces', 'limitAlerted']) {
+  for (const key of ['manualProjects', 'pinned', 'savedAgents', 'tasks', 'templates', 'notes', 'workspaces', 'limitAlerted', 'promptResources', 'promptSnippets']) {
     if (data[key] !== undefined && !Array.isArray(data[key])) throw new Error(`Invalid settings: ${key}`)
   }
   for (const key of ['settings', 'ui', 'projectMeta']) {

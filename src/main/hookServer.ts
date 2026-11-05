@@ -66,6 +66,7 @@ export async function startHookServer(onEvent: (e: HookEvent) => void, coach?: P
       onEvent({
         agentId,
         event: String(input.hook_event_name ?? ''),
+        lastReply: input.hook_event_name === 'Stop' && typeof input.last_assistant_message === 'string' ? input.last_assistant_message.slice(-24_000) : undefined,
         sessionId: typeof input.session_id === 'string' ? input.session_id : undefined,
         message: typeof input.message === 'string' ? input.message : undefined,
         notificationType: typeof input.notification_type === 'string' ? input.notification_type : undefined,

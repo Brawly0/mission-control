@@ -1,7 +1,7 @@
 {
   "name": "mission-control",
   "productName": "Mission Control",
-  "version": "0.29.1",
+  "version": "0.30.0",
   "description": "A Windows desktop workspace for Claude Code and Codex: projects, chats, agents and code review.",
   "private": true,
   "main": "./out/main/index.js",

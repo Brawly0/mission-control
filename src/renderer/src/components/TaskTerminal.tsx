@@ -9,7 +9,7 @@ export function TaskTerminal({ task, visible }: { task: Task; visible: boolean }
   const agentId = task.mode === 'interactive' ? task.run?.agentId : undefined
   return <Suspense fallback={<div className="muted pad small">Loading terminal…</div>}>
     {agentId ? <TerminalPane id={agentId} visible={visible} autoFocus={false} onExit={() => undefined} />
-      : task.mode === 'interactive' ? <div className="muted pad small">The agent terminal was closed.</div>
+      : task.mode === 'interactive' && !task.teamParentId ? <div className="muted pad small">The agent terminal was closed.</div>
       : <TaskConsole taskId={task.id} visible={visible} />}
   </Suspense>
 }

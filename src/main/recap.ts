@@ -61,9 +61,9 @@ export async function sessionRecap(sessionId: string): Promise<SessionRecap> {
  * One Claude call with no tools, no MCP servers and nothing saved as a chat (so no stray project
  * appears), on Haiku with a short system prompt: about a thousand tokens, a fraction of a cent.
  */
-async function askClaude(prompt: string, system: string): Promise<string> {
+export async function askClaude(prompt: string, system: string, model = 'haiku'): Promise<string> {
   const { file, prefix } = claudeCommand()
-  const args = [...prefix, '-p', '--model', 'haiku', '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--output-format', 'json', '--system-prompt', system]
+  const args = [...prefix, '-p', '--model', model, '--no-session-persistence', '--tools', '', '--strict-mcp-config', '--output-format', 'json', '--system-prompt', system]
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { cwd: app.getPath('userData'), env: agentEnv(), windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let out = ''

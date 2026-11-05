@@ -1,0 +1,56 @@
+.ps-view { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; position: relative; }
+.ps-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 22px 28px 18px; gap: 14px; }
+.ps-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.ps-head h1 { font-family: var(--font-display); font-size: 22px; margin: 0 0 4px; }
+.ps-head p { margin: 0; font-size: 13px; }
+.ps-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ps-select, .ps-add input, .ps-dialog input, .ps-dialog textarea, .ps-input textarea {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 7px 10px; font: inherit; font-size: 13px;
+}
+.ps-select:focus, .ps-add input:focus, .ps-dialog input:focus, .ps-dialog textarea:focus, .ps-input textarea:focus { outline: none; border-color: var(--accent); }
+.ps-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+.ps-empty { margin: auto; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.ps-examples { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.ps-examples button {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-2); border-radius: var(--radius);
+  padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+}
+.ps-examples button:hover { border-color: var(--accent); color: var(--text); }
+.ps-hint { font-size: 12px; }
+.ps-msg { max-width: 760px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; border-radius: var(--radius-lg); padding: 10px 14px; }
+.ps-user { align-self: flex-end; background: var(--accent-soft); color: var(--accent-text); }
+.ps-ai { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); }
+.ps-result { align-self: stretch; max-width: none; background: var(--surface); border: 1px solid var(--border-strong); white-space: normal; }
+.ps-result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.ps-prompt {
+  margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto;
+}
+.ps-used { font-size: 12px; margin-top: 8px; }
+.ps-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.ps-input { display: flex; gap: 10px; align-items: flex-end; }
+.ps-input textarea { flex: 1; resize: none; }
+
+.ps-side { border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: 10px; padding: 18px 16px; min-height: 0; }
+.ps-side-note { font-size: 12px; margin: 0; }
+.ps-add { display: flex; gap: 6px; }
+.ps-add input { flex: 1; min-width: 0; }
+.ps-add-row { display: flex; gap: 8px; }
+.ps-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
+.ps-item { display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); padding: 2px 4px 2px 0; }
+.ps-item.off { opacity: 0.55; }
+.ps-item-main { flex: 1; min-width: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; padding: 6px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.ps-item-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ps-item-meta { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ps-modal { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); display: grid; place-items: center; z-index: 20; }
+.ps-dialog { width: min(640px, 92%); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.ps-dialog h2 { margin: 0; font-size: 16px; }
+.ps-dialog textarea { font-family: var(--mono); resize: vertical; }
+.ps-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 900px) {
+  .ps-view { grid-template-columns: 1fr; }
+  .ps-side { display: none; }
+}

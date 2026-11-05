@@ -76,6 +76,7 @@ process.stdin.on('end', () => {
     await until(() => js(`window.__mcSmoke.tasks().some(t => t.id === ${JSON.stringify(root.id)})`))
     await js(`window.__mcSmoke.openTask(${JSON.stringify(root.id)})`)
     await until(() => js(`!!document.querySelector('.drawer-actions')`))
+    await js(`(() => { const select = document.querySelector('[aria-label="Agent team execution"]'); const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; setter.call(select, 'headless'); select.dispatchEvent(new Event('change', {bubbles:true})); })()`)
     await click('.drawer-actions button', 'Split into agents')
     await until(() => root.team?.phase === 'ready')
     if (root.team?.plan?.agents.length !== 2) throw new Error('Team plan did not cross the real IPC/stream boundary')

@@ -3,7 +3,7 @@ import { stopAllProjectCommands } from './projectCommands'
 import { app, BrowserWindow } from 'electron'
 import { copyFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { flushTasks, initTasks, runningTaskCount, stopAllTasks } from './tasks'
+import { flushTasks, initTasks, resumeTaskTeamInCli, runningTaskCount, stopAllTasks } from './tasks'
 import { createTray, destroyTray, refreshTray, setHotkey } from './tray'
 import { startScheduler, stopScheduler } from './templates'
 import { initUpdater } from './updater'
@@ -91,6 +91,16 @@ app.whenReady().then(async () => {
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
   createWindow()
+  // Explicit maintenance/startup action. Uses normal coordinator checks and never replans a team.
+  const liveTeamId = process.argv.find(arg => arg.startsWith('--resume-task-team-in-cli='))?.split('=')[1]
+  if (liveTeamId && /^[0-9a-f-]{36}$/i.test(liveTeamId) && !process.env.MC_SMOKE) {
+    getMainWindow()?.webContents.once('did-finish-load', () => {
+      void resumeTaskTeamInCli(liveTeamId).catch(err => {
+        console.error('Could not resume live CLI team:', (err as Error).message)
+        notifyTasks('Could not resume live CLI team', (err as Error).message)
+      })
+    })
+  }
   perfMark('window created')
   setFolderSource((ids) => queryIndex('sessionFolders', ids))
   // Due-date reminders and the daily digest, checked every minute.

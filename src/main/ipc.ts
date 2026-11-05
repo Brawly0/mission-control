@@ -26,6 +26,9 @@ import type {
   TerminalSpec,
   UiState,
   UsageReport,
+  ClaudeTokenStats,
+  VibeStats,
+  VibeTime,
   Workspace,
   WorktreeInfo
 } from '../shared/types'
@@ -33,6 +36,7 @@ import {
   createTask,
   assertTeamWorktreeIdle,
   planTaskTeam,
+  finishTaskAgent,
   startTaskTeam,
   stopTaskTeam,
   deleteTask,
@@ -66,6 +70,7 @@ import { refreshPlanUsage } from './planUsage'
 import { planRate } from './planCost'
 import { buildDigest } from './digest'
 import { nameChats, sessionRecap, summarizeChat } from './recap'
+import { deletePromptResource, deletePromptSnippet, importResourceFiles, importResourceFromUrl, listPromptResources, listPromptSnippets, promptStudioChat, savePromptResource, savePromptSnippet } from './promptStudio'
 import { buildVault, vaultNotes, watchVault } from './vault'
 import { addEcoSkillToProject, listSkills } from './skills'
 import { ecoPluginDir } from './eco'
@@ -195,6 +200,15 @@ export function registerIpc(): void {
   ipcMain.handle('notes:list', () => listNotes())
   ipcMain.handle('notes:save', (_e, note: Partial<Note>) => saveNote(note))
   ipcMain.handle('notes:delete', (_e, id: string) => deleteNote(id))
+  ipcMain.handle('prompts:chat', (_e, req) => promptStudioChat(req))
+  ipcMain.handle('prompts:resources', () => listPromptResources())
+  ipcMain.handle('prompts:saveResource', (_e, r) => savePromptResource(r))
+  ipcMain.handle('prompts:deleteResource', (_e, id: string) => deletePromptResource(id))
+  ipcMain.handle('prompts:importUrl', (_e, url: string) => importResourceFromUrl(url))
+  ipcMain.handle('prompts:importFiles', () => importResourceFiles())
+  ipcMain.handle('prompts:snippets', () => listPromptSnippets())
+  ipcMain.handle('prompts:saveSnippet', (_e, s) => savePromptSnippet(s))
+  ipcMain.handle('prompts:deleteSnippet', (_e, id: string) => deletePromptSnippet(id))
   ipcMain.handle('skills:list', async () => listSkills((await listProjects()).map((p) => p.path), ecoPluginDir()))
   ipcMain.handle('skills:usage', (_e, since: number) => queryIndex('skillUsage', since))
   ipcMain.handle('skills:addEco', (_e, path: string) => addEcoSkillToProject(path))
@@ -331,6 +345,11 @@ export function registerIpc(): void {
     ownTitles((await queryIndex('search', query, opts ?? {})) as SearchHit[])
   )
   ipcMain.handle('index:dashboard', () => queryIndex('dashboardActivity'))
+  ipcMain.handle('index:vibeStats', async (): Promise<VibeStats> => {
+    const [claude, time, codex] = await Promise.all([queryIndex<ClaudeTokenStats>('claudeTokenStats'), queryIndex<VibeTime>('vibeTimeStats'), codexUsage(0)])
+    // Codex's input already includes its cached input, and output its reasoning: input + output is every token.
+    return { claude, time, codex: { ...codex.totals, total: codex.totals.input + codex.totals.output, byModel: codex.byModel }, at: Date.now() }
+  })
   ipcMain.handle('index:usage', async (_e, since: number) => {
     const report = (await queryIndex('usageReport', since)) as UsageReport
     // Chats shown under another project (started from C:\, or moved by you) count toward that project.
@@ -361,7 +380,8 @@ export function registerIpc(): void {
   ipcMain.handle('tasks:list', () => listTasks())
   ipcMain.handle('tasks:output', (_e, id: string) => getTaskOutput(id))
   ipcMain.handle('tasks:create', (_e, t: NewTask) => createTask(t))
-  ipcMain.handle('tasks:team:plan', (_e, id: string) => planTaskTeam(id))
+  ipcMain.handle('tasks:team:plan', (_e, id: string, mode?: Task['mode']) => planTaskTeam(id, mode))
+  ipcMain.handle('tasks:agent:finish', (_e, id: string) => finishTaskAgent(id))
   ipcMain.handle('tasks:team:start', (_e, id: string) => startTaskTeam(id))
   ipcMain.handle('tasks:team:stop', (_e, id: string) => stopTaskTeam(id))
   ipcMain.handle('tasks:update', (_e, id: string, patch: Partial<Task>) => updateTask(id, patch))

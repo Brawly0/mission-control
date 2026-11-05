@@ -30,6 +30,7 @@ import {
   SunMoon,
   Terminal,
   TextSearch,
+  PenLine,
   Wand2,
   ZoomIn,
   ZoomOut
@@ -92,6 +93,7 @@ export function paletteCommands(c: CommandContext): Command[] {
     { id: 'go-projects', group: 'Go to', title: 'All projects', icon: FolderOpen, keywords: 'cards folders', run: () => setView('projects') },
     { id: 'go-notebook', group: 'Go to', title: 'Notebook', icon: NotebookPen, keywords: 'notes write', run: () => setView('notebook') },
     { id: 'go-knowledge', group: 'Go to', title: 'Knowledge (all docs)', icon: BookOpen, keywords: 'docs readme claude.md', run: () => setView('knowledge') },
+    { id: 'go-prompts', group: 'Go to', title: 'Prompt Studio', icon: PenLine, keywords: 'prompt generator write prompt claude codex', run: () => setView('prompts') },
     { id: 'go-skills', group: 'Go to', title: 'Skills', icon: Wand2, keywords: 'skills plugins slash commands', run: () => setView('skills') },
     { id: 'toggle-eco', group: 'View', title: c.appSettings?.eco?.enabled ? 'Turn Eco mode off' : 'Turn Eco mode on', icon: Leaf, keywords: 'eco save usage credits tokens cheaper', run: () => runShortcut('toggleEco') },
     { id: 'new-project', group: 'Actions', title: 'New project…', icon: FolderPlus, keywords: 'create folder', run: c.openNewProject },

@@ -137,6 +137,8 @@ Everything it creates is removed, and your settings are restored.
 
 `MC_SMOKE_NAMES=<project folder name, e.g. WBP>` logs every project's name, icon and chat count, lists that project's chats (with worktree labels), renames one chat and puts it back, and screenshots the chats and the Name and icon dialog. Free.
 
+`MC_SMOKE_STATS=1` waits for the chat index, logs the exact Claude/Codex token totals and time that Home shows, and screenshots Home's Vibe Coding Stats as `<MC_SMOKE>-stats.png`. Read-only, no model calls.
+
 `MC_SMOKE_SPEND=<empty scratch folder>` checks v0.9 against your real data, for free:
 1. It reads the size of the busiest project's latest chats and builds its startup report.
 2. It lists chats over $1 today.
@@ -191,6 +193,8 @@ Add `MC_SMOKE_AGENTS_AI=1` to also run Summarize and Name chats for real (Haiku,
 `MC_SMOKE_BRIEF=<empty scratch folder>` lists the session briefings (compaction summaries) in your chats. It writes the newest one as a file into the scratch folder (never into your projects), checks the wrapper lines are gone and that "latest briefing" finds it, and screenshots Knowledge → Session briefings. Free.
 
 ### Agent team verification
+
+For supervised live CLI teams, set `MC_SMOKE_TEAM=live`, `MC_SMOKE_PROFILE` to a fresh isolated directory, and `CODEX_HOME` to a `codex-fixtures` subdirectory of that profile before launching Electron. Use the usual absolute `MC_SMOKE` PNG and `MC_SMOKE_LOG` paths plus `MC_SMOKE_CLEAN=1`. Launch with `Start-Process -WindowStyle Hidden -Wait` and redirected stdout/stderr. This tour uses local Claude/Codex fixtures through real PTYs, types into both workers, verifies input arrives once, switches Board/CLI views without restarting sessions, finishes assignments through UI/IPC and verifies integration, checks and commit. It captures both themes at 1440 and 960×600. The planner is a structured background fixture. No model calls or user transcript writes. `taskCli.test.ts` and `taskTeams.test.ts` cover state, handoff and cancellation paths separately.
 
 Agent-team changes are covered by `node node_modules/vitest/vitest.mjs run src/shared/teamPlan.test.ts src/main/taskTeams.test.ts src/renderer/src/taskWorkspace.test.ts`. After the normal typecheck/build, `MC_SMOKE_TEAM=1` with `MC_SMOKE=<absolute path ending in .png>`, `MC_SMOKE_PROFILE=<new isolated profile>`, and `MC_SMOKE_CLEAN=1` runs the real UI/IPC/child-process/git flow with a local fake Claude CLI. Tasks → Task agents covers task-owned planner/worker/integrator tabs, waiting dependencies, keyboard navigation, saved completion output, Tabs/Grid in both themes at 1440 and 960×600, Watch agents from the board and drawer, plus an interactive task whose PTY must take a key exactly once. It needs Node and Git on PATH and makes no model calls. Use a new profile for each run because the fixture initializes its own test repository. On Windows, launch Electron with `Start-Process -WindowStyle Hidden -Wait` and redirect stdout/stderr to files so the GUI process retains valid output handles.
 

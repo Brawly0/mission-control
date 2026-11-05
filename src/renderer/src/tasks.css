@@ -741,3 +741,9 @@
   .task-workspace-summary { display: none; }
   .task-agent-stage .task-term-stats { display: none; }
 }
+/* Live task CLIs share the existing terminal host; controls never cover terminal input. */
+.task-team-mode { display: flex; flex-direction: column; gap: 4px; max-width: 330px; }
+.task-team-mode small { font-size: 11px; line-height: 1.4; }
+.task-cli-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.task-cli-controls > span:first-child { flex: 1; min-width: 150px; }
+.task-cli-controls [role="alert"] { flex-basis: 100%; }

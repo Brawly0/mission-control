@@ -78,7 +78,7 @@ export default function TaskTeamPanel({ task, all, onOpenTask, onWatchAgents }: 
         if (generation === requestGeneration.current) onWatchAgents(root)
       }
       else if (action === 'stop') await window.mc.stopTaskTeam(root.id)
-      else await window.mc.planTaskTeam(root.id)
+      else await window.mc.planTaskTeam(root.id, team.mode)
     } catch (e) {
       const message = errorMessage(e)
       if (generation === requestGeneration.current) {
@@ -107,7 +107,8 @@ export default function TaskTeamPanel({ task, all, onOpenTask, onWatchAgents }: 
         <h3><Users size={15} /> Agent team</h3>
         <span className="team-phase" role="status">{active && <Loader2 size={12} className="spin" />}{PHASE_LABEL[team.phase]}</span>
       </div>
-      <Button size="sm" icon={Users} onClick={() => onWatchAgents(task)}>Watch agents</Button>
+      <Button size="sm" icon={Users} onClick={() => onWatchAgents(root)}>{team.mode === 'interactive' ? 'View all CLI agents' : 'Watch agents'}</Button>
+      {team.mode === 'interactive' && <p className="team-description">Workers and final integration use real CLI terminals. Type directly into any running pane. When its reply is complete, use Finish assignment to close that CLI and release the next agents. Planning output is read-only. Live CLI teams do not enforce USD caps.</p>}
 
       {isChild && <button className="team-parent-link" onClick={() => onOpenTask(root)}><ArrowUpRight size={13} /> <span>Back to {root.title}</span></button>}
 
@@ -158,7 +159,7 @@ export default function TaskTeamPanel({ task, all, onOpenTask, onWatchAgents }: 
       {planner && <button className="team-planner-link" onClick={() => onOpenTask(planner)}><ArrowUpRight size={12} />{planner.column === 'running' ? 'View planner activity' : 'View planning run'}</button>}
 
       {team.plan && <p className="team-workspace-note"><GitBranch size={13} /><span>One isolated worktree. Up to 3 workers run together; shared files and dependencies are coordinated.{root.worktree && <> Branch <code>{root.worktree.branch}</code>.</>}</span></p>}
-      {root.tool !== 'codex' && <div className="team-budget">
+      {root.tool !== 'codex' && team.mode !== 'interactive' && <div className="team-budget">
         <label>Total team cap (USD)<input className="text-input" type="number" min="0.01" step="0.01" placeholder="No cap" aria-label="Total team cap in USD" value={budget} disabled={active || busy || team.phase === 'review'} onChange={e => setBudget(e.target.value)} /></label>
         {!active && team.phase !== 'review' && <Button size="sm" disabled={busy || budget === (team.budgetUsd === undefined ? '' : String(team.budgetUsd))} onClick={() => void saveBudget()}>Save cap</Button>}
         <p className="field-hint">Includes planning, every agent, and retries. The remaining cap is shared across unfinished assignments.</p>

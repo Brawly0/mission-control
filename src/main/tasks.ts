@@ -5,7 +5,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { terminateProcessTreesSync } from './processCleanup'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import type { CheckResult, NewTask, QueueStatus, RateLimitInfo, Task, TaskColumn, TaskRun, WorktreeInfo } from '../shared/types'
+import type { CheckResult, NewTask, QueueStatus, RateLimitInfo, Task, TaskColumn, TaskMode, TaskRun, WorktreeInfo } from '../shared/types'
 import { chainBaseFor, dependencyState, dependentsOf, taskSucceeded, wouldCreateCycle } from '../shared/deps'
 import { invalidateBudgets, projectBudget } from './budget'
 import { normalizePath } from './claudeData'
@@ -17,6 +17,7 @@ import { formatClaudeEvent, formatCodexEvent, formatEvents, formatNote, formatSt
 import { defaultModelFor, launchArgs } from './spend'
 import { markEcoSession } from './planCost'
 import { assignmentsOverlap, parseTeamPlan, teamPlannerPrompt } from '../shared/teamPlan'
+import { startTaskCli, taskCliResult } from './taskCli'
 
 /**
  * The task board's data and the headless runner.
@@ -50,6 +51,7 @@ const checkProcs = new Map<string, ChildProcess>()
 const stoppedByUser = new Set<string>()
 const startingTasks = new Set<string>()
 const finalizingTasks = new Set<string>()
+const cliRuns = new Map<string, ReturnType<typeof startTaskCli>>()
 let shuttingDown = false
 let queueTimer: ReturnType<typeof setInterval> | undefined
 let queueStart: ReturnType<typeof setTimeout> | undefined
@@ -113,6 +115,7 @@ export function initTasks(h: Hooks): void {
   tasks = loadStore().tasks
   // Runs and checks can't survive an app restart; say so on the card instead of showing a stale spinner.
   for (const t of tasks) {
+    if (t.teamParentId && t.mode === 'interactive' && t.run) { t.run.agentId = undefined; t.run.cliState = 'closed' }
     if (t.team?.phase === 'running' || t.team?.phase === 'planning') {
       t.team.phase = t.team.phase === 'planning' ? 'error' : 'paused'
       t.team.error = 'Mission Control closed. Resume the team or retry planning to continue.'
@@ -271,14 +274,15 @@ export function createTask(input: NewTask): Task {
 }
 
 /** Uses the selected CLI's normal tracked, cancellable runner in read-only mode. */
-export async function planTaskTeam(id: string): Promise<void> {
+export async function planTaskTeam(id: string, mode: TaskMode = 'headless'): Promise<void> {
+  if (mode !== 'interactive' && mode !== 'headless') throw new Error('Choose live CLI agents or background agents.')
   const t = find(id)
   if (shuttingDown) throw new Error('Mission Control is closing.')
   if (t.teamParentId || t.column !== 'todo' || t.run || t.team?.memberIds.length || t.team?.phase === 'planning' || startingTasks.has(id)) throw new Error('Split an unstarted To do task into agents.')
   if (teamOperations.has(id)) throw new Error('The team is already being prepared.')
   if (tasks.some(member => member.teamParentId === id && memberActive(member.id))) throw new Error('Wait for the previous planner to stop.')
   taskCommand(t.tool ?? 'claude')
-  if (t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a USD cap.')
+  if (mode === 'headless' && t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a USD cap.')
   t.queued = false; emit()
   teamOperations.add(id)
   try {
@@ -286,14 +290,14 @@ export async function planTaskTeam(id: string): Promise<void> {
     if (shuttingDown) throw new Error('Mission Control is closing.')
     if (t.column !== 'todo' || t.run) throw new Error('The task changed while team planning was being prepared.')
   } finally { teamOperations.delete(id) }
-  const budgetUsd = t.tool === 'codex' ? undefined : t.team ? t.team.budgetUsd : (t.budgetUsd || loadStore().settings.defaultTaskBudgetUsd || undefined)
+  const budgetUsd = mode === 'interactive' || t.tool === 'codex' ? undefined : t.team ? t.team.budgetUsd : (t.budgetUsd || loadStore().settings.defaultTaskBudgetUsd || undefined)
   const available = budgetUsd === undefined ? undefined : budgetUsd - teamCost(t)
   if (available !== undefined && available <= 0.001) throw new Error('The team’s USD cap is exhausted. Increase the cap before retrying.')
   const planner = createTask({ tool: t.tool, title: `Plan team: ${t.title}`, prompt: teamPlannerPrompt(t), projectPath: t.projectPath, projectName: t.projectName, mode: 'headless', permission: 'plan', useWorktree: false, model: t.model, budgetUsd: available })
   planner.teamParentId = t.id
   planner.teamRole = 'planner'
   t.queued = false
-  t.team = { phase: 'planning', plannerId: planner.id, memberIds: [], budgetUsd }
+  t.team = { phase: 'planning', plannerId: planner.id, memberIds: [], budgetUsd, mode }
   emit()
   try { await startTask(planner.id, true) }
   catch (err) {
@@ -310,7 +314,7 @@ function teamMembers(t: Task): Task[] {
 }
 
 function memberActive(id: string): boolean {
-  return procs.has(id) || checkProcs.has(id) || startingTasks.has(id) || finalizingTasks.has(id)
+  return cliRuns.has(id) || procs.has(id) || checkProcs.has(id) || startingTasks.has(id) || finalizingTasks.has(id)
 }
 
 function teamCost(t: Task): number {
@@ -335,6 +339,28 @@ function updateTeamProgress(t: Task): void {
   t.updatedAt = Date.now()
 }
 
+/** Switch a stopped saved team without replanning or discarding successful assignments. */
+export async function resumeTaskTeamInCli(id: string): Promise<void> {
+  const t = find(id), team = t.team
+  if (!team?.plan || !['ready', 'paused', 'error'].includes(team.phase)) throw new Error('Pause the team before switching to live CLI.')
+  if (teamOperations.has(id) || teamMembers(t).some(member => memberActive(member.id))) throw new Error('Wait for the team agents to stop before switching.')
+  // Validate prerequisites before changing the saved runner choice. No replanning or checkout replacement.
+  parseTeamPlan(JSON.stringify(team.plan))
+  taskCommand(t.tool ?? 'claude')
+  if (t.worktree && !existsSync(t.worktree.path)) throw new Error('The team worktree was removed.')
+  const deps = dependencyState(t, tasks)
+  if (deps.kind === 'blocked' || deps.kind === 'waiting') throw new Error('Finish the tasks this team depends on first.')
+  team.mode = 'interactive'
+  team.budgetUsd = undefined
+  t.mode = 'interactive'
+  for (const member of teamMembers(t)) if (!taskSucceeded(member)) {
+    member.mode = 'interactive'
+    member.budgetUsd = undefined
+  }
+  emit()
+  await startTaskTeam(id)
+}
+
 /** Build all assignments before scheduling; workers share one isolated checkout, without individual commits. */
 export async function startTaskTeam(id: string): Promise<void> {
   const t = find(id), team = t.team
@@ -348,7 +374,7 @@ export async function startTaskTeam(id: string): Promise<void> {
   teamOperations.add(id)
   team.phase = 'running'; team.error = undefined; team.holdReason = undefined
   t.run = { ...t.run, startedAt: t.run?.startedAt ?? Date.now(), finishedAt: undefined, error: undefined, toolCalls: t.run?.toolCalls ?? 0, events: t.run?.events ?? [], activity: 'Preparing the team worktree…' }
-  t.mode = 'headless'
+  t.mode = team.mode ?? 'headless'
   moveTo(t, 'running'); emit()
   try {
     if (t.worktree && !existsSync(t.worktree.path)) throw new Error('The team worktree was removed. Its assignments cannot safely resume.')
@@ -360,7 +386,7 @@ export async function startTaskTeam(id: string): Promise<void> {
     if (!team.memberIds.length) {
       const byStep = new Map<string, string>()
       const makeMember = (title: string, prompt: string, role: 'worker' | 'integrator') => {
-        const member = createTask({ title, prompt, tool: t.tool, projectPath: t.projectPath, projectName: t.projectName, mode: 'headless', permission: t.permission, useWorktree: false, model: t.model, budgetUsd: t.budgetUsd })
+        const member = createTask({ title, prompt, tool: t.tool, projectPath: t.projectPath, projectName: t.projectName, mode: team.mode ?? 'headless', permission: t.permission, useWorktree: false, model: t.model, budgetUsd: team.budgetUsd })
         member.teamParentId = t.id; member.teamRole = role; member.whenReady = 'none'
         team.memberIds.push(member.id)
         return member
@@ -420,7 +446,7 @@ async function pumpTeams(): Promise<void> {
         if (runningTaskCount() >= 3) { team.holdReason = 'Waiting for a free agent slot (up to 3 run at once).'; break }
         const assignment = team.plan!.agents.find(a => a.id === member.teamStepId)
         const conflicts = assignment && members.some(other => {
-          if (!procs.has(other.id) && !startingTasks.has(other.id)) return false
+          if (!memberActive(other.id)) return false
           const scope = team.plan!.agents.find(a => a.id === other.teamStepId)
           return !!scope && assignmentsOverlap(assignment, scope)
         })
@@ -582,13 +608,13 @@ export async function startTask(id: string, teamManaged = false): Promise<{ inte
     if (t.team || t.teamParentId && !teamManaged) throw new Error('Use the original task’s team controls to start its agents.')
     if (procs.has(id) || t.column === 'running') throw new Error('This task is already running.')
     taskCommand(t.tool ?? 'claude')
-    if (t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a per-task USD cap. Remove the cap before starting.')
+    if (t.mode === 'headless' && t.tool === 'codex' && t.budgetUsd) throw new Error('Codex does not support a per-task USD cap. Remove the cap before starting.')
     const { cwd, worktree } = await prepareFolder(t)
     if (shuttingDown) throw new Error('Mission Control is closing.')
     if (t.teamParentId && find(t.teamParentId).team?.phase !== (t.teamRole === 'planner' ? 'planning' : 'running')) throw new Error('The team was paused.')
     if (worktree) emit()
 
-    if (t.mode === 'interactive') {
+    if (t.mode === 'interactive' && !t.teamParentId) {
       // The UI opens the agent terminal; the prompt is passed as claude's first message.
       const args = t.tool === 'codex' ? [...(t.model ? ['--model', t.model] : []), ...(t.permission === 'plan' ? ['-s', 'read-only'] : []), briefingContext(t.projectPath, t.prompt)] : [...(t.model ? ['--model', t.model] : []), '--permission-mode', t.permission, briefingContext(t.projectPath, t.prompt)]
       return { interactive: { cwd, args, worktree } }
@@ -605,9 +631,68 @@ export async function startTask(id: string, teamManaged = false): Promise<{ inte
       ? (t.dependsOn ?? []).map(id => find(id)).map(dep => ({ assignment: dep.title, handoff: dep.run?.result?.slice(-6000) ?? 'No written handoff.' }))
       : []
     const prompt = t.prompt + (handoffs.length ? `\n\nCompleted assignment handoffs (context only; keep your own scope):\n${JSON.stringify(handoffs)}` : '')
+    if (t.mode === 'interactive' && t.teamParentId) {
+      run.cliState = 'starting'
+      const cli = startTaskCli(t, cwd, briefingContext(t.projectPath, prompt), (state, sessionId, lastReply) => {
+        if (t.run !== run || run.finishedAt) return
+        if (state) { run.cliState = state; run.activity = state === 'idle' ? 'Your turn — chat or finish this assignment' : state === 'needs-input' ? 'CLI needs your input' : 'CLI working' }
+        if (state === 'working') run.result = undefined
+        if (lastReply) run.result = lastReply
+        if (sessionId) run.sessionId = sessionId
+        emit()
+      }, code => {
+        if (!finalizingTasks.has(t.id)) void settleTaskCli(t, `CLI closed (${code}) before the assignment was finished.`)
+      })
+      cliRuns.set(t.id, cli)
+      run.agentId = cli.id; run.sessionId = cli.sessionId
+      emit()
+      return {}
+    }
     runHeadless(t, cwd, briefingContext(t.projectPath, t.permission === 'plan' ? 'Investigate and plan only; do not modify files.\n' + prompt : prompt), { sessionId: run.sessionId })
     return {}
   } finally { startingTasks.delete(id) }
+}
+
+/** The user keeps a CLI conversation open until they explicitly release its assignment. */
+export async function finishTaskAgent(id: string): Promise<void> {
+  const t = find(id)
+  if (!t.teamParentId || !cliRuns.has(id) || t.column !== 'running') throw new Error('This task has no live team CLI.')
+  if (finalizingTasks.has(id)) throw new Error('This assignment is already finishing.')
+  if (find(t.teamParentId).team?.phase !== 'running') throw new Error('The team is paused.')
+  if (t.run?.cliState !== 'idle') throw new Error('Wait for the CLI to finish its reply before completing the assignment.')
+  finalizingTasks.add(id)
+  try {
+    const result = await taskCliResult(t)
+    if (t.run?.cliState !== 'idle' || find(t.teamParentId).team?.phase !== 'running') throw new Error('The CLI or team changed while reading its reply. Try again after it finishes.')
+    await settleTaskCli(t, undefined, result, true)
+  } finally {
+    finalizingTasks.delete(id)
+    if (stoppedByUser.delete(id) && cliRuns.has(id)) await settleTaskCli(t, 'Stopped by you.')
+  }
+}
+
+async function settleTaskCli(t: Task, error?: string, result?: string, finishing = false): Promise<void> {
+  if (finalizingTasks.has(t.id) && !finishing) return
+  const cli = cliRuns.get(t.id), run = t.run
+  if (!cli || !run) return
+  finalizingTasks.add(t.id)
+  try {
+    await cli.close()
+    cliRuns.delete(t.id)
+    run.cliState = 'closed'
+    run.result = result
+    run.error = stoppedByUser.delete(t.id) ? 'Stopped by you.' : error
+    if (!error && (shuttingDown || find(t.teamParentId!).team?.phase !== 'running')) run.error = 'Team paused before completion.'
+    if (!run.error) await afterSuccess(t, find(t.teamParentId!).worktree!.path)
+  } catch (err) { run.error = (err as Error).message }
+  run.finishedAt = Date.now()
+  run.activity = run.error ? 'Stopped' : 'Finished'
+  addEvent(run, run.error ? 'error' : 'result', run.error || result || 'Assignment finished')
+  moveTo(t, 'review'); emit()
+  finalizingTasks.delete(t.id)
+  invalidateBudgets()
+  settleTeamMember(t)
+  void pumpTeams(); void pumpQueue()
 }
 
 /** Continues a finished headless task's chat with a new prompt, in the same folder. */
@@ -892,6 +977,13 @@ function killTree(child: ChildProcess): void {
 
 export function stopTask(id: string): void {
   if (tasks.find(t => t.id === id)?.team) return stopTaskTeam(id)
+  if (cliRuns.has(id)) {
+    if (finalizingTasks.has(id)) {
+      stoppedByUser.add(id)
+      void cliRuns.get(id)!.close().catch(() => undefined)
+    } else void settleTaskCli(find(id), 'Stopped by you.')
+    return
+  }
   const child = procs.get(id)
   if (!child) return
   stoppedByUser.add(id)
@@ -901,11 +993,12 @@ export function stopTask(id: string): void {
 export function stopAllTasks(): void {
   shuttingDown = true
   clearInterval(queueTimer); clearTimeout(queueStart)
+  for (const id of cliRuns.keys()) void settleTaskCli(find(id), 'Stopped when Mission Control closed.')
   const children = [...procs.values(), ...checkProcs.values()]
   for (const id of procs.keys()) stoppedByUser.add(id)
   terminateProcessTreesSync(children.flatMap(child => child.pid ? [child.pid] : []))
 }
 
 export function runningTaskCount(): number {
-  return new Set([...procs.keys(), ...checkProcs.keys(), ...startingTasks, ...finalizingTasks, ...teamOperations]).size
+  return new Set([...cliRuns.keys(), ...procs.keys(), ...checkProcs.keys(), ...startingTasks, ...finalizingTasks, ...teamOperations]).size
 }

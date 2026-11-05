@@ -128,7 +128,7 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
       toast('info', `Compacting ${active.title}`, 'Claude summarizes the chat so far and continues from the summary. Mission Control saves that summary as a session briefing.')
     },
     writeBriefing: () => {
-      if (!active || active.kind !== 'claude' || active.exited) return
+      if (!active || active.kind === 'shell' || active.exited) return
       window.mc.ptyWrite(active.id, writeBriefingPrompt(`docs/briefings/${briefingFileName(Date.now(), active.title).replace(/\.md$/, '')}.md`) + '\r')
       setView('agents')
       c.setActiveAgent(active.id)

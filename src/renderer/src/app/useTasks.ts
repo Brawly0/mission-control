@@ -98,6 +98,7 @@ export function useTasks({ agents, launch, toast }: TasksOptions) {
   // An interactive task's agent closing ends its run; move it to Review.
   useEffect(() => {
     for (const t of tasksRef.current) {
+      if (t.teamParentId) continue // The main-process team coordinator owns these PTYs.
       const agentId = t.run?.agentId
       if (t.column !== 'running' || !agentId) continue
       const agent = agents.find((a) => a.id === agentId)

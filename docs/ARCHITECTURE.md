@@ -37,6 +37,7 @@ src/
     recap.ts       "what we worked on" from a transcript (streamed, cached), and the one-shot Haiku calls: summarize a chat, name chats (ADR 0017)
     vault.ts       docs vault: reads docs/ + root notes with links, watches them, starts Claude's build/update tasks (ADR 0014)
     skills.ts      Skills page: personal, plugin and project skills read from disk (ADR 0015)
+    promptStudio.ts Prompt Studio: resource library, URL and file import, saved prompts, one-shot claude -p generator (ADR 0035)
     eco.ts         Eco mode: launch flags (model, effort, autocompact, plugin) and the long-chat coach
     ecoPlugin.ts   the eco:coach skill, written as a plugin to the app's data folder for --plugin-dir
     spend.ts       live chat size, startup report, MCP servers per project, extra launch args (model, --strict-mcp-config)
@@ -48,6 +49,7 @@ src/
     digest.ts       day keys, when the digest is due, its notification text (pure, unit-tested)
     recap.ts        the recap builder (prompts, files, commits, last reply, active time) and parsing Claude's answers (pure, unit-tested)
     skills.ts       skill uses in transcripts, coach levels and wording (pure, unit-tested)
+    promptStudio.ts prompt ranking, generator input, reply parsing, HTML to text (pure, unit-tested)
     codex.ts        Codex rollout lines: prompts, replies, commands, patched files, recap, token totals, plan limits, OSC 7501 states (pure, unit-tested)
     handoff.ts      the handoff file and prompt (pure, unit-tested)
     taskConsole.ts  background task JSON lines as CLI-like terminal text (pure, unit-tested; ADR 0030)
@@ -70,7 +72,7 @@ src/
     src/shortcuts.ts         every keyboard shortcut, key matching, terminal-safe rules, rebinding (ADR 0010)
     src/components/
       ui.tsx                 shared building blocks: Button, IconButton, Avatar, MenuButton, Segmented, EmptyState
-      Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, VaultView (VaultGraph, NoteMarkdown), PlanMeter, SkillsView
+      Sidebar, HomeView, ProjectView, OverviewPanel, SessionViewer, VaultView (VaultGraph, NoteMarkdown), PlanMeter, SkillsView, PromptStudioView
       AgentsView, TerminalPane, ChangesPanel, DiffView, CommandPalette, StatusBar
       SearchView, UsageView, TasksView, TaskAgentWorkspace, TaskTerminal, TaskConsole, TaskComposer, TaskDrawer, SettingsDialog, IdentityDialog, ShortcutsDialog, SpendingCard
       TopBar, ProjectsView, NotebookView, KnowledgeView, DocViewer, NewProjectDialog
@@ -109,6 +111,8 @@ When the process exits, the task moves to **Review**, whether it succeeded, fail
 **Task agent workspace (ADRs 0030, 0031).** Tasks → Task agents groups each task's planner, workers and integrator in Tabs or Grid. Starting/resuming a team opens its workspace; team cards and drawers also provide Watch agents. Waiting agents explain their dependencies; completed runs remain selectable. `renderer/src/taskWorkspace.ts` derives groups and statuses from the existing typed task list. For background runs, `shared/taskConsole.ts` formats JSON events as CLI-like text. `tasks.ts` retains per-task output (`getTaskOutput`) and streams it (`tasks:output`) to a read-only xterm (`TaskConsole`). Interactive tasks show the agent's own PTY (`TerminalPane`). `terminalBus` replays a terminal's history to every pane showing it and lets only one pane send input. Navigation never launches duplicate runs or changes coordinator ownership.
 
 ## Templates, schedules and the queue
+
+**Live CLI teams (ADR 0034).** The Split into agents UI defaults to `TaskTeam.mode = interactive`. Planning stays in the structured background runner; workers/integration launch through `taskCli.ts` into the existing PTY host. The coordinator owns `run.agentId` independently of the standalone Agents list. Claude hooks/Codex state events expose turn readiness. Finish assignment captures a bounded handoff, closes and waits for the CLI, then settles dependencies through the normal team pipeline. CLI idle alone never completes work. Background teams, including older saved teams, retain their runner and USD caps. Live teams explicitly have no USD cap. Terminal navigation shares output through terminalBus and does not launch or restore another process.
 
 - **Templates** (`store.templates`) hold everything a task needs except, optionally, the project. `runTemplate` fills `{{project}}`, `{{date}}`, `{{time}}` and `{{weekday}}`, creates the task, then starts it, queues it, or leaves it in To do.
 - **Scheduler:** `templates.ts` ticks every 30 seconds. A template whose `nextRunAt` has passed runs **once**, even if several occurrences were missed while the app was closed, and then gets its next time computed from now (`nextRunAfter`: hourly / daily / weekdays / weekly). A fired interactive task asks the UI to open its agent (`task:launch`). Self-tests connect the UI but never run the timer.

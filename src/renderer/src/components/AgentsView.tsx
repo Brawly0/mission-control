@@ -428,10 +428,24 @@ export default function AgentsView(props: Props) {
                         onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
                       />
                     )}
+                    {a.kind !== 'shell' && !a.exited && (
+                      <button
+                        className="agent-brief"
+                        disabled={st.cls === 'working'}
+                        title={st.cls === 'working' ? `Wait until ${a.kind === 'codex' ? 'Codex' : 'Claude'} finishes` : withKey('Ask the agent to write a session briefing for the next session', keyFor('writeBriefing'))}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onSelect(a.id)
+                          window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
+                        }}
+                      >
+                        <FileText size={11} /> Briefing
+                      </button>
+                    )}
                     <MenuButton portal align="right"
                       trigger={(toggle) => <IconButton icon={MoreHorizontal} label={`Actions for ${a.title}`} onClick={() => { onSelect(a.id); toggle() }} />}
                       items={[
-                        ...(a.kind === 'claude' && !a.exited ? [{ label: 'Write briefing', icon: FileText, disabled: st.cls === 'working', onSelect: () => { onSelect(a.id); window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' })) } }] : []),
+                        ...(a.kind !== 'shell' && !a.exited ? [{ label: 'Write briefing', icon: FileText, disabled: st.cls === 'working', onSelect: () => { onSelect(a.id); window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' })) } }] : []),
                         ...(a.kind !== 'shell' && !a.exited ? [{ label: `Hand off to ${a.kind === 'codex' ? 'Claude' : 'Codex'}`, icon: ArrowRightLeft, disabled: st.cls === 'working' || !a.sessionId, onSelect: () => onHandOff(a) }] : []),
                         { label: 'Rename session', icon: FileText, onSelect: () => { onSelect(a.id); setRenameRequest(Date.now()) } },
                         { label: 'Minimize', icon: Minus, onSelect: () => minimize(a.id) },

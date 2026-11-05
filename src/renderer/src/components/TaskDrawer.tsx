@@ -89,6 +89,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAdd
   const [title, setTitle] = useState(task.title)
   const [followUp, setFollowUp] = useState('')
   const [planning, setPlanning] = useState(false)
+  const [teamMode, setTeamMode] = useState<'interactive' | 'headless'>('interactive')
   const reportedInspection = useRef('')
   const run = task.run
   const running = task.column === 'running'
@@ -109,7 +110,8 @@ export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAdd
     setPlanning(true)
     try {
       await window.mc.updateTask(task.id, { title: title.trim() || task.title, prompt })
-      await window.mc.planTaskTeam(task.id)
+      await window.mc.planTaskTeam(task.id, teamMode)
+      if (teamMode === 'interactive') onWatchAgents(task)
     } catch (e) { toast('error', 'Could not split the task into agents', errorMessage(e)) }
     finally { setPlanning(false) }
   }
@@ -207,6 +209,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAdd
             Run anyway
           </Button>
         )}
+        {!managed && task.column === 'todo' && !run && <label className="task-team-mode"><select className="select" aria-label="Agent team execution" value={teamMode} disabled={planning} onChange={e => setTeamMode(e.target.value as 'interactive' | 'headless')}><option value="interactive">Live CLI · talk to agents</option><option value="headless">Background · read-only output</option></select><small className="muted">{teamMode === 'interactive' ? 'Live CLI teams have no USD cap. Finish each assignment when ready.' : 'Background teams keep the configured USD cap.'}</small></label>}
         {!managed && task.column === 'todo' && !run && <Button icon={planning ? Loader2 : Users} disabled={planning || !prompt.trim()} onClick={() => void splitTeam()} title="Inspect the task and preview a team sized to the work. Uses the selected agent’s plan.">
           {planning ? 'Planning…' : 'Split into agents'}
         </Button>}
@@ -215,7 +218,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAdd
             Stop
           </Button>
         )}
-        {running && task.mode === 'interactive' && run?.agentId && (
+        {!managed && running && task.mode === 'interactive' && run?.agentId && (
           <Button variant="primary" icon={SquareTerminal} onClick={() => onOpenAgent(run.agentId!)}>
             Open agent
           </Button>
