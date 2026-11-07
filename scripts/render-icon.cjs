@@ -1,5 +1,6 @@
 // Renders build/icon.svg to build/icon.png (512x512) with Electron, for electron-builder.
 // Run: npx electron scripts/render-icon.cjs
+// NOTE: build/icon.png is now a downscale of build/icon-master.png (generated art, ADR 0038). Running this script replaces it with the flat SVG render.
 const { app, BrowserWindow } = require('electron')
 const { readFileSync, writeFileSync } = require('node:fs')
 const { join } = require('node:path')

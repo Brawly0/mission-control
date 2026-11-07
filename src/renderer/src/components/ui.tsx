@@ -3,6 +3,7 @@ import { cloneElement, isValidElement, useEffect, useId, useLayoutEffect, useRef
 import type { LucideIcon } from 'lucide-react'
 import { LoaderCircle } from 'lucide-react'
 import { avatarHue, initials } from '../util'
+import { emptyArt } from '../emptyArt'
 import { ICONS, useLook } from '../projectLook'
 import type { ProjectIcon } from '@shared/projectLook'
 
@@ -80,11 +81,12 @@ export function Badge({ children, tone = 'neutral', title }: { children: ReactNo
 }
 
 export function EmptyState({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children?: ReactNode }) {
+  const art = emptyArt(Icon)
   return (
     <div className="empty-state">
-      <div className="empty-icon">
+      {art ? <img className="empty-art" src={art} alt="" draggable={false} /> : <div className="empty-icon">
         <Icon size={26} strokeWidth={1.6} />
-      </div>
+      </div>}
       <div className="empty-title">{title}</div>
       {children && <div className="empty-body">{children}</div>}
     </div>

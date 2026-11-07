@@ -1,0 +1,42 @@
+/* Generated artwork (src/renderer/src/art, ADR 0038): empty-state illustrations, home hero banner, app background. */
+.empty-art {
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  margin-bottom: -6px;
+  user-select: none;
+  pointer-events: none;
+  animation: empty-art-float 6s ease-in-out infinite;
+}
+.hd-empty-art { width: 76px; height: 76px; object-fit: contain; flex-shrink: 0; user-select: none; pointer-events: none; }
+.hd-empty:has(.hd-empty-art) { flex-direction: column; gap: 4px; }
+.hd-empty:has(.hd-empty-art) p { margin: 0; }
+@keyframes empty-art-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@media (prefers-reduced-motion: reduce) { .empty-art { animation: none; } }
+
+/* Dark theme only: the art is painted on navy and would look muddy on the light theme. */
+:root:not([data-theme='light']) .main {
+  background: var(--bg) url('./art/bg-texture.webp') center / cover no-repeat;
+}
+:root:not([data-theme='light']) .hd-hero {
+  position: relative;
+  isolation: isolate;
+  padding: 18px 22px;
+  margin-left: -8px;
+  margin-right: -8px;
+  border-radius: 16px;
+  border: 1px solid rgba(59, 130, 246, .14);
+  background: #0b1020 url('./art/hero-banner.webp') right center / cover no-repeat;
+  overflow: hidden;
+}
+:root:not([data-theme='light']) .hd-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(11, 16, 32, .9) 0%, rgba(11, 16, 32, .55) 45%, rgba(11, 16, 32, .15) 100%);
+}
+:root[data-theme='light'] .empty-art { filter: drop-shadow(0 6px 14px rgba(37, 99, 235, .18)); }
