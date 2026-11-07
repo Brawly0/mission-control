@@ -1,8 +1,9 @@
 # Roadmap
 
-## Brand logos (2026-11-07)
+## Brand logos and artwork (0.31.0)
 
 - [x] The words "Claude" and "Codex" show as their logos across the app UI; chats, notes, prompts and snippets keep the words (ADR 0037)
+- [x] Generated artwork: new app icon, empty-state illustrations, Home hero banner and a subtle dark-theme background (ADR 0038)
 
 ## Vibe coding stats (0.30.0)
 
