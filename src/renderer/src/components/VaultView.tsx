@@ -338,7 +338,7 @@ export default function VaultView({ project, onChanged }: Props) {
                   <ListTree size={12} /> Outline
                 </h4>
                 {outline.map((h, i) => (
-                  <button key={i} className="vault-outline" style={{ paddingLeft: 4 + (h.level - 1) * 10 }} onClick={() => document.getElementById(h.slug)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                  <button key={i} data-no-brand className="vault-outline" style={{ paddingLeft: 4 + (h.level - 1) * 10 }} onClick={() => document.getElementById(h.slug)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
                     {h.text}
                   </button>
                 ))}

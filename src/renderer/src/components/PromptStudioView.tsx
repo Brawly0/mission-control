@@ -199,7 +199,7 @@ export default function PromptStudioView({ visible, projects, selectedProject, o
           )}
           {turns.map((t, i) =>
             t.role === 'user' ? (
-              <div key={i} className="ps-msg ps-user">
+              <div key={i} className="ps-msg ps-user" data-no-brand>
                 {t.text}
               </div>
             ) : t.kind === 'prompt' ? (
@@ -223,7 +223,7 @@ export default function PromptStudioView({ visible, projects, selectedProject, o
                 </div>
               </div>
             ) : (
-              <div key={i} className="ps-msg ps-ai">
+              <div key={i} className="ps-msg ps-ai" data-no-brand>
                 {t.text}
               </div>
             )

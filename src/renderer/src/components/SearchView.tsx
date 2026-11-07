@@ -4,6 +4,7 @@ import type { IndexStatus, Project, SearchHit } from '@shared/types'
 import { basename, errorMessage, timeAgo } from '../util'
 import { Avatar, Button, EmptyState, IconButton, LoadingState, Segmented, ToolBadge } from './ui'
 import { useLook } from '../projectLook'
+import { NoBrand } from '../brand/brandText'
 
 interface Props {
   visible: boolean
@@ -23,11 +24,11 @@ function Snippet({ text }: { text: string }) {
     .replace(/(^|\n)#{1,6} /g, '$1')
   const parts = plain.replace(/\s+/g, ' ').split(/(\u0001[^\u0002]*\u0002)/)
   return (
-    <>
+    <NoBrand>
       {parts.map((p, i) =>
         p.startsWith('\u0001') ? <mark key={i}>{p.slice(1, -1)}</mark> : <Fragment key={i}>{p}</Fragment>
       )}
-    </>
+    </NoBrand>
   )
 }
 

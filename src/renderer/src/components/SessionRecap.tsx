@@ -125,13 +125,13 @@ export default function SessionRecap({ sessionId, version, compact, onClose, onT
           {r.firstPrompts[0] && (
             <div>
               <span className="recap-label">You started with</span>
-              <p className="recap-quote">{r.firstPrompts[0].text}</p>
+              <p className="recap-quote" data-no-brand>{r.firstPrompts[0].text}</p>
             </div>
           )}
           {latest && latest !== r.firstPrompts[0] && (
             <div>
               <span className="recap-label">Latest {latest.at ? `· ${timeAgo(latest.at)}` : ''}</span>
-              <p className="recap-quote">{latest.text}</p>
+              <p className="recap-quote" data-no-brand>{latest.text}</p>
             </div>
           )}
         </div>

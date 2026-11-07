@@ -47,7 +47,7 @@ export default function KnowledgeView({ visible, onStartFromBriefing }: { visibl
             {formatBytes(d.size)} · {timeAgo(d.mtime)}
           </span>
           {snippets?.map((s) => (
-            <span key={s.line} className="kn-snippet ellipsis">
+            <span key={s.line} className="kn-snippet ellipsis" data-no-brand>
               {s.line}: {s.text}
             </span>
           ))}

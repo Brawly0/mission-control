@@ -1,6 +1,7 @@
 import { createElement, useMemo, type ReactNode } from 'react'
 import Markdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { NoBrand } from '../brand/brandText'
 import { headings, parseFrontmatter, wikilinksToMarkdown } from '@shared/vault'
 
 export interface Props {
@@ -27,7 +28,7 @@ export default function NoteMarkdown({ text, onLink, exists }: Props) {
   const entries = Object.entries(props).filter(([k]) => !KEEP.has(k))
 
   return (
-    <>
+    <NoBrand>
       {entries.length > 0 && (
         <div className="note-props">
           {entries.map(([k, v]) => (
@@ -93,6 +94,6 @@ export default function NoteMarkdown({ text, onLink, exists }: Props) {
       >
         {source}
       </Markdown>
-    </>
+    </NoBrand>
   )
 }

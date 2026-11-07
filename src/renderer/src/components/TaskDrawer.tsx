@@ -343,7 +343,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAdd
             {editable ? (
               <textarea className="prompt-input" value={prompt} onChange={(e) => setPrompt(e.target.value)} onBlur={saveText} rows={5} />
             ) : (
-              <div className="prompt-view">{task.prompt}</div>
+              <div className="prompt-view" data-no-brand>{task.prompt}</div>
             )}
           </section>
 
@@ -440,7 +440,7 @@ export default function TaskDrawer({ task, all, onOpenTask, onWatchAgents, onAdd
                   return (
                     <li key={i} className={`ev ev-${ev.kind}`}>
                       <Icon size={13} />
-                      <span className="ev-text">{ev.kind === 'text' ? ev.text.split('\n').slice(0, 4).join('\n') : ev.text}</span>
+                      <span className="ev-text" data-no-brand>{ev.kind === 'text' ? ev.text.split('\n').slice(0, 4).join('\n') : ev.text}</span>
                       <span className="ev-time muted">{new Date(ev.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                     </li>
                   )

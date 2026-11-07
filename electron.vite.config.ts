@@ -19,8 +19,9 @@ export default defineConfig({
       }
     },
     resolve: {
-      alias: { '@shared': resolve(__dirname, 'src/shared') }
+      alias: { '@shared': resolve(__dirname, 'src/shared'), '@mc-brand': resolve(__dirname, 'src/renderer/src/brand') }
     },
-    plugins: [react()]
+    // JSX goes through src/renderer/src/brand/jsx-runtime.ts, which shows the Claude and Codex logos in place of those words (ADR 0037).
+    plugins: [react({ jsxImportSource: '@mc-brand' })]
   }
 })

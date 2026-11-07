@@ -1,5 +1,9 @@
 # Roadmap
 
+## Brand logos (2026-11-07)
+
+- [x] The words "Claude" and "Codex" show as their logos across the app UI; chats, notes, prompts and snippets keep the words (ADR 0037)
+
 ## Vibe coding stats (0.30.0)
 
 - [x] Home: exact Claude and Codex token totals, clock time spent vibe coding (overlapping chats count once) and fun facts about spending (ADR 0036)

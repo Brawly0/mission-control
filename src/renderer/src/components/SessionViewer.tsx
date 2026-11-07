@@ -88,7 +88,7 @@ export default function SessionViewer({ session, onResume, actions, onTitleChang
               )}
             </div>
             <div className="message-text">
-              {m.role === 'assistant' ? <Md>{m.text}</Md> : <div className="user-text">{m.text}</div>}
+              {m.role === 'assistant' ? <Md>{m.text}</Md> : <div className="user-text" data-no-brand>{m.text}</div>}
             </div>
           </div>
         ))}
