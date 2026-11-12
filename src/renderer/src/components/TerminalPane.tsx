@@ -13,10 +13,10 @@ interface Props {
 }
 
 export const terminalTheme = {
-  background: '#080c18',
-  foreground: '#e1e6f5',
-  cursor: '#22d3ee',
-  selectionBackground: '#2b3a66',
+  background: '#08090d',
+  foreground: '#e6e6ee',
+  cursor: '#668bff',
+  selectionBackground: '#28345e',
   black: '#1b1e25',
   brightBlack: '#5c6370'
 }

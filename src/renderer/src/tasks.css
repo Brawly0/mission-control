@@ -109,7 +109,7 @@
   border-radius: var(--radius);
 }
 .count-review {
-  background: rgba(251, 146, 60, 0.18);
+  background: rgba(232, 179, 108, 0.18);
   color: var(--orange);
 }
 
@@ -132,13 +132,13 @@
   cursor: grabbing;
 }
 .task-card.is-running {
-  border-color: rgba(74, 222, 128, 0.35);
+  border-color: rgba(94, 213, 176, 0.35);
 }
 .task-card.needs-you {
-  border-color: rgba(251, 146, 60, 0.6);
+  border-color: rgba(232, 179, 108, 0.6);
 }
 .task-card.has-error {
-  border-color: rgba(248, 113, 113, 0.35);
+  border-color: rgba(228, 125, 142, 0.35);
 }
 .task-title {
   font-weight: 600;
@@ -465,8 +465,8 @@
   gap: 8px;
   padding: 10px 12px;
   border-radius: var(--radius);
-  background: rgba(248, 113, 113, 0.08);
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: rgba(228, 125, 142, 0.08);
+  border: 1px solid rgba(228, 125, 142, 0.3);
   color: var(--red);
   white-space: pre-wrap;
 }
@@ -633,8 +633,8 @@
   background: var(--term-bg);
   overflow: hidden;
 }
-.task-term.is-running { border-color: rgba(74, 222, 128, 0.35); }
-.task-term.has-error { border-color: rgba(248, 113, 113, 0.4); }
+.task-term.is-running { border-color: rgba(94, 213, 176, 0.35); }
+.task-term.has-error { border-color: rgba(228, 125, 142, 0.4); }
 .task-term.is-focus { box-shadow: 0 0 0 2px var(--accent-soft); }
 .task-term-head {
   display: flex;
@@ -695,7 +695,7 @@
   margin-left: 4px;
   padding: 0 6px;
   border-radius: 999px;
-  background: rgba(74, 222, 128, 0.18);
+  background: rgba(94, 213, 176, 0.18);
   color: var(--green);
   font-size: 11px;
 }

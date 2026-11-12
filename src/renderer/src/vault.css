@@ -35,11 +35,11 @@
   white-space: nowrap;
 }
 .vault-chip.ok {
-  background: rgba(74, 222, 128, 0.12);
+  background: rgba(94, 213, 176, 0.12);
   color: var(--green);
 }
 .vault-chip.warn {
-  background: rgba(251, 146, 60, 0.12);
+  background: rgba(232, 179, 108, 0.12);
   color: var(--orange);
 }
 .vault-actions {
@@ -78,7 +78,7 @@
   min-width: 0;
 }
 .vault-banner.bad {
-  background: rgba(248, 113, 113, 0.1);
+  background: rgba(228, 125, 142, 0.1);
 }
 .vault-banner.bad > svg {
   color: var(--red);

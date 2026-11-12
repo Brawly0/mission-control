@@ -1,14 +1,14 @@
 /* Home dashboard: compact panels, provider accents and real activity charts. */
 .home.hd {
-  --hd-panel: #0e1726;
-  --hd-row: #121d2e;
-  --hd-line: #202d43;
-  --hd-purple: #a281ff;
-  --hd-cell: #202c42;
-  --hd-cell-1: #393c73;
-  --hd-cell-2: #5551a8;
-  --hd-cell-3: #7561e8;
-  --hd-cell-4: #9377ff;
+  --hd-panel: #0d0e13;
+  --hd-row: #12141b;
+  --hd-line: #262936;
+  --hd-purple: #8fa6ff;
+  --hd-cell: #1a1c26;
+  --hd-cell-1: #2a3466;
+  --hd-cell-2: #3f52a8;
+  --hd-cell-3: #546fe0;
+  --hd-cell-4: #7a96ff;
   padding: 20px 24px 22px;
   background: radial-gradient(ellipse at 55% 0, rgba(55, 51, 111, .075), transparent 55%);
 }
@@ -36,8 +36,8 @@
 .hd-stat { --hd-tone: var(--blue); display: flex; align-items: center; min-width: 0; border: 1px solid var(--hd-line); border-radius: 11px; text-align: left; transition: border-color .14s, background .14s, transform .14s; }
 .hd-tone-claude { --hd-tone: #ff934e; }
 .hd-tone-codex { --hd-tone: #74a7ff; }
-.hd-tone-green { --hd-tone: #36d9b4; }
-.hd-tone-blue { --hd-tone: #49a9ff; }
+.hd-tone-green { --hd-tone: #5ed5b0; }
+.hd-tone-blue { --hd-tone: #668bff; }
 .hd-tone-purple { --hd-tone: #ba79fb; }
 .hd-tone-indigo { --hd-tone: #a0a2ff; }
 .hd-tone-orange { --hd-tone: #ff9b48; }
@@ -155,7 +155,7 @@
 .hd-event { position: relative; display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 34px; width: 100%; padding: 3px 0; text-align: left; border-radius: 6px; }
 .hd-event:hover { background: var(--hover); }
 .hd-event-icon { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; color: var(--hd-tone); background: color-mix(in srgb, var(--hd-tone) 15%, var(--hd-panel)); border: 1px solid color-mix(in srgb, var(--hd-tone) 10%, var(--hd-line)); flex-shrink: 0; z-index: 1; }
-.hd-event-icon.hd-tone-green { --hd-tone: #36d9b4; }
+.hd-event-icon.hd-tone-green { --hd-tone: #5ed5b0; }
 .hd-event-icon.hd-tone-purple { --hd-tone: #ba79fb; }
 .hd-event-icon.hd-tone-orange,
 .hd-event-icon.hd-tone-claude { --hd-tone: #ff934e; }

@@ -4,12 +4,12 @@
    ============================================================ */
 :root {
   --radius-xl: 16px;
-  --tile-green: rgba(74, 222, 128, 0.14);
-  --tile-blue: rgba(96, 165, 250, 0.15);
-  --tile-purple: rgba(167, 139, 250, 0.16);
-  --tile-orange: rgba(251, 146, 60, 0.16);
-  --purple: #a78bfa;
-  --accent-grad: linear-gradient(120deg, #22d3ee, #3b82f6);
+  --tile-green: rgba(94, 213, 176, 0.13);
+  --tile-blue: rgba(102, 139, 255, 0.15);
+  --tile-purple: rgba(157, 139, 255, 0.15);
+  --tile-orange: rgba(232, 179, 108, 0.14);
+  --purple: #9d8bff;
+  --accent-grad: linear-gradient(120deg, #668bff, #8f7dff);
 }
 :root[data-theme='light'] {
   --accent-grad: linear-gradient(120deg, #0e7490, #2563eb 60%, #6d28d9);
@@ -188,7 +188,7 @@
 }
 .claude-status.ok .claude-status-ring {
   border-color: var(--green);
-  box-shadow: 0 0 12px rgba(74, 222, 128, 0.25);
+  box-shadow: 0 0 12px rgba(94, 213, 176, 0.25);
 }
 .claude-status.bad .claude-status-ring {
   border-color: var(--red);
@@ -691,7 +691,7 @@
 }
 .status-claude.ok .dot {
   background: var(--green);
-  box-shadow: 0 0 10px rgba(74, 222, 128, 0.5);
+  box-shadow: 0 0 10px rgba(94, 213, 176, 0.5);
 }
 .status-claude.ok .small {
   color: var(--green);
@@ -1100,7 +1100,7 @@
 }
 .due-chip.late,
 .due-edit.late {
-  background: rgba(248, 113, 113, 0.14);
+  background: rgba(228, 125, 142, 0.14);
   color: var(--red);
 }
 .due-edit {

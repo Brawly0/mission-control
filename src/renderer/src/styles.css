@@ -2,39 +2,40 @@
    Mission Control: design tokens
    ============================================================ */
 :root {
-  --bg: #0b1020;
-  --bg-sidebar: #0d1326;
-  --surface: #121a2e;
-  --surface-2: #1a2238;
-  --surface-3: #222c47;
+  /* Aura palette (ADR 0039). */
+  --bg: #050507;
+  --bg-sidebar: #08090c;
+  --surface: #0d0e13;
+  --surface-2: #151720;
+  --surface-3: #1d202b;
   --hover: rgba(255, 255, 255, 0.045);
   --active: rgba(255, 255, 255, 0.075);
-  --border: #232d48;
-  --border-strong: #323e60;
-  --text: #e8ecf8;
-  --text-2: #b9c1da;
-  --muted: #8e97b6;
-  --faint: #7e8aa9;
-  --term-bg: #080c18;
+  --border: #262936;
+  --border-strong: #353948;
+  --text: #f4f4f8;
+  --text-2: #c2c2ce;
+  --muted: #858594;
+  --faint: #7b7b8a;
+  --term-bg: #08090d;
 
-  /* Brand palette: Electric Cyan #22d3ee, Signal Blue #3b82f6, Soft Violet #8b5cf6. */
-  --accent: #22d3ee;
-  --accent-rgb: 34, 211, 238;
-  --on-accent: #061423;
-  --accent-hover: #5ee3f5;
-  --accent-soft: rgba(34, 211, 238, 0.12);
-  --accent-text: #67e8f9;
+  /* Aura accent: periwinkle blue #668BFF, with a violet partner for gradients. */
+  --accent: #668bff;
+  --accent-rgb: 102, 139, 255;
+  --on-accent: #050714;
+  --accent-hover: #86a3ff;
+  --accent-soft: rgba(102, 139, 255, 0.13);
+  --accent-text: #9db4ff;
 
-  --green: #4ade80;
-  --orange: #fb923c;
-  --blue: #60a5fa;
-  --red: #f87171;
-  --yellow: #facc15;
+  --green: #5ed5b0;
+  --orange: #e8b36c;
+  --blue: #7fa6ff;
+  --red: #e47d8e;
+  --yellow: #e8c46c;
 
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 12px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   --mono: 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
@@ -220,10 +221,10 @@ code {
 }
 .btn-danger {
   color: var(--red);
-  border-color: rgba(248, 113, 113, 0.3);
+  border-color: rgba(228, 125, 142, 0.3);
 }
 .btn-danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.1);
+  background: rgba(228, 125, 142, 0.1);
 }
 .btn:disabled {
   opacity: 0.4;
@@ -307,7 +308,7 @@ code {
   color: var(--accent-text);
 }
 .badge-attention {
-  background: rgba(251, 146, 60, 0.18);
+  background: rgba(232, 179, 108, 0.18);
   color: var(--orange);
 }
 
@@ -333,11 +334,11 @@ code {
 }
 .chip-warn {
   color: var(--orange);
-  border-color: rgba(251, 146, 60, 0.3);
-  background: rgba(251, 146, 60, 0.08);
+  border-color: rgba(232, 179, 108, 0.3);
+  background: rgba(232, 179, 108, 0.08);
 }
 .chip-warn:hover {
-  background: rgba(251, 146, 60, 0.15);
+  background: rgba(232, 179, 108, 0.15);
 }
 .chip-accent {
   color: var(--accent-text);
@@ -356,12 +357,12 @@ code {
 }
 .dot.working {
   background: var(--green);
-  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.15);
+  box-shadow: 0 0 0 3px rgba(94, 213, 176, 0.15);
   animation: pulse 1.1s ease-in-out infinite alternate;
 }
 .dot.needs-input {
   background: var(--orange);
-  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.2);
+  box-shadow: 0 0 0 3px rgba(232, 179, 108, 0.2);
   animation: pulse 0.6s ease-in-out infinite alternate;
 }
 .dot.done {
@@ -791,7 +792,7 @@ code {
   height: 20px;
   padding: 0 7px;
   border-radius: 10px;
-  background: rgba(74, 222, 128, 0.1);
+  background: rgba(94, 213, 176, 0.1);
   color: var(--green);
   font-size: 11px;
   font-weight: 600;
@@ -802,7 +803,7 @@ code {
   box-shadow: none;
 }
 .run-pill.attention {
-  background: rgba(251, 146, 60, 0.14);
+  background: rgba(232, 179, 108, 0.14);
   color: var(--orange);
 }
 .pin-star {
@@ -961,7 +962,7 @@ code {
   color: var(--text-2);
 }
 .tab-count.warn {
-  background: rgba(251, 146, 60, 0.15);
+  background: rgba(232, 179, 108, 0.15);
   color: var(--orange);
 }
 .page-body {
@@ -1354,19 +1355,19 @@ code {
 .st-A,
 .st-N {
   color: var(--green);
-  background: rgba(74, 222, 128, 0.12);
+  background: rgba(94, 213, 176, 0.12);
 }
 .st-M {
   color: var(--yellow);
-  background: rgba(250, 204, 21, 0.12);
+  background: rgba(232, 196, 108, 0.12);
 }
 .st-D {
   color: var(--red);
-  background: rgba(248, 113, 113, 0.12);
+  background: rgba(228, 125, 142, 0.12);
 }
 .st-R {
   color: var(--blue);
-  background: rgba(96, 165, 250, 0.12);
+  background: rgba(102, 139, 255, 0.12);
 }
 .file-path {
   flex: 1;
@@ -1422,22 +1423,22 @@ code {
   padding: 0 4px;
 }
 .diff-add {
-  background: rgba(74, 222, 128, 0.09);
+  background: rgba(94, 213, 176, 0.09);
 }
 .diff-add .sign,
 .diff-add .code {
-  color: #a7f3c0;
+  color: #a6ebd5;
 }
 .diff-del {
-  background: rgba(248, 113, 113, 0.09);
+  background: rgba(228, 125, 142, 0.09);
 }
 .diff-del .sign,
 .diff-del .code {
-  color: #fecaca;
+  color: #f3c3cb;
 }
 .diff-hunk td {
   color: var(--blue);
-  background: rgba(96, 165, 250, 0.07);
+  background: rgba(102, 139, 255, 0.07);
   padding-top: 3px;
   padding-bottom: 3px;
 }
@@ -1540,8 +1541,8 @@ code {
   transform: translateY(-1px);
 }
 .agent-card.status-needs-input {
-  border-color: rgba(251, 146, 60, 0.5);
-  background: linear-gradient(180deg, rgba(251, 146, 60, 0.07), var(--surface) 60%);
+  border-color: rgba(232, 179, 108, 0.5);
+  background: linear-gradient(180deg, rgba(232, 179, 108, 0.07), var(--surface) 60%);
 }
 .agent-card-top {
   display: flex;
@@ -1687,7 +1688,7 @@ code {
   color: var(--text);
 }
 .agent-tab.attention:not(.active) {
-  border-color: rgba(251, 146, 60, 0.55);
+  border-color: rgba(232, 179, 108, 0.55);
   color: var(--text);
 }
 .agent-tab-title {
@@ -1766,7 +1767,7 @@ code {
   box-shadow: 0 0 0 1px var(--border-strong);
 }
 .agent-stage.grid .agent-cell.status-needs-input {
-  border-color: rgba(251, 146, 60, 0.6);
+  border-color: rgba(232, 179, 108, 0.6);
 }
 .agent-cell.stacked-hidden {
   visibility: hidden;
@@ -1804,7 +1805,7 @@ code {
   min-width: 0;
 }
 .status-pill.status-needs-input {
-  background: rgba(251, 146, 60, 0.14);
+  background: rgba(232, 179, 108, 0.14);
   color: var(--orange);
 }
 .status-pill.status-working {
@@ -1959,13 +1960,13 @@ code {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #262c3a;
+  background: #262936;
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #343c4e;
+  background: #353948;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-track,

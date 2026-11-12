@@ -48,8 +48,8 @@
   background: var(--surface);
 }
 .eco-card.on {
-  border-color: rgba(74, 222, 128, 0.35);
-  background: linear-gradient(120deg, rgba(74, 222, 128, 0.08), var(--surface) 55%);
+  border-color: rgba(94, 213, 176, 0.35);
+  background: linear-gradient(120deg, rgba(94, 213, 176, 0.08), var(--surface) 55%);
 }
 .eco-card-icon {
   display: grid;
@@ -61,7 +61,7 @@
   color: var(--muted);
 }
 .eco-card.on .eco-card-icon {
-  background: rgba(74, 222, 128, 0.16);
+  background: rgba(94, 213, 176, 0.16);
   color: var(--green);
 }
 .eco-card-body h2 {
@@ -84,7 +84,7 @@
   font: 600 11px var(--font);
 }
 .eco-pill.on {
-  background: rgba(74, 222, 128, 0.16);
+  background: rgba(94, 213, 176, 0.16);
   color: var(--green);
 }
 .eco-chips {
@@ -197,7 +197,7 @@
   color: var(--text-2);
 }
 .skill-icon.src-mission-control {
-  background: rgba(74, 222, 128, 0.14);
+  background: rgba(94, 213, 176, 0.14);
   color: var(--green);
 }
 .skill-icon.src-plugin {
@@ -321,8 +321,8 @@
   color: var(--text-2);
 }
 .eco-toggle.on {
-  border-color: rgba(74, 222, 128, 0.45);
-  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(94, 213, 176, 0.45);
+  background: rgba(94, 213, 176, 0.1);
   color: var(--green);
 }
 
@@ -338,7 +338,7 @@
   background: var(--surface-2);
 }
 .eco-fields.on {
-  border-color: rgba(74, 222, 128, 0.35);
+  border-color: rgba(94, 213, 176, 0.35);
 }
 .eco-switch {
   display: flex;
@@ -391,16 +391,16 @@
   gap: 6px;
   height: 38px;
   padding: 0 12px;
-  border: 1px solid rgba(96, 165, 250, 0.45);
+  border: 1px solid rgba(102, 139, 255, 0.45);
   border-radius: 10px;
-  background: rgba(96, 165, 250, 0.1);
+  background: rgba(102, 139, 255, 0.1);
   color: var(--blue);
   font: 600 12.5px var(--font);
   flex-shrink: 0;
   cursor: pointer;
 }
 .update-btn:hover:not(:disabled) {
-  background: rgba(96, 165, 250, 0.18);
+  background: rgba(102, 139, 255, 0.18);
 }
 .update-btn.ready {
   border-color: var(--accent);

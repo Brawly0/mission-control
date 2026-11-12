@@ -28,8 +28,8 @@
   margin-left: -8px;
   margin-right: -8px;
   border-radius: 16px;
-  border: 1px solid rgba(59, 130, 246, .14);
-  background: #0b1020 url('./art/hero-banner.webp') right center / cover no-repeat;
+  border: 1px solid rgba(102, 139, 255, .16);
+  background: #050507 url('./art/hero-banner.webp') right center / cover no-repeat;
   overflow: hidden;
 }
 :root:not([data-theme='light']) .hd-hero::before {
@@ -37,6 +37,6 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: linear-gradient(90deg, rgba(11, 16, 32, .9) 0%, rgba(11, 16, 32, .55) 45%, rgba(11, 16, 32, .15) 100%);
+  background: linear-gradient(90deg, rgba(5, 5, 7, .92) 0%, rgba(5, 5, 7, .6) 45%, rgba(5, 5, 7, .2) 100%);
 }
 :root[data-theme='light'] .empty-art { filter: drop-shadow(0 6px 14px rgba(37, 99, 235, .18)); }

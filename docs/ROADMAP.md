@@ -1,5 +1,9 @@
 # Roadmap
 
+## Aura palette (0.32.0)
+
+- [x] Dark theme moves to the Aura palette: near-black base, periwinkle #668BFF accent with blue-violet gradients, softer success/warning/danger hues (ADR 0039)
+
 ## Brand logos and artwork (0.31.0)
 
 - [x] The words "Claude" and "Codex" show as their logos across the app UI; chats, notes, prompts and snippets keep the words (ADR 0037)

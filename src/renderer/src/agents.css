@@ -142,7 +142,7 @@
   color: var(--text);
 }
 .dock-item.attention {
-  border-color: rgba(251, 146, 60, 0.6);
+  border-color: rgba(232, 179, 108, 0.6);
 }
 
 /* ---------- "What we worked on" ---------- */
@@ -325,7 +325,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--green);
-  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2);
+  box-shadow: 0 0 0 2px rgba(94, 213, 176, 0.2);
 }
 .session-last {
   margin-top: 2px;
