@@ -3,6 +3,7 @@
 ## Aura palette (0.32.0)
 
 - [x] Dark theme moves to the Aura palette: near-black base, periwinkle #668BFF accent with blue-violet gradients, softer success/warning/danger hues (ADR 0039)
+- [x] (0.33.0) Aura artwork and glow: regenerated icon, empty states, Home hero and background in the Aura palette, plus glowing accent edges on primary buttons, active nav, focused agents and meters (ADR 0040)
 
 ## Brand logos and artwork (0.31.0)
 

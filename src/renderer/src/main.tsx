@@ -16,6 +16,7 @@ import './agents.css'
 import './codex.css'
 import './workspace.css'
 import './art.css'
+import './aura.css'
 import App from './App'
 import { ToastProvider } from './toast'
 

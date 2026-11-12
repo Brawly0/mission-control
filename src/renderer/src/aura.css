@@ -1,0 +1,64 @@
+/* ============================================================
+   Aura finish (ADR 0040), dark theme only. The colors come from the
+   Aura tokens in styles.css; this file adds the glow treatment from
+   the reference: luminous accent edges, blue-violet meters, glass panels.
+   ============================================================ */
+:root:not([data-theme='light']) {
+  --aura-violet: #8f7dff;
+  --aura-edge: rgba(102, 139, 255, 0.55);
+  --aura-glow: 0 0 0 1px rgba(102, 139, 255, 0.28), 0 0 18px rgba(102, 139, 255, 0.22), 0 0 42px rgba(143, 125, 255, 0.1);
+  --chart-bar: #668bff;
+}
+
+/* Primary actions: dark glass with a glowing accent edge, like "New Agent" in the reference. */
+:root:not([data-theme='light']) .btn-primary,
+:root:not([data-theme='light']) .dash-action.primary {
+  background: linear-gradient(180deg, rgba(102, 139, 255, 0.24), rgba(102, 139, 255, 0.12));
+  border: 1px solid var(--aura-edge);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 16px rgba(102, 139, 255, 0.24);
+}
+:root:not([data-theme='light']) .btn-primary:hover:not(:disabled),
+:root:not([data-theme='light']) .dash-action.primary:hover {
+  background: linear-gradient(180deg, rgba(102, 139, 255, 0.34), rgba(102, 139, 255, 0.18));
+  border-color: rgba(134, 163, 255, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 22px rgba(102, 139, 255, 0.36);
+}
+:root:not([data-theme='light']) .dash-action.primary .small {
+  color: var(--text-2);
+}
+
+/* Active nav: a quiet raised row with a thin accent edge instead of a bright fill. */
+:root:not([data-theme='light']) .sidebar .nav-item.active {
+  background: linear-gradient(90deg, rgba(102, 139, 255, 0.16), rgba(102, 139, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(102, 139, 255, 0.24);
+}
+
+/* The focused agent terminal glows, like the active session card. */
+:root:not([data-theme='light']) .agent-stage.grid .agent-cell.focused {
+  border-color: var(--aura-edge);
+  box-shadow: var(--aura-glow);
+}
+
+/* Progress meters use the blue-violet gradient; warn/high keep their status colors. */
+:root:not([data-theme='light']) .meter-track > span:not(.warn):not(.high),
+:root:not([data-theme='light']) .meter-fill:not(.warn):not(.high):not(.meter-projected) {
+  background: linear-gradient(90deg, var(--accent), var(--aura-violet));
+  box-shadow: 0 0 8px rgba(102, 139, 255, 0.35);
+}
+
+/* Focus rings glow softly instead of a hard outline. :where() keeps the base
+   specificity, so fields that opt out with `outline: none` still do. */
+:where(:root:not([data-theme='light'])) :focus-visible {
+  outline: 1px solid var(--aura-edge);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(102, 139, 255, 0.18);
+}
+/* Inputs wrapped in a search field: the wrapper glows, not the bare input. */
+:root:not([data-theme='light']) :is(.search-box, .toolbar-search, .shortcuts-search, .palette-input) input:focus-visible {
+  box-shadow: none;
+}
+:root:not([data-theme='light']) :is(.search-box, .toolbar-search, .shortcuts-search):focus-within {
+  border-color: var(--aura-edge);
+  box-shadow: 0 0 0 3px rgba(102, 139, 255, 0.14), 0 0 18px rgba(102, 139, 255, 0.16);
+}
