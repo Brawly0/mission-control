@@ -134,7 +134,7 @@ When the process exits, the task moves to **Review**, whether it succeeded, fail
 
 ## Updates
 
-`updater.ts` wraps electron-updater. Packaged builds check `Brawly0/mission-control-releases` 15 seconds after start and every 6 hours (setting `autoUpdate`), download in the background, and install on the next restart or right away from **Update ready · Restart**. See ADR 0006 for why releases live in a separate public repo.
+`updater.ts` wraps electron-updater. Packaged builds check `Brawly0/mission-control` 15 seconds after start and every 6 hours (setting `autoUpdate`), download in the background, and install on the next restart or right away from **Update ready · Restart**. Releases and source share the one public repo (see ADR 0006 for the history).
 
 ## Tray, hotkey, close to tray
 

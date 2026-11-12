@@ -21,3 +21,7 @@ Publish installers to a separate **public** repo, `Brawly0/mission-control-relea
 - Release assets are public; the source isn't.
 - The installer isn't code-signed, so SmartScreen may warn on first install. Updates install silently once the app is installed.
 - Only packaged builds check for updates; `npm run dev` never does.
+
+## Update (2026-11-12)
+
+The source moved into the public repo, renamed from `mission-control-releases` to `Brawly0/mission-control`, and `claude-hub` was deleted. Releases and source now live in one repo. GitHub redirects the old name, so installed copies built against `mission-control-releases` keep updating. Never create a new repo named `mission-control-releases`, because that would break the redirect.

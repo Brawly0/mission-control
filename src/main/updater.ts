@@ -3,7 +3,7 @@ import electronUpdater from 'electron-updater'
 import type { UpdateState } from '../shared/types'
 
 /**
- * App updates from the public releases repo (Brawly0/mission-control-releases, configured under
+ * App updates from the public repo (Brawly0/mission-control, configured under
  * "publish" in package.json). Updates download in the background and install when the app restarts,
  * or right away with Update now (the top-bar button). Checks run every 30 minutes and when you come
  * back to the window. Only packaged builds update; `npm run dev` never does.

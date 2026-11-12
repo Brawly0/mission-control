@@ -1,4 +1,4 @@
-// Publishes the current package.json version to Brawly0/mission-control-releases, which installed
+// Publishes the current package.json version to Brawly0/mission-control, which installed
 // copies auto-update from.
 //
 // Usage:  node scripts/release.mjs "What changed in this version"
@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import asar from '@electron/asar'
 
-const REPO = 'Brawly0/mission-control-releases'
+const REPO = 'Brawly0/mission-control'
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const tag = `v${version}`
 const draftOnly = process.argv.includes('--draft-only')

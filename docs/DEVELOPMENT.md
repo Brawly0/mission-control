@@ -85,7 +85,7 @@ It also checks shared briefing preview/save/refresh, preserving manual decisions
 
 `scripts/check-installer.ps1` exercises install, upgrade and uninstall using separate `MissionControlInstallCheck` installers under `out/install-check-old` (0.24.99) and `out/install-check-new` (the release version). Build these with a distinct appId (`com.brawly0.missioncontrol.installcheck`), productName (`MissionControlInstallCheck`), extraMetadata.name (`mission-control-install-check`), matching shortcutName and nsis.runAfterFinish=false. Keep normal per-user NSIS settings, including deleteAppDataOnUninstall=false. This prevents interference with the daily-use install. The script verifies executable replacement, preserved fixture data and shortcut cleanup.
 
-`npm run publish-release -- --draft-only --notes-file <notes.md>` builds, uploads and validates a draft without publishing. Review it, then publish with GitHub CLI. The ordinary command publishes after the same gates pass. Every release includes SHA256SUMS.txt alongside the installer, blockmap and latest.yml. The source repository remains private; `Brawly0/mission-control-releases` is the public download repository.
+`npm run publish-release -- --draft-only --notes-file <notes.md>` builds, uploads and validates a draft without publishing. Review it, then publish with GitHub CLI. The ordinary command publishes after the same gates pass. Every release includes SHA256SUMS.txt alongside the installer, blockmap and latest.yml. The source repository remains private; `Brawly0/mission-control` is the public download repository.
 
 `npm run dist` builds `release/Mission Control Setup <version>.exe` with electron-builder (NSIS, one-click, per-user). The app icon is `build/icon.svg`; run `npm run icon` after editing it to regenerate `build/icon.png`, which electron-builder turns into the `.ico`.
 
@@ -102,7 +102,7 @@ $env:MC_SMOKE = "$PWD\smoke.png"; $env:MC_SMOKE_LOG = "$PWD\smoke.log"
 
 ## Releasing an update
 
-Installed copies update from the public repo [Brawly0/mission-control-releases](https://github.com/Brawly0/mission-control-releases). It holds only installers; the source stays in this private repo.
+Installed copies update from the public repo [Brawly0/mission-control](https://github.com/Brawly0/mission-control). The same repo holds the source and the installers.
 
 1. Bump `version` in `package.json` (for example 0.6.0 → 0.6.1). Auto-update only offers a higher version.
 2. Publish (uses your `gh` login for this run only):

@@ -2,7 +2,7 @@
 
 A Windows desktop workspace for Claude Code and Codex: keep projects, chats, agents, commands and code review together.
 
-[Download the latest Windows installer](https://github.com/Brawly0/mission-control-releases/releases/latest) | [Release notes](https://github.com/Brawly0/mission-control-releases/releases) | [Report a problem](https://github.com/Brawly0/mission-control-releases/issues/new/choose)
+[Download the latest Windows installer](https://github.com/Brawly0/mission-control/releases/latest) | [Release notes](https://github.com/Brawly0/mission-control/releases) | [Report a problem](https://github.com/Brawly0/mission-control/issues/new/choose)
 
 ![Mission Control in dark mode](docs/images/home-dark.png)
 
@@ -65,4 +65,4 @@ Include the app version, Windows version and reproduction steps in a bug report.
 
 ## Development
 
-The source repository is private. The public download repository hosts installers, release notes and the update feed. Internal build and verification instructions are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+This repository holds the source code, installers, release notes and the update feed. Build and verification instructions are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
