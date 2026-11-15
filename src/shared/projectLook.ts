@@ -395,3 +395,10 @@ When you compact this conversation, write the summary as a session briefing for 
 the goal; what's done and verified (and what isn't); decisions made and why; open problems; the exact next
 steps; gotchas; and the files that matter.
 `
+
+/** Claude CLI arguments for a My PC chat: the prompt (if any), then access to every drive. */
+export function myPcArgs(prompt: string | undefined, dirs: string[]): string[] {
+  const p = prompt?.trim()
+  // --add-dir takes several values, so it goes after the prompt or it would swallow it.
+  return [...(p ? [p] : []), ...(dirs.length ? ['--add-dir', ...dirs] : [])]
+}

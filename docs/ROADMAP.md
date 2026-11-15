@@ -1,5 +1,11 @@
 # Roadmap
 
+## My PC advisor (0.35.0)
+
+- [x] My PC: a permanent ~/My PC workspace where Claude is a personal PC advisor (looks, explains, recommends, asks before changing anything). It knows the machine (PC-PROFILE.md, surveyed daily: hardware, drives, apps, startup, network, projects, connectors), knows you (ABOUT-ME.md, which it keeps up to date), reaches every drive and all MCP connectors, and logs to PC-LOG.md. Ask my PC box on Home, palette entry and Ctrl+Alt+P (ADR 0041)
+- [x] The C: drive project is folded into My PC: its chats, notes and tags show there and it leaves the sidebar
+- [x] Briefing button and Broadcast press Enter as a separate keystroke, so the prompt is sent instead of sitting in the input box
+
 ## README titles and glass avatars (0.34.0)
 
 - [x] Project names read past centered HTML heroes in READMEs (`<p align="center">`, logos, badges): the `# heading` or `<h1>` inside wins, then the logo's alt text, then the first text line. Fixes projects named `p align="center">`

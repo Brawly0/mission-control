@@ -40,6 +40,7 @@ export const SHORTCUTS: ShortcutDef[] = [
 
   { id: 'newSession', label: 'New Claude session', group: 'Project', keys: ['Ctrl+N'] },
   { id: 'quickChat', label: 'Quick chat (temporary folder)', group: 'Project', keys: ['Ctrl+Alt+N'] },
+  { id: 'myPc', label: 'My PC advisor (general help with your computer)', group: 'Project', keys: ['Ctrl+Alt+P'] },
   { id: 'briefingSession', label: 'New session from latest briefing', group: 'Project', keys: ['Ctrl+Alt+B'] },
   { id: 'newProject', label: 'New project', group: 'Project', keys: ['Ctrl+Shift+O'] },
   { id: 'newWorktreeSession', label: 'New session in a worktree', group: 'Project', keys: ['Ctrl+Shift+N'] },

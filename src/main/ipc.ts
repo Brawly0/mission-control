@@ -65,6 +65,7 @@ import { loadStore, updateStore } from './store'
 import { worktreeParent } from '../shared/projectLook'
 import { contextUsage, startupReport } from './spend'
 import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing } from './briefings'
+import { ensureMyPc } from './myPc'
 import { codexStatus, claudeStatus, createProject, deleteNote, invalidateKnowledge, knowledgeDocs, listNotes, quickChatFolder, saveNote, searchKnowledge, userName } from './hub'
 import { refreshPlanUsage } from './planUsage'
 import { planRate } from './planCost'
@@ -197,6 +198,7 @@ export function registerIpc(): void {
   })
   ipcMain.handle('projects:create', (_e, opts: { parent: string; name: string; claudeMd: boolean; git: boolean }) => createProject(opts))
   ipcMain.handle('chat:quickFolder', () => quickChatFolder())
+  ipcMain.handle('chat:myPc', () => ensureMyPc())
   ipcMain.handle('notes:list', () => listNotes())
   ipcMain.handle('notes:save', (_e, note: Partial<Note>) => saveNote(note))
   ipcMain.handle('notes:delete', (_e, id: string) => deleteNote(id))

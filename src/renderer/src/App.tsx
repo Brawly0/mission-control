@@ -57,6 +57,7 @@ import { useAgents } from './app/useAgents'
 import { useTasks } from './app/useTasks'
 import { useWorkspaces } from './app/useWorkspaces'
 import { briefingPrompt, worktreeParent } from '@shared/projectLook'
+import { askMyPc } from './app/myPc'
 import { resumeArgs } from './agentStatus'
 import { TOOL_NAME } from '@shared/handoff'
 
@@ -754,6 +755,7 @@ export default function App() {
                   await launch({ kind: tool, cwd: path, projectPath: path, projectName: name, title: `${name} · ${tool === 'codex' ? 'Codex' : 'Claude'}` })
                 } catch (e) { toast('error', 'Could not start the chat', errorMessage(e)) }
               }}
+              onAskMyPc={(prompt) => void askMyPc({ launch, toast, refreshProjects }, prompt)}
               onRunScript={() => { if (selected) { setView('project'); openDock('run') } }}
               onTogglePin={(p) => void window.mc.togglePin(p.path).then(refreshProjects)}
               onOpenAgent={focusAgent}

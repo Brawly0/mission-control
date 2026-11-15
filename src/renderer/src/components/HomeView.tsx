@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { ArrowRight, Bot, Check, CheckCheck, CheckSquare, Clock3, CodeXml, FileText, Folder, FolderOpen, LayoutGrid, ListChecks, MessageSquare, MoreVertical, Pin, Play, Settings2, Sun, Users } from 'lucide-react'
+import { ArrowRight, Bot, Check, CheckCheck, CheckSquare, Clock3, CodeXml, Cpu, FileText, Folder, FolderOpen, LayoutGrid, ListChecks, MessageSquare, MoreVertical, Pin, Play, Send, Settings2, Sun, Users } from 'lucide-react'
 import type { AgentTool, DashboardActivity, DashboardDay, Project, RateLimitInfo, RecentSession, Task, VibeStats } from '@shared/types'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
@@ -11,6 +11,7 @@ import { activityPeriod, calendarDay, DAY, dayKey, durationPresentation, TIME_HI
 import VibeStatsPanel, { VIBE_HINT } from './VibeStatsPanel'
 import projectsArt from '../art/empty-projects.webp'
 import chatsArt from '../art/empty-chats.webp'
+import { MY_PC_SUGGESTIONS } from '../app/myPc'
 import '../home.css'
 
 interface Props {
@@ -31,6 +32,8 @@ interface Props {
   onTogglePin: (p: Project) => void
   onShortcut: (id: string) => void
   onChat: (tool: AgentTool) => void
+  /** Opens the My PC advisor, sending the question when there is one. */
+  onAskMyPc: (prompt?: string) => void
   onRunScript: () => void
   currentProject?: string
 }
@@ -121,6 +124,7 @@ export default function HomeView(props: Props) {
       <div className="hd-heading"><h1>{greeting()}{userName && <>, <span className="hd-name">{userName}</span></>}</h1><p>Build faster. Smarter. All in one place.</p></div>
       <dl className="hd-summary"><div><dd>{activity ? compact(activity.activeDays) : '—'}</dd><dt>active days / all time</dt></div><div><dd>{activity ? compact(activity.sessions) : '—'}</dd><dt>sessions / all time</dt></div><div title={VIBE_HINT}><dd>{stats ? timeLabel(stats.time.minutes) : '—'}</dd><dt>vibe coding / all time</dt></div></dl>
     </header>
+    <AskMyPc onAsk={props.onAskMyPc} />
     <section className="hd-launch-grid" aria-label="Start something new">
       <button className="hd-launch hd-tone-claude" onClick={() => props.onChat('claude')} title={props.currentProject ? `Start Claude in ${props.currentProject}` : 'Start a quick chat with Claude'}><span className="hd-launch-icon"><ProviderIcon tool="claude" /></span><span className="hd-launch-copy"><strong>Chat with Claude</strong><small>Plan, build, debug</small></span></button>
       <button className="hd-launch hd-tone-codex" onClick={() => props.onChat('codex')} title={props.currentProject ? `Start Codex in ${props.currentProject}` : 'Start a quick chat with Codex'}><span className="hd-launch-icon"><ProviderIcon tool="codex" /></span><span className="hd-launch-copy"><strong>Chat with Codex</strong><small>Code, refactor, automate</small></span></button>
@@ -175,4 +179,21 @@ export default function HomeView(props: Props) {
     </section>
     {!!live.length && <div className="hd-live-strip"><span>Open agents</span>{live.slice(0, 4).map(agent => { const status = displayStatus(agent, lastOutput[agent.id]); return <button className="hd-agent-link" key={agent.id} onClick={() => props.onOpenAgent(agent.id)} title={`${agent.title}: ${status.label}`}><span className={`dot ${status.cls}`} />{agent.title}</button> })}</div>}
   </div>
+}
+
+/** "Ask my PC": general help with the computer, answered by the My PC advisor workspace. */
+function AskMyPc({ onAsk }: { onAsk: (prompt?: string) => void }) {
+  const [text, setText] = useState('')
+  const ask = (prompt?: string) => {
+    onAsk(prompt)
+    setText('')
+  }
+  return <section className="hd-askpc" aria-label="Ask my PC">
+    <form className="hd-askpc-bar" onSubmit={e => { e.preventDefault(); ask(text) }}>
+      <span className="hd-askpc-icon"><Cpu size={19} /></span>
+      <input value={text} onChange={e => setText(e.target.value)} placeholder="Ask your PC advisor anything about this computer…" aria-label="Question for your PC advisor" />
+      <button type="submit" className="hd-askpc-send" title={text.trim() ? 'Ask My PC' : 'Open a My PC chat'}><Send size={14} />{text.trim() ? 'Ask' : 'Open'}</button>
+    </form>
+    <div className="hd-askpc-chips">{MY_PC_SUGGESTIONS.map(s => <button key={s} onClick={() => ask(s)}>{s}</button>)}</div>
+  </section>
 }

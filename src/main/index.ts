@@ -1,3 +1,4 @@
+import { ensureMyPc, prepareMyPc, refreshPcProfileIfStale } from './myPc'
 import { readiness } from './readiness'
 import { stopAllProjectCommands } from './projectCommands'
 import { app, BrowserWindow } from 'electron'
@@ -90,6 +91,13 @@ app.whenReady().then(async () => {
   // Budget warnings: now and then, and after every task (above).
   setTimeout(() => void checkBudgetWarnings(budgetWarning), 20_000)
   setInterval(() => void checkBudgetWarnings(budgetWarning), 10 * 60_000)
+  // My PC advisor: folder, files and the one-time fold of C: before the first project list; the
+  // PC profile is surveyed shortly after start and then daily.
+  if (!process.env.MC_SMOKE) {
+    try { prepareMyPc() } catch (e) { console.error('My PC setup failed:', (e as Error).message) }
+    setTimeout(() => void ensureMyPc().catch(() => undefined), 20_000)
+    setInterval(() => void refreshPcProfileIfStale().catch(() => undefined), 6 * 60 * 60_000)
+  }
   createWindow()
   // Explicit maintenance/startup action. Uses normal coordinator checks and never replans a team.
   const liveTeamId = process.argv.find(arg => arg.startsWith('--resume-task-team-in-cli='))?.split('=')[1]

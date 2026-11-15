@@ -980,6 +980,8 @@ export interface MissionControlApi {
   createProject(opts: { parent: string; name: string; claudeMd: boolean; git: boolean }): Promise<string>
   /** A fresh temp folder for a throwaway chat. */
   quickChatFolder(): Promise<string>
+  /** Sets up the permanent My PC advisor workspace if needed; its folder and the drives a chat there may reach. */
+  myPc(): Promise<{ path: string; dirs: string[] }>
   listNotes(): Promise<Note[]>
   saveNote(note: Partial<Note>): Promise<Note>
   deleteNote(id: string): Promise<void>

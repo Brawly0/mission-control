@@ -366,7 +366,8 @@ export async function listProjects(): Promise<Project[]> {
     if (!byPath.has(norm)) byPath.set(norm, blank(path, true))
   }
 
-  const list = [...byPath.values()].filter((p) => p.manual || existsSync(p.path) || p.sessionCount > 0)
+  const merged = store.mergedProjects ?? {}
+  const list = [...byPath.values()].filter((p) => !merged[normalizePath(p.path)] && (p.manual || existsSync(p.path) || p.sessionCount > 0))
   await Promise.all(list.map(async (p) => Object.assign(p, await describe(p.path, p.meta))))
   return list.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity - a.lastActivity)
 }
@@ -407,7 +408,9 @@ async function matchStrayChats(
   for (const f of found) {
     for (const c of f.chats) {
       const mine = own[c.id]
-      const target = mine ?? (strays.includes(f) ? pickProject(folders[c.id] ?? [], f.path, rootOf) : null)
+      // Your own move wins, then the project the chat actually worked in, then the project this
+      // folder was folded into (C:\ into My PC).
+      const target = mine ?? (strays.includes(f) ? pickProject(folders[c.id] ?? [], f.path, rootOf) : null) ?? store.mergedProjects?.[normalizePath(f.path)] ?? null
       if (!target || normalizePath(target) === normalizePath(f.path) || !existsSync(target)) continue
       next.set(c.id, { path: target, key: f.key, from: f.path, byYou: !!mine })
       const fromProject = byPath.get(normalizePath(worktreeParent(f.path)?.parent ?? f.path))

@@ -1,6 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { AppSettings, Project } from '@shared/types'
 import { briefingFileName, writeBriefingPrompt } from '@shared/projectLook'
+import { askMyPc } from './myPc'
+import { sendPrompt } from '@shared/terminalInput'
 import type { Agent, AgentLayout, LaunchOptions, View } from '../types'
 import type { useToast } from '../toast'
 import { errorMessage } from '../util'
@@ -98,6 +100,7 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
     },
     goSkills: () => setView('skills'),
     toggleEco: () => void c.toggleEco(),
+    myPc: () => void askMyPc(c),
     quickChat: () =>
       void window.mc
         .quickChatFolder()
@@ -129,7 +132,8 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
     },
     writeBriefing: () => {
       if (!active || active.kind === 'shell' || active.exited) return
-      window.mc.ptyWrite(active.id, writeBriefingPrompt(`docs/briefings/${briefingFileName(Date.now(), active.title).replace(/\.md$/, '')}.md`) + '\r')
+      const file = `docs/briefings/${briefingFileName(Date.now(), active.title).replace(/\.md$/, '')}.md`
+      sendPrompt((data) => window.mc.ptyWrite(active.id, data), writeBriefingPrompt(file))
       setView('agents')
       c.setActiveAgent(active.id)
       toast('info', `Asked ${active.title} for a briefing`, 'It writes it to docs/briefings/ in its folder.')

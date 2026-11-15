@@ -38,6 +38,10 @@ export interface StoreData {
   chatTitles: Record<string, string>
   /** Project folder you filed a chat under (Move to project), by session id. */
   chatProjects: Record<string, string>
+  /** Folders folded into another project (lower-cased path → target), e.g. C: into My PC: their chats show there and the folder leaves the list. */
+  mergedProjects: Record<string, string>
+  /** Setup steps of the My PC workspace already applied (see myPc.ts). */
+  myPcVersion: number
   /** Chats already reported as expensive today: { day: "2026-10-24", ids }. */
   costAlerted: { day: string; ids: string[] }
   /** Plan-limit alerts already shown, as "window@resetsAt:kind", so each fires once per window. */
@@ -75,6 +79,8 @@ const defaults: StoreData = {
   budgetWarned: {},
   chatTitles: {},
   chatProjects: {},
+  mergedProjects: {},
+  myPcVersion: 0,
   costAlerted: { day: '', ids: [] },
   limitAlerted: [],
   notes: [],

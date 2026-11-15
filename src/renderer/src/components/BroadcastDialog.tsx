@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Send, X } from 'lucide-react'
-import { promptInput } from '@shared/terminalInput'
+import { sendPrompt } from '@shared/terminalInput'
 import { briefingFileName, writeBriefingPrompt } from '@shared/projectLook'
 import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
@@ -42,10 +42,7 @@ export default function BroadcastDialog({ agents, lastOutput, onClose }: Props) 
     let sent = 0
     for (const a of targets) {
       const prompt = text.trim() === '{{briefing}}' ? writeBriefingPrompt(`docs/briefings/${briefingFileName(Date.now(), a.title)}`) : text
-      const input = promptInput(prompt, submit)
-      if (!input) continue
-      window.mc.ptyWrite(a.id, input)
-      sent++
+      if (sendPrompt((data) => window.mc.ptyWrite(a.id, data), prompt, submit)) sent++
     }
     if (!sent) return
     toast('success', `Sent to ${sent} ${sent === 1 ? 'agent' : 'agents'}`, submit ? 'Agents that were busy take it when they finish.' : 'Typed in, not sent: press Enter in each agent to send.')

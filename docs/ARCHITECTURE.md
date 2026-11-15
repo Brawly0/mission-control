@@ -30,6 +30,7 @@ src/
     updater.ts     auto-update via electron-updater (public releases repo)
     briefings.ts   session briefings: saves compaction summaries to docs/briefings/ (ADR 0012)
     hub.ts         notes, Knowledge (docs across projects), Claude Code status, greeting name, quick chats, new projects
+    myPc.ts        the My PC advisor workspace (~/My PC: CLAUDE.md, PC-PROFILE.md survey, ABOUT-ME.md, PC-LOG.md; folds C: in); pure parts in myPcTemplate.ts
     planUsage.ts   plan limits (session / weekly) polled from your Claude account with Claude Code's saved login, read-only (ADR 0013)
     planCost.ts    saves plan readings, caches the plan-cost rate, records Eco chats (ADR 0016)
     digest.ts      the daily digest: builds it, and decides when the notification is due (ADR 0016)

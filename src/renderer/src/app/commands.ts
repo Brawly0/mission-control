@@ -4,6 +4,7 @@ import {
   Bell,
   BookOpen,
   Bot,
+  Cpu,
   Download,
   FileStack,
   FolderOpen,
@@ -98,6 +99,7 @@ export function paletteCommands(c: CommandContext): Command[] {
     { id: 'toggle-eco', group: 'View', title: c.appSettings?.eco?.enabled ? 'Turn Eco mode off' : 'Turn Eco mode on', icon: Leaf, keywords: 'eco save usage credits tokens cheaper', run: () => runShortcut('toggleEco') },
     { id: 'new-project', group: 'Actions', title: 'New project…', icon: FolderPlus, keywords: 'create folder', run: c.openNewProject },
     { id: 'quick-chat', group: 'Actions', title: 'Quick chat', icon: MessageSquareDashed, keywords: 'temporary scratch', run: () => runShortcut('quickChat') },
+    { id: 'my-pc', group: 'Actions', title: 'Ask my PC (advisor)', icon: Cpu, keywords: 'computer windows general help advisor disk slow install', run: () => runShortcut('myPc') },
     { id: 'new-note', group: 'Actions', title: 'New note', icon: NotebookPen, keywords: 'notebook write', run: () => runShortcut('newNote') },
     { id: 'new-task', group: 'Actions', title: 'New task…', icon: ListPlus, keywords: 'kanban headless background', run: c.openComposer },
     { id: 'templates', group: 'Actions', title: 'Task templates and schedules', icon: FileStack, keywords: 'recurring cron repeat', run: c.openTemplates },
@@ -166,7 +168,7 @@ export function paletteCommands(c: CommandContext): Command[] {
   // Show each command's shortcut.
   const shortcutOf: Record<string, string> = {
     'go-home': 'goHome', 'go-inbox': 'goInbox', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
-    'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco', broadcast: 'broadcast',
+    'new-project': 'newProject', 'quick-chat': 'quickChat', 'my-pc': 'myPc', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco', broadcast: 'broadcast',
     'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
     'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
     add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',

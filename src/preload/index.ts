@@ -37,6 +37,7 @@ const api: MissionControlApi = {
   pickFolder: (title) => ipcRenderer.invoke('dialog:folder', title),
   createProject: (opts) => ipcRenderer.invoke('projects:create', opts),
   quickChatFolder: () => ipcRenderer.invoke('chat:quickFolder'),
+  myPc: () => ipcRenderer.invoke('chat:myPc'),
   listNotes: () => ipcRenderer.invoke('notes:list'),
   saveNote: (note) => ipcRenderer.invoke('notes:save', note),
   deleteNote: (id) => ipcRenderer.invoke('notes:delete', id),
