@@ -62,3 +62,22 @@
   border-color: var(--aura-edge);
   box-shadow: 0 0 0 3px rgba(102, 139, 255, 0.14), 0 0 18px rgba(102, 139, 255, 0.16);
 }
+
+/* Project avatars: monochrome dark-glass tiles instead of rainbow fills. The project's
+   hue survives only as a faint tint on the glyph, so projects stay tellable apart. */
+:root:not([data-theme='light']) .avatar {
+  background: linear-gradient(180deg, #1a1c27, #0f1016);
+  border-color: #2a2d3b;
+  color: color-mix(in oklab, hsl(var(--hue, 220) 75% 76%) 32%, #c9c9d6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 0.14s, box-shadow 0.14s, color 0.14s;
+}
+:root:not([data-theme='light']) .project-item:hover .avatar {
+  border-color: #353948;
+  color: color-mix(in oklab, hsl(var(--hue, 220) 75% 78%) 45%, #e4e4ec);
+}
+:root:not([data-theme='light']) .project-item.selected .avatar {
+  border-color: var(--aura-edge);
+  color: #dfe6ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 12px rgba(102, 139, 255, 0.3);
+}

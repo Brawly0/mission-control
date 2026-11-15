@@ -34,7 +34,7 @@ export function guessIcon(folderName: string, readme: string, path = ''): Projec
   for (const [re, icon] of ICON_RULES) if (re.test(folder)) return icon
   // Then the README's title ("WBP · Journal & Intel"), which says what the project is.
   const text = readme.slice(0, 3000)
-  const title = text.split(/\r?\n/).find((l) => l.trim()) ?? ''
+  const title = readmeInfo(text, folderName).title
   for (const [re, icon] of ICON_RULES) if (re.test(title)) return icon
   // Then the kind the README mentions most, so a passing word ("…icons (game, journal…)") doesn't
   // decide it. Ties go to the earlier rule.
@@ -49,6 +49,8 @@ export function guessIcon(folderName: string, readme: string, path = ''): Projec
 /** Cleans Markdown out of a one-line heading. */
 function plain(line: string): string {
   return line
+    .replace(/<[^>]*>?/g, '')
+    .replace(/&nbsp;/g, ' ')
     .replace(/!\[[^\]]*]\([^)]*\)/g, '')
     .replace(/\[([^\]]*)]\([^)]*\)/g, '$1')
     .replace(/[*_`~]/g, '')
@@ -62,17 +64,76 @@ function calmCaps(s: string): string {
   return s.replace(/\p{L}+/gu, (w) => (w.length <= 3 ? w : w[0] + w.slice(1).toLowerCase()))
 }
 
+const BLOCK_OPEN = /<(div|p|picture|center|table|section|header|h[1-6])\b/gi
+const BLOCK_CLOSE = /<\/(div|p|picture|center|table|section|header|h[1-6])>/gi
+const BADGE = /badge|shields\.io/i
+
+/**
+ * Finds the README line that names the project. Many READMEs open with a centered HTML "hero"
+ * (`<p align="center"><img …></p>`, badges, `<div align="center">…</div>`); inside that, the
+ * title is its `# Heading` or `<h1>`, else the logo's alt text, else its first line of text.
+ * For an alt-text title, `i` points just before the hero's first text so the description starts there.
+ */
+function pickHeading(lines: string[]): { i: number; heading: string } | null {
+  const first = lines.findIndex((l) => l.trim())
+  if (first < 0) return null
+  const firstLine = lines[first].trim()
+  if (!firstLine.startsWith('<') && plain(firstLine)) return { i: first, heading: firstLine }
+
+  let depth = 0
+  let inTag = false // inside a tag that spans lines: `<img src="…"` … `alt="…">`
+  let textAt = -1
+  const hero: string[] = []
+  for (let j = first; j < lines.length && j < first + 80; j++) {
+    const l = lines[j].trim()
+    const wasInTag = inTag
+    if (inTag) {
+      if (l.includes('>')) inTag = false
+    } else if (/<[a-z][^>]*$/i.test(l)) inTag = true
+    if (wasInTag || !l) {
+      hero.push(l)
+      continue
+    }
+    const html = /<h1[^>]*>(.*?)<\/h1>/i.exec(l)
+    if (html && plain(html[1])) return { i: j, heading: html[1] }
+    if (/^#\s+/.test(l) && plain(l)) return { i: j, heading: l }
+    const words = inTag ? '' : plain(l)
+    const isText = words && !/^#{2,6}\s/.test(l)
+    // Ordinary Markdown once the hero's HTML has closed: the hero is over.
+    if (depth === 0 && words && !l.startsWith('<')) {
+      if (textAt < 0 && isText) textAt = j
+      break
+    }
+    if (textAt < 0 && isText) textAt = j
+    hero.push(l)
+    depth = Math.max(0, depth + (l.match(BLOCK_OPEN)?.length ?? 0) - (l.match(BLOCK_CLOSE)?.length ?? 0))
+  }
+  const at = textAt >= 0 ? textAt - 1 : first
+  const joined = hero.join(' ')
+  for (const m of joined.matchAll(/<img\b[^>]*>/gi)) {
+    const alt = /\balt\s*=\s*"([^"]*)"/i.exec(m[0])?.[1]
+    if (alt && !BADGE.test(m[0]) && plain(alt)) return { i: at, heading: alt.replace(/&amp;/g, '&') }
+  }
+  for (const m of joined.matchAll(/!\[([^\]]+)]\(([^)]*)\)/g)) {
+    if (!BADGE.test(m[0]) && plain(m[1])) return { i: at, heading: m[1] }
+  }
+  return textAt >= 0 ? { i: textAt, heading: lines[textAt].trim() } : null
+}
+
 /**
  * Reads a project's title and one-line description from its README text.
  * Returns empty strings when the README has nothing useful.
  */
 export function readmeInfo(text: string, folderName: string): { title: string; description: string } {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/)
-  let i = lines.findIndex((l) => l.trim())
-  if (i < 0) return { title: '', description: '' }
-  let heading = lines[i].trim()
+  const lines = text
+    .replace(/^\uFEFF/, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split(/\r?\n/)
+  const picked = pickHeading(lines)
+  if (!picked) return { title: '', description: '' }
+  let { i, heading } = picked
   // "Title\n=====" style heading, or a "# Title" one. A plain first line counts too (README.txt).
-  heading = heading.replace(/^#{1,6}\s+/, '')
+  heading = heading.trim().replace(/^#{1,6}\s+/, '')
   if (/^[=-]{3,}$/.test(lines[i + 1]?.trim() ?? '')) i++
   let title = plain(heading)
   // "bot — map of this folder": keep the part before a long dash.
@@ -84,8 +145,13 @@ export function readmeInfo(text: string, folderName: string): { title: string; d
 
   let description = ''
   let inCode = false
+  let inTag = false
   for (let j = i + 1; j < lines.length && j < i + 25; j++) {
     const l = lines[j].trim()
+    if (inTag) {
+      if (l.includes('>')) inTag = false
+      continue
+    }
     if (l.startsWith('```')) {
       inCode = !inCode
       if (description) break
@@ -96,11 +162,22 @@ export function readmeInfo(text: string, folderName: string): { title: string; d
       if (description) break
       continue
     }
-    if (/^(#|```|[-*+] |\||>|<|!\[|\d+\. )/.test(l) || /^[=-]{3,}$/.test(l)) {
+    if (/^(#|```|[-*+] |\||>|\d+\. )/.test(l) || /^[=-]{3,}$/.test(l)) {
       if (description) break
       continue
     }
-    description += (description ? ' ' : '') + plain(l)
+    if (/<[a-z][^>]*$/i.test(l)) {
+      inTag = true
+      if (description) break
+      continue
+    }
+    // HTML lines count for their text (`<strong>Tagline</strong><br>`); tags, logos and badges alone don't.
+    const words = plain(l)
+    if (!words) {
+      if (description && l.startsWith('<')) break
+      continue
+    }
+    description += (description ? ' ' : '') + words
   }
   if (description.length > 160) description = description.slice(0, 157).replace(/\s+\S*$/, '') + '…'
   if (title.toLowerCase() === folderName.toLowerCase()) title = folderName

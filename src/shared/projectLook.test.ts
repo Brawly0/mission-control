@@ -45,6 +45,28 @@ describe('readmeInfo', () => {
     expect(readmeInfo('# [My App](https://x.y) **v2**', 'a').title).toBe('My App v2')
   })
 
+  it('skips HTML wrappers, logos and badges before the heading', () => {
+    const md = '<p align="center"><img src="docs/images/app.png" alt="App window" width="620"></p>\r\n\r\n# PcsConnector\r\n\r\nShare files between PCs.\r\n'
+    expect(readmeInfo(md, 'PcsConnector')).toEqual({ title: 'PcsConnector', description: 'Share files between PCs.' })
+    const multi = '<p align="center">\n  <img src="logo.png"\n       alt="Logo">\n</p>\n\n[![CI](https://x/b.svg)](https://x)\n\n# Course Scheduler\n'
+    expect(readmeInfo(multi, 'course-scheduler').title).toBe('Course Scheduler')
+    expect(readmeInfo('<!-- banner -->\n<div align="center">\n<h1>Mission Control</h1>\n</div>\n\nDesktop app.', 'x')).toEqual({
+      title: 'Mission Control',
+      description: 'Desktop app.'
+    })
+    expect(readmeInfo('<p align="center">\n</p>\n', 'x').title).toBe('')
+  })
+
+  it('reads a centered hero: its # heading, else the logo alt text, else its first text', () => {
+    const heading = '<div align="center">\n\n## 🔗 [**Live website**](https://x.io)\n\n# 🌊 The Hydrogen Garden\n\n### Dive deep.\n\n**Team A** · Challenge\n\n</div>'
+    expect(readmeInfo(heading, 'NASA')).toEqual({ title: 'The Hydrogen Garden', description: 'Team A · Challenge' })
+    const banner = '<p align="center">\n  <img src="banner.svg" alt="WBP — Journal &amp; Intel." width="100%">\n</p>\n\n<p align="center">\n  <strong>A private workspace.</strong><br>\n  Record the decision.\n</p>\n\n<p align="center">\n  <img src="https://img.shields.io/badge/x" alt="CI">\n</p>\n\n## The workspace\n'
+    expect(readmeInfo(banner, 'WBP')).toEqual({ title: 'WBP', description: 'A private workspace. Record the decision.' })
+    const logo = '<div align="center">\n\n<img src="logo.png" alt="AstroPixel: Mission Designer" width="560">\n\n### Design a mission.\n\nA pixel-art game.\n<br>For 1 to 4 players.\n\n</div>'
+    expect(readmeInfo(logo, 'Space')).toEqual({ title: 'AstroPixel: Mission Designer', description: 'A pixel-art game. For 1 to 4 players.' })
+    expect(readmeInfo('<p align="center"><img src="https://img.shields.io/badge/ok" alt="CI"></p>\n\nMy Tool\n', 'x').title).toBe('My Tool')
+  })
+
   it('returns nothing for an empty README', () => {
     expect(readmeInfo('\n\n', 'x')).toEqual({ title: '', description: '' })
   })

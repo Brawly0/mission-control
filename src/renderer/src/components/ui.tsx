@@ -54,14 +54,8 @@ export function Avatar({ name, path, size = 28, icon, hue: hueProp }: { name: st
   return (
     <span
       className="avatar"
-      style={{
-        width: size,
-        height: size,
-        fontSize: size * 0.4,
-        background: `hsl(${hue} 45% 22%)`,
-        color: `hsl(${hue} 80% 78%)`,
-        borderColor: `hsl(${hue} 45% 32%)`
-      }}
+      // Colors come from styles.css / aura.css via --hue, so each theme can style the tile its own way.
+      style={{ width: size, height: size, fontSize: size * 0.4, '--hue': hue } as CSSProperties}
     >
       {showIcon ? <Icon size={Math.round(size * 0.56)} strokeWidth={size < 20 ? 2.2 : 1.9} /> : initials(name)}
     </span>

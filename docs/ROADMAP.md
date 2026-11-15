@@ -1,5 +1,10 @@
 # Roadmap
 
+## README titles and glass avatars (0.34.0)
+
+- [x] Project names read past centered HTML heroes in READMEs (`<p align="center">`, logos, badges): the `# heading` or `<h1>` inside wins, then the logo's alt text, then the first text line. Fixes projects named `p align="center">`
+- [x] Project avatars as monochrome glass tiles in the dark theme, with a faint per-project tint and a glowing selected state (ADR 0040)
+
 ## Aura palette (0.32.0)
 
 - [x] Dark theme moves to the Aura palette: near-black base, periwinkle #668BFF accent with blue-violet gradients, softer success/warning/danger hues (ADR 0039)

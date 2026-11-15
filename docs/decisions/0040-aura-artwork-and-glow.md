@@ -15,6 +15,9 @@ the glowing accent edges of the reference design.
   edge, a quieter outlined active nav row, a glowing focused agent cell, blue-violet gradient meters (warn/high keep
   status colors), `--chart-bar` in the accent, and soft focus rings. The focus rule uses `:where()` so fields that set
   `outline: none` keep opting out; wrapped search fields glow on the wrapper instead.
+- **Project avatars** become monochrome dark-glass tiles in the dark theme. `Avatar` now passes only `--hue`; the
+  colors live in CSS, so the light theme keeps its colored tiles while dark keeps the hue only as a faint glyph tint
+  (32%, mixed into grey). The selected project's tile gets the accent edge and glow.
 
 ## Consequences
 The light theme only changes through the shared art (empty states, icon), which reads fine on light. The Codex prompt

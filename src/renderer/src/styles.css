@@ -278,7 +278,9 @@ code {
   justify-content: center;
   flex-shrink: 0;
   border-radius: 8px;
-  border: 1px solid;
+  border: 1px solid hsl(var(--hue, 220) 45% 32%);
+  background: hsl(var(--hue, 220) 45% 22%);
+  color: hsl(var(--hue, 220) 80% 78%);
   font-weight: 700;
   letter-spacing: 0.3px;
   font-family: var(--font-display);
