@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { ArrowRight, Bot, Check, CheckCheck, CheckSquare, Clock3, CodeXml, Cpu, FileText, Folder, FolderOpen, LayoutGrid, ListChecks, MessageSquare, MoreVertical, Pin, Play, Send, Settings2, Sun, Users } from 'lucide-react'
 import type { AgentTool, DashboardActivity, DashboardDay, Project, RateLimitInfo, RecentSession, Task, VibeStats } from '@shared/types'
 import type { Agent } from '../types'
+import { TASKS_UI } from '@shared/features'
+import { McLogo } from './McLogo'
 import { displayStatus } from '../agentStatus'
 import { timeAgo } from '../util'
 import { dueLabel } from '../due'
@@ -112,7 +114,7 @@ export default function HomeView(props: Props) {
   const working = live.filter(a => displayStatus(a, lastOutput[a.id]).cls === 'working').length, needYou = live.filter(a => a.hookStatus === 'needs-input').length
   const week = activityPeriod(daily, 'week', now), usage = activityPeriod(daily, range, now)
   const shownProjects = [...real].sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 4)
-  const idle = !live.length && !openTasks.length
+  const idle = TASKS_UI && !live.length && !openTasks.length
   const compact = (n: number) => n.toLocaleString([], { notation: 'compact', maximumFractionDigits: 1 })
   const timeline = [
     ...(recent ?? []).map(s => ({ id: `chat-${s.tool}-${s.id}`, at: s.updatedAt, title: `Session with ${s.tool === 'codex' ? 'Codex' : 'Claude'}`, detail: s.title || s.projectName, icon: MessageSquare, tone: s.tool === 'codex' ? 'blue' : 'orange', action: () => props.onResume(s) })),
@@ -125,18 +127,21 @@ export default function HomeView(props: Props) {
       <dl className="hd-summary"><div><dd>{activity ? compact(activity.activeDays) : '—'}</dd><dt>active days / all time</dt></div><div><dd>{activity ? compact(activity.sessions) : '—'}</dd><dt>sessions / all time</dt></div><div title={VIBE_HINT}><dd>{stats ? timeLabel(stats.time.minutes) : '—'}</dd><dt>vibe coding / all time</dt></div></dl>
     </header>
     <AskMyPc onAsk={props.onAskMyPc} />
-    <section className="hd-launch-grid" aria-label="Start something new">
+    <section className={`hd-launch-grid ${TASKS_UI ? '' : 'is-four'}`} aria-label="Start something new">
       <button className="hd-launch hd-tone-claude" onClick={() => props.onChat('claude')} title={props.currentProject ? `Start Claude in ${props.currentProject}` : 'Start a quick chat with Claude'}><span className="hd-launch-icon"><ProviderIcon tool="claude" /></span><span className="hd-launch-copy"><strong>Chat with Claude</strong><small>Plan, build, debug</small></span></button>
       <button className="hd-launch hd-tone-codex" onClick={() => props.onChat('codex')} title={props.currentProject ? `Start Codex in ${props.currentProject}` : 'Start a quick chat with Codex'}><span className="hd-launch-icon"><ProviderIcon tool="codex" /></span><span className="hd-launch-copy"><strong>Chat with Codex</strong><small>Code, refactor, automate</small></span></button>
+      <button className="hd-launch hd-tone-mc" onClick={() => onShortcut('newMc')} title={props.currentProject ? `Start mc in ${props.currentProject}: Claude and Codex split one prompt` : 'Open a project, then start mc: Claude and Codex split one prompt'}><span className="hd-launch-icon"><McLogo size={25} /></span><span className="hd-launch-copy"><strong>Duo with mc</strong><small>Claude + Codex, one prompt</small></span></button>
       <button className="hd-launch hd-tone-green" onClick={() => onShortcut('newProject')}><span className="hd-launch-icon"><Folder size={23} /></span><span className="hd-launch-copy"><strong>New Project</strong><small>Create or import</small></span></button>
+      {TASKS_UI && <>
       <button className="hd-launch hd-tone-purple" onClick={() => onShortcut('newTask')}><span className="hd-launch-icon"><CheckSquare size={23} /></span><span className="hd-launch-copy"><strong>New Task</strong><small>Add a task or reminder</small></span></button>
       <button className="hd-launch hd-tone-indigo" onClick={() => onShortcut('templates')}><span className="hd-launch-icon"><LayoutGrid size={23} /></span><span className="hd-launch-copy"><strong>Use Template</strong><small>Start with a template</small></span></button>
+      </>}
     </section>
-    <section className={`hd-stats ${idle ? 'is-idle' : ''}`} aria-label="Workspace overview">{[
+    <section className={`hd-stats ${idle ? 'is-idle' : ''} ${TASKS_UI ? '' : 'is-four'}`} aria-label="Workspace overview">{[
       { label: 'Projects', value: real.length.toLocaleString(), note: `${real.filter(p => p.lastActivity >= monday.getTime()).length} active this week`, icon: Folder, tone: 'green', go: 'goProjects' },
       { label: 'Chats', value: real.reduce((n, p) => n + p.sessionCount, 0).toLocaleString(), note: 'Across your projects', icon: MessageSquare, tone: 'blue', go: 'goSearch' },
       ...(!idle ? [
-        { label: 'Tasks', value: tasks.filter(t => !t.teamParentId).length.toLocaleString(), note: `${openTasks.length} open`, icon: ListChecks, tone: 'purple', go: 'goTasks' },
+        ...(TASKS_UI ? [{ label: 'Tasks', value: tasks.filter(t => !t.teamParentId).length.toLocaleString(), note: `${openTasks.length} open`, icon: ListChecks, tone: 'purple', go: 'goTasks' }] : []),
         { label: 'Agents', value: String(live.length), note: needYou ? `${needYou} need your attention` : working ? `${working} working now` : 'Open in your workspace', icon: Bot, tone: 'orange', go: 'goAgents' }
       ] : []),
       { label: 'Vibe coding / this week', value: stats ? timeLabel(stats.time.weekMinutes) : '—', note: stats ? weekChange(stats.time.weekMinutes, stats.time.lastWeekMinutes) : statsError ? 'Stats unavailable' : 'Loading…', icon: Clock3, tone: 'violet', go: 'goUsage', period: week.label, hint: VIBE_HINT }
@@ -146,7 +151,7 @@ export default function HomeView(props: Props) {
 
     <VibeStatsPanel stats={stats} error={statsError} onRetry={() => setRetry(v => v + 1)} />
     {activityError && <div className="hd-data-error" role="status">Activity couldn’t be refreshed. <button onClick={() => setRetry(v => v + 1)}>Retry</button></div>}
-    <section className="hd-grid" aria-label="Workspace dashboard">
+    <section className={`hd-grid ${TASKS_UI ? '' : 'no-tasks'}`} aria-label="Workspace dashboard">
       <section className="hd-panel hd-usage"><div className="hd-panel-head"><h2>AI Usage</h2><div className="hd-tabs" aria-label="Usage period">{(['week', 'month', 'all'] as const).map(value => <button key={value} aria-pressed={range === value} className={range === value ? 'active' : ''} onClick={() => setRange(value)}>{value === 'week' ? 'This Week' : value === 'month' ? 'This Month' : 'All Time'}</button>)}</div></div>
         <p className="hd-period">{usage.label}</p>
         <p className="hd-usage-total" role="status">{!activity ? activityError ? 'Activity unavailable. Retry to load this period.' : 'Loading activity...' : usage.events ? `Selected period total: ${timeLabel(usage.minutes)} / ${usage.events} activity events` : 'No activity in this period. Choose another period to see earlier chats.'}</p>
@@ -171,10 +176,12 @@ export default function HomeView(props: Props) {
       <section className="hd-panel hd-projects"><div className="hd-panel-head"><h2>Recent Projects</h2><button className="hd-link" onClick={() => onShortcut('goProjects')}>View all <ArrowRight size={12} /></button></div><div className="hd-project-list">{!shownProjects.length && <div className="hd-empty"><img className="hd-empty-art" src={projectsArt} alt="" draggable={false} /><p>Your next idea starts here.</p><button className="hd-link" onClick={() => onShortcut('newProject')}>Create or import a project <ArrowRight size={13} /></button></div>}{shownProjects.map(p => <div className="hd-project-row" key={p.path}>
         <Avatar name={p.name} path={p.path} size={31} /><button className="hd-project-main" onClick={() => props.onOpenProject(p.path)} title={p.path}><strong>{p.name}</strong><small>{p.description || p.folderName}</small></button><span className="hd-project-count">{p.sessionCount} chats<small>{tasks.filter(t => t.projectPath.toLowerCase() === p.path.toLowerCase() && t.column !== 'done' && !t.teamParentId).length} tasks</small></span><span className={`hd-project-status ${p.meta.status ?? 'active'}`}>{p.meta.status === 'done' ? 'Done' : p.meta.status === 'paused' ? 'Paused' : 'Active'}</span><span className="hd-project-time">{p.lastActivity ? timeAgo(p.lastActivity) : 'New'}</span><MenuButton align="right" trigger={open => <button className="hd-project-menu" aria-label={`Actions for ${p.name}`} onClick={open}><MoreVertical size={14} /></button>} items={[{ label: 'Open project', icon: FolderOpen, onSelect: () => props.onOpenProject(p.path) }, { label: 'New session', icon: Play, onSelect: () => props.onNewSession(p) }, { label: p.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => props.onTogglePin(p) }, { label: 'Open in Explorer', icon: FolderOpen, onSelect: () => window.mc.openInExplorer(p.path) }]} />
       </div>)}</div></section>
+      {TASKS_UI && <>
       <section className="hd-panel hd-tasks"><div className="hd-panel-head"><h2>Tasks</h2><button className="hd-link" onClick={() => onShortcut('goTasks')}>View all <ArrowRight size={12} /></button></div><div className="hd-tabs" aria-label="Task filter">{(['open', 'teams', 'all'] as const).map(filter => <button key={filter} className={taskFilter === filter ? 'active' : ''} aria-pressed={taskFilter === filter} onClick={() => setTaskFilter(filter)}>{filter === 'open' ? 'Open Tasks' : filter === 'teams' ? 'Agent Teams' : 'All'}</button>)}</div><ul className="hd-task-list">{!shownTasks.length && <li className="hd-empty"><p>{taskFilter === 'teams' ? 'Split a task into agents to build with a team.' : 'A clear task is the first step.'}</p><button className="hd-link" onClick={() => onShortcut('newTask')}>Add a task <ArrowRight size={12} /></button></li>}{shownTasks.map(task => {
         const canComplete = task.column !== 'done' && task.column !== 'running' && (!task.team || task.team.phase === 'review') && task.run?.checks?.status !== 'running', due = dueLabel(task)
         return <li key={task.id}><button className="hd-task-check" aria-label={task.column === 'done' ? `${task.title} is done` : `Mark ${task.title} done`} disabled={!canComplete} title={canComplete ? 'Mark done' : 'Open the task to follow its progress'} onClick={() => props.onTaskDone(task.id)}>{task.column === 'done' ? <Check size={13} /> : <span />}</button><button className="hd-task-title" onClick={() => props.onOpenTask(task.id)} title={`${task.title}\n${task.projectName}`}>{task.title}</button><span className={`hd-task-state ${task.column}`}>{task.team && task.column === 'todo' ? 'Team' : task.column === 'todo' ? 'To do' : task.column === 'running' ? 'Running' : task.column === 'review' ? taskSucceeded(task) ? 'Review' : 'Stopped' : 'Done'}</span><span className={`hd-task-due ${due.tone}`}>{due.text || 'No date'}</span></li>
       })}</ul></section>
+      </>}
       <section className="hd-panel hd-recent"><div className="hd-panel-head"><h2>Recent Activity</h2><button className="hd-link" onClick={() => onShortcut('goSearch')}>View all <ArrowRight size={12} /></button></div><div className="hd-timeline">{recent === null && <p className="hd-loading" role="status">Loading recent activity…</p>}{recentError && <p className="hd-data-error">Chats couldn’t be loaded. <button onClick={() => setRetry(v => v + 1)}>Retry</button></p>}{recent !== null && !timeline.length && !recentError && <div className="hd-empty"><img className="hd-empty-art" src={chatsArt} alt="" draggable={false} /><p>Your chats and finished tasks will appear here.</p></div>}{timeline.map(event => <button className={`hd-event hd-tone-${event.tone}`} key={event.id} onClick={event.action} title={event.detail}><span className="hd-event-icon"><event.icon size={16} /></span><span className="hd-event-copy"><strong>{event.title}</strong><small>{event.detail}</small></span><span className="hd-event-time">{timeAgo(event.at)}</span></button>)}</div></section>
     </section>
     {!!live.length && <div className="hd-live-strip"><span>Open agents</span>{live.slice(0, 4).map(agent => { const status = displayStatus(agent, lastOutput[agent.id]); return <button className="hd-agent-link" key={agent.id} onClick={() => props.onOpenAgent(agent.id)} title={`${agent.title}: ${status.label}`}><span className={`dot ${status.cls}`} />{agent.title}</button> })}</div>}

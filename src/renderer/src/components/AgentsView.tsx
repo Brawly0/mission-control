@@ -1,3 +1,5 @@
+import { isAgentTool, KIND_LABEL } from '@shared/terminalKind'
+import { McBadge, McLogo } from './McLogo'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, ListFilter, Maximize2, Minimize2, MoreHorizontal, Minus, Play, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
@@ -292,9 +294,9 @@ export default function AgentsView(props: Props) {
                 return <div key={a.id} data-agent-id={a.id} role="button" tabIndex={0} aria-pressed={a.id === active?.id && !isMin}
                   className={`agent-tab ${a.id === active?.id && !isMin ? 'active' : ''} ${st.cls === 'needs-input' ? 'attention' : ''} ${isMin ? 'minimized' : ''}`}
                   onClick={() => select(a.id)} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(a.id) } }}
-                  title={`${look(group.path)?.name ?? group.name} / ${a.kind === 'shell' ? 'Terminal' : a.kind === 'codex' ? 'Codex' : 'Claude'} / ${a.title}\n${a.cwd}\n${st.label}${isMin ? '\nMinimized: click to restore' : ''}${jump ? '\n' + jump : ''}`}>
+                  title={`${look(group.path)?.name ?? group.name} / ${KIND_LABEL[a.kind]} / ${a.title}\n${a.cwd}\n${st.label}${isMin ? '\nMinimized: click to restore' : ''}${jump ? '\n' + jump : ''}`}>
                   <span className={`dot ${st.cls}`} />
-                  {a.kind === 'shell' ? <Terminal size={12} /> : <ToolBadge tool={a.kind} />}
+                  {a.kind === 'shell' ? <Terminal size={12} /> : a.kind === 'mc' ? <McLogo size={12} /> : <ToolBadge tool={a.kind} />}
                   <TabTitle agent={a} onRename={t => onRename(a.id, t)} editRequest={a.id === active?.id ? renameRequest : undefined} />
                   {st.cls === 'needs-input' && <span className="agent-needs-label">Needs you</span>}
                   <button className="tab-close" title="Close (stops the process)" onClick={e => { e.stopPropagation(); onClose(a.id) }}><X size={12} /></button>
@@ -303,7 +305,7 @@ export default function AgentsView(props: Props) {
             </div>)}
           </div>
           <MenuButton portal align="right" trigger={toggle => <Button size="sm" variant="ghost" icon={ListFilter} onClick={toggle} title="Switch to any open agent">Agents {agents.length}</Button>}
-            items={agents.map(a => ({ id: a.id, label: a.title, hint: `${look(a.projectPath)?.name ?? a.projectName} / ${a.kind === 'shell' ? 'Terminal' : a.kind === 'codex' ? 'Codex' : 'Claude'} / ${displayStatus(a, lastOutput[a.id]).label}`, onSelect: () => select(a.id) }))} />
+            items={agents.map(a => ({ id: a.id, label: a.title, hint: `${look(a.projectPath)?.name ?? a.projectName} / ${KIND_LABEL[a.kind]} / ${displayStatus(a, lastOutput[a.id]).label}`, onSelect: () => select(a.id) }))} />
           <IconButton icon={Plus} label="New session in current project" size={15} onClick={onNew} />
         </div>
         <div className="agent-bar-end">
@@ -333,7 +335,7 @@ export default function AgentsView(props: Props) {
             size="sm"
             variant="ghost"
             icon={Send}
-            disabled={!agents.some((a) => a.kind !== 'shell' && !a.exited)}
+            disabled={!agents.some((a) => isAgentTool(a.kind) && !a.exited)}
             title={withKey('Send one prompt to several agents', keyFor('broadcast'))}
             onClick={props.onBroadcast}
           >
@@ -403,7 +405,7 @@ export default function AgentsView(props: Props) {
                 >
                   <div className="agent-cell-head" onDoubleClick={(e) => (e.target as HTMLElement).closest('button') || toggleMax(a.id)} title="Double-click to maximize or restore">
                     <Avatar name={a.projectName} path={a.projectPath} size={20} />
-                    {a.kind !== 'shell' && <ToolBadge tool={a.kind} />}
+                    {isAgentTool(a.kind) ? <ToolBadge tool={a.kind} /> : a.kind === 'mc' && <McBadge />}
                     <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
                     {a.worktree ? (
                       <span className="chip chip-accent" title={a.worktree.path}>
@@ -428,7 +430,7 @@ export default function AgentsView(props: Props) {
                         onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
                       />
                     )}
-                    {a.kind !== 'shell' && !a.exited && (
+                    {isAgentTool(a.kind) && !a.exited && (
                       <button
                         className="agent-brief"
                         disabled={st.cls === 'working'}
@@ -445,8 +447,8 @@ export default function AgentsView(props: Props) {
                     <MenuButton portal align="right"
                       trigger={(toggle) => <IconButton icon={MoreHorizontal} label={`Actions for ${a.title}`} onClick={() => { onSelect(a.id); toggle() }} />}
                       items={[
-                        ...(a.kind !== 'shell' && !a.exited ? [{ label: 'Write briefing', icon: FileText, disabled: st.cls === 'working', onSelect: () => { onSelect(a.id); window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' })) } }] : []),
-                        ...(a.kind !== 'shell' && !a.exited ? [{ label: `Hand off to ${a.kind === 'codex' ? 'Claude' : 'Codex'}`, icon: ArrowRightLeft, disabled: st.cls === 'working' || !a.sessionId, onSelect: () => onHandOff(a) }] : []),
+                        ...(isAgentTool(a.kind) && !a.exited ? [{ label: 'Write briefing', icon: FileText, disabled: st.cls === 'working', onSelect: () => { onSelect(a.id); window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' })) } }] : []),
+                        ...(isAgentTool(a.kind) && !a.exited ? [{ label: `Hand off to ${a.kind === 'codex' ? 'Claude' : 'Codex'}`, icon: ArrowRightLeft, disabled: st.cls === 'working' || !a.sessionId, onSelect: () => onHandOff(a) }] : []),
                         { label: 'Rename session', icon: FileText, onSelect: () => { onSelect(a.id); setRenameRequest(Date.now()) } },
                         { label: 'Minimize', icon: Minus, onSelect: () => minimize(a.id) },
                         { label: 'Close session', hint: 'Stops the process', icon: X, onSelect: () => onClose(a.id) }

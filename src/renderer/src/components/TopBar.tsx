@@ -3,6 +3,8 @@ import type { EcoSettings, RateLimitInfo, UpdateState } from '@shared/types'
 import { useEffect, useState } from 'react'
 import { useKeyFor, withKey } from '../shortcuts'
 import { initials } from '../util'
+import { TASKS_UI } from '@shared/features'
+import { McIcon } from './McLogo'
 import { KeyCombo } from './ShortcutsDialog'
 import PlanMeter from './PlanMeter'
 import { MenuButton } from './ui'
@@ -75,7 +77,7 @@ export default function TopBar({ userName, currentProject, rateLimit, codexLimit
     <header className="topbar">
       <button className="topbar-search" aria-label="Search projects, chats and tasks" onClick={() => onShortcut('palette')}>
         <Search size={16} />
-        <span>Search projects, chats, tasks…</span>
+        <span>Search projects, chats, docs…</span>
         {keyFor('palette') && <KeyCombo combo={keyFor('palette')} />}
       </button>
       <button
@@ -104,7 +106,8 @@ export default function TopBar({ userName, currentProject, rateLimit, codexLimit
           )}
           items={[
             { label: currentProject ? `Session in ${currentProject}` : 'Session', hint: keyFor('newSession'), icon: Play, onSelect: () => onShortcut('newSession') },
-            { label: 'Task', hint: keyFor('newTask'), icon: ListPlus, onSelect: () => onShortcut('newTask') },
+            ...(TASKS_UI ? [{ label: 'Task', hint: keyFor('newTask'), icon: ListPlus, onSelect: () => onShortcut('newTask') }] : []),
+            { label: 'mc session (Claude + Codex)', hint: keyFor('newMc'), icon: McIcon, onSelect: () => onShortcut('newMc') },
             { label: 'Project', hint: keyFor('newProject'), icon: FolderPlus, onSelect: () => onShortcut('newProject') },
             { label: 'Quick chat', hint: keyFor('quickChat'), icon: MessageSquareDashed, onSelect: () => onShortcut('quickChat') },
             { label: 'Note', hint: keyFor('newNote'), icon: NotebookPen, onSelect: () => onShortcut('newNote') }

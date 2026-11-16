@@ -1,5 +1,6 @@
 import { app, globalShortcut, Menu, nativeImage, Tray, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
+import { TASKS_UI } from '../shared/features'
 
 /**
  * Tray icon and global show/hide hotkey. The tray keeps Mission Control reachable while it runs in the
@@ -40,8 +41,10 @@ function buildMenu(): Menu {
     { label: summary, enabled: false },
     { type: 'separator' },
     { label: 'Show Mission Control', accelerator: deps!.hotkey() || undefined, click: () => deps!.showWindow() },
-    { label: 'New task…', click: () => deps!.navigate({ view: 'tasks', newTask: true }) },
-    { label: 'Task board', click: () => deps!.navigate({ view: 'tasks' }) },
+    ...(TASKS_UI ? [
+      { label: 'New task…', click: () => deps!.navigate({ view: 'tasks', newTask: true }) },
+      { label: 'Task board', click: () => deps!.navigate({ view: 'tasks' }) }
+    ] : []),
     { label: 'Agents', click: () => deps!.navigate({ view: 'agents' }) },
     { type: 'separator' },
     { label: 'Quit Mission Control', click: () => deps!.quit() }

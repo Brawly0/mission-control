@@ -1,7 +1,7 @@
 {
   "name": "mission-control",
   "productName": "Mission Control",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "description": "A Windows desktop workspace for Claude Code and Codex: projects, chats, agents and code review.",
   "private": true,
   "main": "./out/main/index.js",
@@ -9,12 +9,13 @@
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && vite build --config cli/vite.config.mts",
+    "cli:build": "vite build --config cli/vite.config.mts",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "dist": "electron-vite build && electron-builder --win",
-    "release": "electron-vite build && electron-builder --win --publish always",
+    "dist": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always",
     "publish-release": "node scripts/release.mjs",
     "icon": "electron scripts/render-icon.cjs"
   },
@@ -77,6 +78,12 @@
       "shortcutName": "Mission Control",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
-    }
+    },
+    "extraResources": [
+      {
+        "from": "cli/dist/mc.mjs",
+        "to": "mc/mc.mjs"
+      }
+    ]
   }
 }

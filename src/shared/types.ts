@@ -220,6 +220,8 @@ export interface IndexStatus {
 
 /** Which coding agent a chat or terminal belongs to (ADR 0020). */
 export type AgentTool = 'claude' | 'codex'
+/** What a terminal runs: an agent CLI, a plain PowerShell, or the mc duo CLI (Claude and Codex together, ADR 0042). */
+export type TerminalKind = AgentTool | 'shell' | 'mc'
 
 export interface SessionSummary {
   id: string
@@ -338,8 +340,8 @@ export interface TerminalSpec {
   cwd: string
   /** Arguments passed to the claude CLI, e.g. ['--resume', id]. */
   args: string[]
-  /** 'claude' runs the Claude Code CLI, 'codex' the Codex CLI, 'shell' opens a plain PowerShell. */
-  kind: AgentTool | 'shell'
+  /** 'claude' runs the Claude Code CLI, 'codex' the Codex CLI, 'mc' the bundled duo CLI, 'shell' a plain PowerShell. */
+  kind: TerminalKind
   cols: number
   rows: number
 }
@@ -394,7 +396,7 @@ export interface SavedAgent {
   title: string
   cwd: string
   projectName: string
-  kind: AgentTool | 'shell'
+  kind: TerminalKind
   sessionId?: string
   worktree?: WorktreeInfo
   projectPath?: string

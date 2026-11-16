@@ -1,3 +1,4 @@
+import { isAgentTool } from '@shared/terminalKind'
 import { useState } from 'react'
 import { Send, X } from 'lucide-react'
 import { sendPrompt } from '@shared/terminalInput'
@@ -107,7 +108,7 @@ export default function BroadcastDialog({ agents, lastOutput, onClose }: Props) 
                 <li key={a.id}>
                   <label className="check-row">
                     <input type="checkbox" checked={picked.has(a.id)} onChange={() => toggle(a.id)} />
-                    {a.kind !== 'shell' && <ToolBadge tool={a.kind} />}<Avatar name={a.projectName} path={a.projectPath} size={18} />
+                    {isAgentTool(a.kind) && <ToolBadge tool={a.kind} />}<Avatar name={a.projectName} path={a.projectPath} size={18} />
                     <span className="ellipsis">{a.title}</span>
                     <span className={`status-pill status-${st.cls}`}>
                       <span className={`dot ${st.cls}`} />

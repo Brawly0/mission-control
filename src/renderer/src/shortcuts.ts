@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef } from 'react'
+import { TASKS_UI, TASK_SHORTCUTS } from '@shared/features'
 
 /**
  * Every keyboard shortcut in one place. App handles the global ones; the rest are broadcast as an
@@ -16,7 +17,7 @@ export interface ShortcutDef {
   keys: string[]
 }
 
-export const SHORTCUTS: ShortcutDef[] = [
+const ALL_SHORTCUTS: ShortcutDef[] = [
   { id: 'palette', label: 'Command palette', group: 'General', keys: ['Ctrl+K', 'Ctrl+Shift+P'] },
   { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'General', keys: ['Ctrl+/', 'F1'] },
   { id: 'settings', label: 'Settings', group: 'General', keys: ['Ctrl+,'] },
@@ -40,6 +41,7 @@ export const SHORTCUTS: ShortcutDef[] = [
 
   { id: 'newSession', label: 'New Claude session', group: 'Project', keys: ['Ctrl+N'] },
   { id: 'quickChat', label: 'Quick chat (temporary folder)', group: 'Project', keys: ['Ctrl+Alt+N'] },
+  { id: 'newMc', label: 'New mc session (Claude and Codex split one prompt)', group: 'Project', keys: ['Ctrl+Alt+D'] },
   { id: 'myPc', label: 'My PC advisor (general help with your computer)', group: 'Project', keys: ['Ctrl+Alt+P'] },
   { id: 'briefingSession', label: 'New session from latest briefing', group: 'Project', keys: ['Ctrl+Alt+B'] },
   { id: 'newProject', label: 'New project', group: 'Project', keys: ['Ctrl+Shift+O'] },
@@ -76,7 +78,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'renameAgent', label: 'Rename agent', group: 'Agents', keys: ['Ctrl+Shift+E'] },
 
   { id: 'newTask', label: 'New task', group: 'Tasks', keys: ['Ctrl+T'] },
-  { id: 'newNote', label: 'New note', group: 'Tasks', keys: ['Ctrl+Shift+J'] },
+  { id: 'newNote', label: 'New note', group: TASKS_UI ? 'Tasks' : 'General', keys: ['Ctrl+Shift+J'] },
   { id: 'templates', label: 'Templates and schedules', group: 'Tasks', keys: ['Ctrl+Shift+T'] },
   { id: 'toggleQueue', label: 'Auto-run queue on or off', group: 'Tasks', keys: ['Ctrl+Shift+Q'] },
 
@@ -88,6 +90,9 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'zoomReset', label: 'Reset zoom', group: 'View', keys: ['Ctrl+0'] },
   { id: 'toggleWorktrees', label: 'Show worktrees and scratch folders', group: 'View', keys: ['Ctrl+Shift+H'] }
 ]
+
+/** Task shortcuts drop out while the Tasks tab is archived, so their keys do nothing and stay free. */
+export const SHORTCUTS: ShortcutDef[] = TASKS_UI ? ALL_SHORTCUTS : ALL_SHORTCUTS.filter(s => !TASK_SHORTCUTS.includes(s.id))
 
 const NAMED: Record<string, string> = {
   ' ': 'Space',

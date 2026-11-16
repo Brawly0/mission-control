@@ -1,5 +1,11 @@
 # Roadmap
 
+## mc duo CLI and Tasks archived (0.36.0)
+
+- [x] `mc` terminal command (cli/): one prompt split between Claude and Codex, built in parallel in a fresh worktree, cross-reviewed, committed to a branch; `mc list / merge / clean` (ADR 0042)
+- [x] Tasks tab archived: board, templates, task shortcuts and Home task cards hidden behind `TASKS_UI`; the engine stays for vault builds
+- [x] `mc` in the app like Claude and Codex: Duo with mc on Home, mc button on projects, New menu, palette, Ctrl+Alt+D; shipped in the installer, interactive when opened without a prompt; linked-rings logo
+
 ## My PC advisor (0.35.0)
 
 - [x] My PC: a permanent ~/My PC workspace where Claude is a personal PC advisor (looks, explains, recommends, asks before changing anything). It knows the machine (PC-PROFILE.md, surveyed daily: hardware, drives, apps, startup, network, projects, connectors), knows you (ABOUT-ME.md, which it keeps up to date), reaches every drive and all MCP connectors, and logs to PC-LOG.md. Ask my PC box on Home, palette entry and Ctrl+Alt+P (ADR 0041)

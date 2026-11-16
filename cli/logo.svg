@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="96" height="96" role="img" aria-label="mc">
+  <title>mc: Claude and Codex on one prompt</title>
+  <path d="M12 6.94A6.1 6.1 0 0 1 12 17.06A6.1 6.1 0 0 1 12 6.94Z" fill="#ad8cff" fill-opacity="0.6"/>
+  <circle cx="8.6" cy="12" r="6.1" fill="none" stroke="#f28c5e" stroke-width="2.3"/>
+  <circle cx="15.4" cy="12" r="6.1" fill="none" stroke="#6f9dff" stroke-width="2.3"/>
+</svg>

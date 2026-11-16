@@ -87,6 +87,8 @@ src/
 
 ## Tasks
 
+**Archived (ADR 0042).** `src/shared/features.ts → TASKS_UI = false` hides every Tasks entry point in the UI; the engine below still runs vault builds and saved schedules.
+
 Tasks live in `store.json` (`tasks`). `tasks.ts` in the main process owns them: it keeps them in memory, pushes every change to the UI (`tasks:changed`, throttled), and saves them to the store (debounced, written atomically).
 
 **Headless run.** `startTask` prepares the folder (a new worktree when the task asks for one) and spawns:
@@ -250,3 +252,7 @@ The service bounds concurrency (two jobs), total admitted jobs (16), subprocess 
 Only root package.json scripts are inferred, with npm/pnpm/yarn/bun selection from package-manager metadata and lockfiles. Recognized non-JavaScript manifests remain unsupported for inference. Suggestions retain provenance and are not executable diagnostics. RunPanel requires review/edit/save via existing project metadata and a separate Run action. No check installs dependencies, initializes Git or executes project scripts.
 
 `main/onboardingSmoke.ts` supplies a Windows local-provider fixture tour through the real renderer, preload, IPC, service, child runner and Git diff. `smoke.ts` bootstraps its restricted provider PATH before ready and dispatches its tour before legacy smoke paths. A separate process invocation verifies restart persistence. See DEVELOPMENT for isolation requirements, exact commands and current coverage limits, and [ADR 0030](decisions/0030-guided-setup-and-readiness.md) for the decisions.
+
+## mc CLI (cli/)
+
+A separate Node command, not part of the Electron app (ADR 0042). `cli/src/plan.ts` holds the pure plan/prompt logic (planner prompt, `parseDuoPlan`, worker and review prompts), `agents.ts` spawns `claude -p` / `codex exec` headless and turns their JSON streams into progress lines, `git.ts` handles the worktree, diffs, commit and run records (`.git/mc-runs/`), `ui.ts` the terminal output, `main.ts` the commands. Built with `npm run cli:build` into `cli/dist/mc.mjs`; tests in `cli/src/*.test.ts` run with the main suite.

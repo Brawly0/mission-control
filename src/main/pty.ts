@@ -2,7 +2,7 @@ import { terminateProcessTreesSync } from './processCleanup'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { utilityProcess, type UtilityProcess } from 'electron'
+import { app, utilityProcess, type UtilityProcess } from 'electron'
 import ptyHostPath from './ptyHost?modulePath'
 import type { HostEvent, HostRequest } from './ptyHost'
 import type { TerminalInfo, TerminalSpec } from '../shared/types'
@@ -30,10 +30,22 @@ export function whichSync(name: string): string | null {
 const toolPaths = new Map<string, string | null>()
 const INSTALL_HINT = { claude: 'Install Claude Code', codex: 'Install it with: npm i -g @openai/codex' }
 
-function resolveCommand(spec: TerminalSpec): { file: string; args: string[] } {
+/** The mc duo CLI shipped with the app (resources/mc/mc.mjs), or the repo build while developing. */
+export function mcScriptPath(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'mc', 'mc.mjs') : join(app.getAppPath(), 'cli', 'dist', 'mc.mjs')
+}
+
+function resolveCommand(spec: TerminalSpec): { file: string; args: string[]; env?: Record<string, string> } {
   // A fresh account need not have Windows PowerShell on PATH.
   const powershell = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
   if (spec.kind === 'shell') return { file: powershell, args: ['-NoLogo'] }
+  // mc runs on Node from PATH (ADR 0042). Electron's own Node can't be used: as a GUI program its output never
+  // reaches the terminal. Codex is installed through npm, so Node is there whenever mc can work at all.
+  if (spec.kind === 'mc') {
+    const node = whichSync('node')
+    if (node) return { file: node, args: [mcScriptPath(), ...spec.args], env: { MC_FROM_APP: '1' } }
+    return { file: powershell, args: ['-NoLogo', '-NoExit', '-Command', "Write-Host 'mc needs Node.js 22 or newer (and the Claude and Codex CLIs). Install Node from nodejs.org, then reopen this tab.' -ForegroundColor Yellow"] }
+  }
   if (!toolPaths.has(spec.kind)) toolPaths.set(spec.kind, whichSync(spec.kind))
   const path = toolPaths.get(spec.kind)
   if (!path) {
@@ -113,12 +125,12 @@ function post(m: HostRequest): void {
 }
 
 export function spawnTerminal(spec: TerminalSpec, listener: Listener, id: string = randomUUID()): TerminalInfo {
-  const { file, args } = resolveCommand(spec)
+  const { file, args, env } = resolveCommand(spec)
   const cwd = existsSync(spec.cwd) ? spec.cwd : (process.env.USERPROFILE ?? process.cwd())
   terminals.add(id)
   terminalCwd.set(id, existsSync(spec.cwd) ? spec.cwd : '')
   listeners.set(id, listener)
-  post({ type: 'spawn', id, file, args, cwd, cols: Math.max(spec.cols, 20), rows: Math.max(spec.rows, 5), env: agentEnv() })
+  post({ type: 'spawn', id, file, args, cwd, cols: Math.max(spec.cols, 20), rows: Math.max(spec.rows, 5), env: { ...agentEnv(), ...env } })
   // The program's pid comes from the host a moment later; nothing needs it right away.
   return { id, pid: 0 }
 }

@@ -326,3 +326,13 @@
 .hd-vibe-facts li { padding: 7px 9px; border: 1px solid var(--hd-line); border-radius: 7px; background: var(--hd-row); color: var(--text-2); font-size: 11px; line-height: 1.45; }
 .hd-vibe-facts li[title] { cursor: help; }
 @media (max-width: 900px) { .hd-vibe-tiles { grid-template-columns: minmax(0, 1fr); } }
+
+/* Tasks archived (ADR 0042): four launch cards (with mc), four stats, and Recent Activity fills the Tasks panel's place. */
+.hd-launch-grid.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.hd-stats.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.hd-grid.no-tasks .hd-recent { grid-column: span 2; }
+@media (max-width: 800px) {
+  .hd-launch-grid.is-four,
+  .hd-stats.is-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hd-grid.no-tasks .hd-recent { grid-column: auto; }
+}

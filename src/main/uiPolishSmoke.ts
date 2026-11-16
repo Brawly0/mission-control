@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { loadStore, updateStore } from './store'
 import { listProjects, normalizePath } from './claudeData'
 import { createTask, deleteTask, flushTasks, listTasks, setTaskRun } from './tasks'
+import { TASKS_UI } from '../shared/features'
 import { whichSync } from './pty'
 
 /** Read-only visual tour, using the isolated self-test profile and no model calls. */
@@ -90,7 +91,7 @@ export async function uiPolishSmoke(win: BrowserWindow, outFile: string, log: (.
       await until(`document.documentElement.dataset.theme === '${theme}'`)
       for (const width of [1440, 960]) {
         win.setSize(width, width === 960 ? 640 : 900); await pause(400)
-        for (const view of ['home', 'projects', 'tasks', 'search', 'usage']) {
+        for (const view of ['home', 'projects', ...(TASKS_UI ? ['tasks'] : []), 'search', 'usage']) {
           await js(`window.__mcSmoke.setView('${view}')`); await pause(600)
           if (view === 'projects') {
             await click('.projects-page .segmented button', 'All')

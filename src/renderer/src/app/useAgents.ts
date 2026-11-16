@@ -1,3 +1,4 @@
+import { isAgentTool } from '@shared/terminalKind'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ContextUsage, SavedAgent } from '@shared/types'
 import type { Agent, LaunchOptions, View } from '../types'
@@ -204,7 +205,7 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
     setPendingRestore([])
     for (const s of saved) {
       // A session that never got a prompt has no transcript, so it can't be resumed; start fresh.
-      const canResume = s.kind !== 'shell' && s.sessionId && (await window.mc.sessionExists(s.sessionId))
+      const canResume = isAgentTool(s.kind) && s.sessionId && (await window.mc.sessionExists(s.sessionId))
       await launch({
         cwd: s.cwd,
         projectName: s.projectName,
@@ -212,7 +213,7 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
         title: s.title,
         kind: s.kind,
         worktree: s.worktree,
-        args: canResume && s.kind !== 'shell' ? resumeArgs(s.kind, s.sessionId!) : []
+        args: canResume && isAgentTool(s.kind) ? resumeArgs(s.kind, s.sessionId!) : []
       })
     }
   }, [pendingRestore, launch])

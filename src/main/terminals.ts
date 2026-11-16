@@ -1,3 +1,4 @@
+import { isAgentTool } from '../shared/terminalKind'
 import { briefingContext } from './projectBriefing'
 import { randomUUID } from 'node:crypto'
 import type { HookEvent, TerminalInfo, TerminalSpec } from '../shared/types'
@@ -47,7 +48,7 @@ export function launchTerminal(spec: TerminalSpec): TerminalInfo {
   const id = randomUUID()
   let sessionId: string | undefined
   let args = spec.args
-  if (spec.kind !== 'shell' && args.length === 0) {
+  if (isAgentTool(spec.kind) && args.length === 0) {
     const prompt = briefingContext(spec.cwd, 'Summarize the current project context briefly, then wait for my next task.')
     if (prompt.startsWith('First read')) args = [prompt]
   }

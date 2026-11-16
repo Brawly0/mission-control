@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BarChart3, BookOpen, Bot, Check, ChevronRight, FileStack, FolderKanban, FolderPlus, House, Inbox, KanbanSquare, MessagesSquare, NotebookPen, PanelLeftClose, Pause, PenLine, RefreshCw, Search, Star, Wand2 } from 'lucide-react'
 import BrandMark from './BrandMark'
 import AgentConnections from './AgentConnections'
+import { TASKS_UI } from '@shared/features'
 import { useProjectActions } from './useProjectActions'
 import { orderedProjects } from '@shared/projectOrder'
 import type { BudgetState, GitInfo, Project } from '@shared/types'
@@ -198,7 +199,7 @@ export default function Sidebar(props: Props) {
     )
   }
 
-  const navItems: { view: View | 'templates'; icon: typeof House; label: string; shortcut: string; badge?: ReactNode }[] = [
+  const allNavItems: { view: View | 'templates'; icon: typeof House; label: string; shortcut: string; badge?: ReactNode }[] = [
     { view: 'home', icon: House, label: 'Home', shortcut: 'goHome' },
     {
       view: 'inbox',
@@ -248,6 +249,8 @@ export default function Sidebar(props: Props) {
     { view: 'prompts', icon: PenLine, label: 'Prompt Studio', shortcut: 'goPrompts' },
     { view: 'usage', icon: BarChart3, label: 'Usage & Insights', shortcut: 'goUsage' }
   ]
+  // Tasks and Templates are archived (ADR 0042).
+  const navItems = TASKS_UI ? allNavItems : allNavItems.filter(n => n.view !== 'tasks' && n.view !== 'templates')
   const go = (v: View | 'templates') => (v === 'templates' ? props.onOpenTemplates() : props.onNavigate(v))
   // The first six are used all the time; the rest sit in a "More" group (open while one of them is the current page).
   const mainNav = navItems.slice(0, 6)

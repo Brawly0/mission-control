@@ -1,0 +1,10 @@
+{
+  "name": "mc-duo",
+  "version": "0.1.0",
+  "description": "mc: one prompt, two agents. Claude and Codex split the work and build it at the same time.",
+  "private": true,
+  "type": "module",
+  "bin": { "mc": "dist/mc.mjs" },
+  "files": ["dist"],
+  "engines": { "node": ">=22" }
+}

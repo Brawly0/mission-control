@@ -1,3 +1,4 @@
+import { isAgentTool } from '@shared/terminalKind'
 import type { BudgetState, Project, QueueStatus, RateLimitInfo, Task, UpdateState } from '@shared/types'
 import { taskFailed } from '@shared/deps'
 import { windowLabel } from '@shared/planUsage'
@@ -66,7 +67,7 @@ export function inboxItems(input: InboxInput): InboxItem[] {
   const items: InboxItem[] = []
 
   for (const a of input.agents) {
-    if (a.exited || a.kind === 'shell') continue
+    if (a.exited || !isAgentTool(a.kind)) continue
     if (a.hookStatus === 'needs-input') {
       items.push({
         key: `agent:${a.id}:input`,

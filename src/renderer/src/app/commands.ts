@@ -1,3 +1,5 @@
+import { McIcon } from '../components/McLogo'
+import { TASKS_UI } from '@shared/features'
 import {
   ArrowRightLeft,
   BarChart3,
@@ -126,6 +128,7 @@ export function paletteCommands(c: CommandContext): Command[] {
   if (selected) {
     list.push(
       { id: 'new', group: 'Actions', title: `New Claude session in ${selected.name}`, icon: Play, run: c.newInSelected },
+      { id: 'new-mc', group: 'Actions', title: `New mc session in ${selected.name} (Claude + Codex)`, icon: McIcon, keywords: 'duo both together split parallel claude codex mc', run: () => runShortcut('newMc') },
       {
         id: 'new-codex',
         group: 'Actions',
@@ -168,12 +171,13 @@ export function paletteCommands(c: CommandContext): Command[] {
   // Show each command's shortcut.
   const shortcutOf: Record<string, string> = {
     'go-home': 'goHome', 'go-inbox': 'goInbox', 'go-projects': 'goProjects', 'go-notebook': 'goNotebook', 'go-knowledge': 'goKnowledge',
-    'new-project': 'newProject', 'quick-chat': 'quickChat', 'my-pc': 'myPc', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco', broadcast: 'broadcast',
+    'new-project': 'newProject', 'quick-chat': 'quickChat', 'new-mc': 'newMc', 'my-pc': 'myPc', 'new-note': 'newNote', 'go-agents': 'goAgents', 'go-search': 'goSearch', 'go-usage': 'goUsage', 'go-tasks': 'goTasks', 'go-skills': 'goSkills', 'toggle-eco': 'toggleEco', broadcast: 'broadcast',
     'new-task': 'newTask', templates: 'templates', settings: 'settings', shortcuts: 'shortcuts', new: 'newSession',
     'new-wt': 'newWorktreeSession', continue: 'continueLast', shell: 'powershell', layout: 'toggleGrid', notify: 'notifications',
     add: 'addProject', refresh: 'refresh', toggleSidebar: 'toggleSidebar', toggleTheme: 'toggleTheme', zoomIn: 'zoomIn',
     zoomOut: 'zoomOut', zoomReset: 'zoomReset'
   }
+  if (!TASKS_UI) for (const id of ['go-tasks', 'new-task', 'templates']) { const i = list.findIndex(cmd => cmd.id === id); if (i >= 0) list.splice(i, 1) }
   for (const cmd of list) if (shortcutOf[cmd.id]) cmd.hint = c.keyOf(shortcutOf[cmd.id]) || cmd.hint
   for (const s of c.recentForPalette) {
     list.push({ id: `chat-${s.id}`, group: 'Resume a chat', title: s.title, hint: s.projectName, icon: History, keywords: s.projectName, run: () => c.resumeRecent(s) })

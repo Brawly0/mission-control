@@ -103,3 +103,19 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* mc: Claude and Codex together (ADR 0042). */
+:root { --mc-claude: #f28c5e; --mc-codex: #6f9dff; --mc-meet: #ad8cff; }
+:root[data-theme='light'] { --mc-claude: #d2643a; --mc-codex: #3567dd; --mc-meet: #7c5ce0; }
+.mc-logo { flex-shrink: 0; overflow: visible; }
+.mc-logo circle { fill: none; stroke-width: 2.3; }
+.mc-logo-claude { stroke: var(--mc-claude); }
+.mc-logo-codex { stroke: var(--mc-codex); }
+.mc-logo-meet { fill: var(--mc-meet); opacity: 0.6; }
+.tool-mc {
+  gap: 3px;
+  color: var(--mc-meet);
+  background: color-mix(in srgb, var(--mc-meet) 14%, transparent);
+}
+.hd-tone-mc { --hd-tone: #9d86ff; }
+.hd-tone-mc .hd-launch-icon .mc-logo circle { stroke-width: 2; }

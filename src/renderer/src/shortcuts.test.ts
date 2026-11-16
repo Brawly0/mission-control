@@ -54,16 +54,16 @@ describe('bindings', () => {
     }
   })
   it('applies your own bindings and unbinding', () => {
-    const keys = effectiveKeys({ newTask: 'Ctrl+Alt+Y', palette: '' })
-    expect(keys.get('newTask')).toEqual(['Ctrl+Alt+Y'])
+    const keys = effectiveKeys({ newNote: 'Ctrl+Alt+Y', palette: '' })
+    expect(keys.get('newNote')).toEqual(['Ctrl+Alt+Y'])
     expect(keys.get('palette')).toEqual([])
     const idx = bindingIndex(keys)
-    expect(idx.get('Ctrl+Alt+Y')).toBe('newTask')
+    expect(idx.get('Ctrl+Alt+Y')).toBe('newNote')
     expect(idx.has('Ctrl+K')).toBe(false)
   })
   it('finds the shortcut a new combination would take over', () => {
     const keys = effectiveKeys({})
-    expect(conflictFor(keys, 'newTask', 'Ctrl+K')?.id).toBe('palette')
+    expect(conflictFor(keys, 'newNote', 'Ctrl+K')?.id).toBe('palette')
     expect(conflictFor(keys, 'palette', 'Ctrl+K')).toBeUndefined()
   })
 })

@@ -1,3 +1,4 @@
+import { McIcon } from './McLogo'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
@@ -298,6 +299,9 @@ export default function ProjectView({ project, projects, git, visible, groups, f
           <div role="group" aria-label="Agent for new sessions">
             <Segmented<AgentTool> value={preferredAgent} onChange={chooseAgent} options={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }]} />
           </div>
+          <Button icon={McIcon} className="btn-mc" onClick={() => onLaunch({ ...base, kind: 'mc', title: `${project.name} · mc` })} title={withKey('New mc session: Claude and Codex split one prompt and build it together', keyFor('newMc'))}>
+            mc
+          </Button>
           <div className="split-btn">
             <Button variant="primary" icon={Play} onClick={newSession} title={withKey(`New ${TOOL_NAME[preferredAgent]} session`, keyFor('newSession'))}>
               New session

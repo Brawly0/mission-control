@@ -1,3 +1,4 @@
+import { isAgentTool } from '@shared/terminalKind'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { RotateCcw, X } from 'lucide-react'
 import type {
@@ -58,6 +59,7 @@ import { useTasks } from './app/useTasks'
 import { useWorkspaces } from './app/useWorkspaces'
 import { briefingPrompt, worktreeParent } from '@shared/projectLook'
 import { askMyPc } from './app/myPc'
+import { TASKS_UI } from '@shared/features'
 import { resumeArgs } from './agentStatus'
 import { TOOL_NAME } from '@shared/handoff'
 
@@ -88,7 +90,9 @@ export default function App() {
   const [git, setGit] = useState<Record<string, GitInfo>>({})
   const [loading, setLoading] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [view, setView] = useState<View>('home')
+  const [view, setViewRaw] = useState<View>('home')
+  // The Tasks tab is archived (ADR 0042): anything that still asks for it lands on Home.
+  const setView = useCallback((next: View) => setViewRaw(!TASKS_UI && next === 'tasks' ? 'home' : next), [])
   const [layout, setLayout] = useState<AgentLayout>('tabs')
   const [showWorktrees, setShowWorktrees] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -464,13 +468,13 @@ export default function App() {
   const allInbox = inboxItems({
     now: Date.now(),
     agents,
-    tasks: boardTasks,
+    tasks: TASKS_UI ? boardTasks : [],
     rateLimit,
     planAlertPercent: appSettings?.planAlertPercent ?? 80,
     budgets,
     projects,
     update,
-    queue,
+    queue: TASKS_UI ? queue : null,
     restoreCount: pendingRestore?.length ?? 0
   })
   const inbox = visibleInbox(allInbox, inboxDismissed)
@@ -635,7 +639,7 @@ export default function App() {
 
   useEffect(() => {
     setProblemState(previous => {
-      const next = deriveProblems(previous, { diagnostics: readiness.diagnostics, tasks })
+      const next = deriveProblems(previous, { diagnostics: readiness.diagnostics, tasks: TASKS_UI ? tasks : [] })
       for (const snapshot of readiness.diagnostics) {
         const result = snapshot.result
         if (!result || result.requestId !== snapshot.latestRequestId || ['checking', 'cancelled', 'stale'].includes(result.outcome) || !result.checks.length || result.checks.some(c => c.id === 'diagnostic')) continue
@@ -850,7 +854,7 @@ export default function App() {
               onRun={() => openDock('run')}
               terminalFolder={terminalAgent?.cwd ?? selected?.path}
               onGitChanged={refreshGit}
-              onHandOff={(a) => a.kind !== 'shell' && void handOff(a.projectPath, a.kind, a.kind === 'claude' ? 'codex' : 'claude', a.sessionId, a.worktree)}
+              onHandOff={(a) => isAgentTool(a.kind) && void handOff(a.projectPath, a.kind, a.kind === 'claude' ? 'codex' : 'claude', a.sessionId, a.worktree)}
             />
           </div>
           <div className={view === 'search' ? 'view-pane' : 'view-pane hidden'}>
@@ -1021,7 +1025,7 @@ export default function App() {
         onAdd={() => { setSetupOpen(false); void addProject() }} onNew={() => { setSetupOpen(false); setNewProjectOpen(true) }}
         onOpenProject={() => { setSetupOpen(false); if (selectedPath) openProject(selectedPath) }}>{firstGuide}</GuidedSetup>}
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
-      {broadcastOpen && <BroadcastDialog agents={agents.filter((a) => a.kind !== 'shell' && !a.exited)} lastOutput={lastOutput} onClose={() => setBroadcastOpen(false)} />}
+      {broadcastOpen && <BroadcastDialog agents={agents.filter((a) => isAgentTool(a.kind) && !a.exited)} lastOutput={lastOutput} onClose={() => setBroadcastOpen(false)} />}
       {workspacesOpen && (
         <WorkspacesDialog
           workspaces={workspaces}

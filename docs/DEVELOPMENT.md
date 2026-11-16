@@ -75,6 +75,10 @@ It also checks shared briefing preview/save/refresh, preserving manual decisions
 
 `MC_SMOKE_UI=<git repo with at least one commit>` screenshots Home, the project tabs, the command palette and the Agents grid with the review panel (as `<MC_SMOKE>-<name>.png`). It also runs the worktree flow on that repo: create, change a file, commit, merge into the base branch, stop the agent, delete. Use a throwaway repo, because the test merges into it. The repo is shown as a project only while the test runs.
 
+### mc duo terminal
+
+`MC_SMOKE_MC=1` (with `MC_SMOKE`, `MC_SMOKE_PROFILE` and `MC_SMOKE_CLEAN=1`) makes a temporary git repo, checks the Duo with mc card on Home in both themes, opens an mc terminal from the UI, waits for its banner, runs `list` and quits. No model calls. The CLI itself: `npm run cli:build`, tests in `cli/src/*.test.ts`.
+
 ### UI polish tour
 
 `MC_SMOKE_POLISH=1` tours Home, Projects, Tasks, Search, Usage and Settings in dark/light themes at 1440 and 960 pixel window widths. It checks page/header overflow, real menu keyboard navigation and focus return, upward placement at the bottom edge, search progress/empty states, switching and cancelling document edits, and Settings at 125% zoom. Screenshots use the `MC_SMOKE` filename with descriptive suffixes. No model calls or changes to project files; settings are restored in the isolated self-test profile.

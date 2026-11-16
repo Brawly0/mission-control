@@ -1,3 +1,4 @@
+import { isAgentTool } from '@shared/terminalKind'
 import type { Dispatch, SetStateAction } from 'react'
 import type { AppSettings, Project } from '@shared/types'
 import { briefingFileName, writeBriefingPrompt } from '@shared/projectLook'
@@ -83,7 +84,7 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
       toast('info', c.notify ? 'Notifications off' : 'Notifications on')
     },
     goHome: () => setView('home'),
-    broadcast: () => agents.some((a) => a.kind !== 'shell' && !a.exited) && c.openBroadcast(),
+    broadcast: () => agents.some((a) => isAgentTool(a.kind) && !a.exited) && c.openBroadcast(),
     goInbox: () => setView('inbox'),
     goAgents: () => setView('agents'),
     goTasks: () => setView('tasks'),
@@ -109,6 +110,10 @@ export function runShortcutAction(id: string, c: ShortcutActionContext): void {
     prevProject: () => cycleProject(-1),
     nextProject: () => cycleProject(1),
     newSession: () => c.newInSelected(),
+    // mc: one prompt, Claude and Codex each build half (ADR 0042). It works on a git project.
+    newMc: () => selected
+      ? launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · mc`, kind: 'mc' })
+      : toast('info', 'Open a project first', 'mc splits a prompt between Claude and Codex inside a git project.'),
     newWorktreeSession: () => selected && c.launchWorktree(selected),
     continueLast: () =>
       selected && launch({ cwd: selected.path, projectName: selected.name, projectPath: selected.path, title: `${selected.name} · continued`, args: ['--continue'] }),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Keyboard, Leaf, ListTodo, Minus, Monitor, Moon, Palette, PiggyBank, Plus, RefreshCw, Settings2, Sun, X } from 'lucide-react'
+import { Download, Keyboard, Leaf, Minus, Monitor, Moon, Palette, PiggyBank, Plus, RefreshCw, Settings2, Sun, X } from 'lucide-react'
 import type { AppSettings, EcoSettings, UpdateState } from '@shared/types'
 import { Button, IconButton, Segmented } from './ui'
 import { SHORTCUTS, effectiveKeys } from '../shortcuts'
@@ -9,7 +9,6 @@ type Tab = 'general' | 'appearance' | 'tasks' | 'spending' | 'shortcuts' | 'upda
 const TABS: { id: Tab; label: string; icon: typeof Keyboard }[] = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'tasks', label: 'Tasks', icon: ListTodo },
   { id: 'spending', label: 'Spending', icon: PiggyBank },
   { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { id: 'updates', label: 'Updates', icon: Download }
@@ -53,7 +52,7 @@ function AppearanceSection({ settings, apply }: { settings: AppSettings; apply: 
 
 function ShortcutsSection({ onOpen, overrides }: { onOpen?: () => void; overrides: Record<string, string> }) {
   const keys = effectiveKeys(overrides)
-  const highlights = ['palette', 'goHome', 'newSession', 'newTask', 'nextAgent', 'toggleSidebar', 'shortcuts']
+  const highlights = ['palette', 'goHome', 'newSession', 'myPc', 'nextAgent', 'toggleSidebar', 'shortcuts']
   return (
     <div className="field">
       <span className="field-label">Keyboard shortcuts</span>
