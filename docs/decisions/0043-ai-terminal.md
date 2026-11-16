@@ -1,6 +1,6 @@
 # 0043: AI terminal: activity strip, approval bar and prompt box
 
-Date: 2026-11-16 · Status: accepted
+Date: 2026-11-16 · Status: superseded by 0044 (reverted in 0.38.0)
 
 ## Context
 

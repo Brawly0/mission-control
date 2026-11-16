@@ -1613,11 +1613,6 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
       await projectCommandsSmoke(win, outFile, log)
       return
     }
-    if (process.env.MC_SMOKE_TERM) {
-      const { aiTerminalSmoke } = await import('./aiTerminalSmoke')
-      await aiTerminalSmoke(win, outFile, log)
-      return
-    }
     if (process.env.MC_SMOKE_MC) {
       const { mcDuoSmoke } = await import('./mcDuoSmoke')
       await mcDuoSmoke(win, outFile, log)

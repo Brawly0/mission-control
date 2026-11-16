@@ -1,11 +1,12 @@
 # Roadmap
 
-## AI terminal (0.37.0)
+## mc feels like an AI terminal (0.38.0)
 
-- [x] Terminal rendering: brand 16-colour palette, GPU renderer with fallback, Unicode 11 widths, clickable web links and file paths (open in VS Code at the line) (ADR 0043)
-- [x] Activity strip: what Claude is doing now (from PreToolUse), live timer, "N files changed" chip that opens Review
-- [x] Approval bar: Allow / Deny / More for Claude and Codex permission prompts
-- [x] Prompt box: multi-line, history, paste screenshots, drop files, quick slash commands, Stop; can be hidden
+- [x] 0.37's AI terminal for Claude and Codex panes (activity strip, approval bar, prompt box, palette, GPU renderer, links) is removed: the request was about the mc terminal (ADR 0044)
+- [x] mc input box: framed prompt with repo, branch and settings in its edge; the request stays boxed in the scrollback; ↑ history
+- [x] Live status rows while agents work (spinner, current tool, timer, tool and file counts); only file changes, what the agents say and errors scroll by
+- [x] Slash commands with Tab completion: /help /list /merge /clean /review /full /yes /planner /model /status /clear /exit
+- [x] Plan and Done cards, Claude and Codex side by side when wide; after a run, m merges, d shows files changed, c throws it away
 
 ## mc duo CLI and Tasks archived (0.36.0)
 

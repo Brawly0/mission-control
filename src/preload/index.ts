@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import type { HookEvent, IndexStatus, MissionControlApi, QueueStatus, RateLimitInfo, Task, TaskTemplate, UpdateState } from '../shared/types'
 
 /** Subscribes to a main-process event; returns the unsubscribe function. */
@@ -75,10 +75,6 @@ const api: MissionControlApi = {
   onVaultChanged: (cb) => on<string>('vault:changed', cb),
   openInExplorer: (path) => ipcRenderer.invoke('open:explorer', path),
   openInVSCode: (path) => ipcRenderer.invoke('open:vscode', path),
-  openFileAt: (cwd, file, line, col) => ipcRenderer.invoke('open:file-at', cwd, file, line, col),
-  filesExist: (cwd, files) => ipcRenderer.invoke('fs:files-exist', cwd, files),
-  savePastedImage: (png) => ipcRenderer.invoke('clipboard:save-image', png),
-  pathForFile: (file) => webUtils.getPathForFile(file),
   openExternalTerminal: (cwd, args) => ipcRenderer.invoke('open:terminal', cwd, args),
 
   ptySpawn: (spec) => ipcRenderer.invoke('pty:spawn', spec),

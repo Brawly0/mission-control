@@ -38,7 +38,6 @@ export function statusFromHook(event: HookEvent, current: HookStatus | undefined
     case 'SessionStart':
       return { status: 'ready', notify: false }
     case 'UserPromptSubmit':
-    case 'PreToolUse':
     case 'PostToolUse':
       return { status: 'working', notify: false }
     case 'Stop':
@@ -84,26 +83,4 @@ export function resumedSession(kind: string, args: string[]): string | undefined
   if (kind === 'codex') return args[0] === 'resume' && args[1] && !args[1].startsWith('-') ? args[1] : undefined
   const at = args.indexOf('--resume')
   return at >= 0 ? args[at + 1] : undefined
-}
-
-/**
- * What a hook call changes in the activity strip: the tool Claude is on (set before the call, cleared once
- * it's done, so between calls the strip reads "Thinking") and the files it has written.
- */
-export function activityFromHook(event: HookEvent, agent: Pick<Agent, 'activity' | 'edited'>): Pick<Agent, 'activity' | 'edited'> {
-  switch (event.event) {
-    case 'PreToolUse':
-      return { activity: event.tool ? { ...event.tool, at: event.at } : agent.activity, edited: agent.edited }
-    case 'PostToolUse': {
-      const file = event.tool?.file
-      const edited = file ? [...(agent.edited ?? []).filter((f) => f.toLowerCase() !== file.toLowerCase()), file] : agent.edited
-      return { activity: undefined, edited }
-    }
-    case 'UserPromptSubmit':
-    case 'Stop':
-    case 'SessionStart':
-      return { activity: undefined, edited: agent.edited }
-    default:
-      return agent
-  }
 }

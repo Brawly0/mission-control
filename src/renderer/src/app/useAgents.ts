@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ContextUsage, SavedAgent } from '@shared/types'
 import type { Agent, LaunchOptions, View } from '../types'
 import { onActivity } from '../terminalBus'
-import { OUTPUT_WORKING_MS, resumeArgs, resumedSession, statusFromHook, activityFromHook } from '../agentStatus'
+import { OUTPUT_WORKING_MS, resumeArgs, resumedSession, statusFromHook } from '../agentStatus'
 import type { useToast } from '../toast'
 import { errorMessage } from '../util'
 
@@ -128,7 +128,6 @@ export function useAgents({ view, setView, toast, warnAt, writeBriefingKey, onTu
             ? a
             : {
                 ...a,
-                ...activityFromHook(event, a),
                 sessionId: event.sessionId ?? a.sessionId,
                 hookStatus: change?.status ?? a.hookStatus,
                 statusAt: change && change.status !== a.hookStatus ? Date.now() : a.statusAt,

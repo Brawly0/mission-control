@@ -14,6 +14,8 @@ mc clean <id>      # throw the run away
 mc help
 ```
 
+In the interactive prompt, type `/help` for slash commands (`/merge`, `/clean`, `/review on|off`, `/full`, `/planner`, `/model`, ...). Tab completes them and ↑ brings back earlier prompts. While the agents work, a live row per agent shows what each one is doing. After a run, `m` merges, `d` lists the files changed and `c` throws the run away.
+
 Options: `-y` (skip the plan confirmation), `--no-review`, `--full` (both agents may run any command),
 `--planner claude|codex`, `--claude-model <m>`, `--codex-model <m>`.
 

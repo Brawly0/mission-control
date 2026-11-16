@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto'
-import { runAgent, stopAll, which, type Access, type AgentResult } from './agents'
+import { basename } from 'node:path'
+import { runAgent, stopAll, which, type Access, type AgentEvent, type AgentResult } from './agents'
+import { COMMANDS, complete, onOff, parseCommand, type Command } from './commands'
 import { changedFiles, commitAll, createWorktree, deleteRun, diffFor, findRun, git, listRuns, removeWorktree, repoRoot, saveRun, tryGit, type Run } from './git'
 import { NAME, SIDES, firstLine, other, overlaps, parseDuoPlan, plannerPrompt, reviewPrompt, workerPrompt, type DuoPlan, type Side } from './plan'
-import { agentLine, ask, block, c, duration, heading, say } from './ui'
+import { Live, ask, block, c, card, cardColumn, cardInner, duration, heading, promptBox, say, sideBySide, startSession, wrap, type Section } from './ui'
 
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 
 const HELP = `${c.bold('mc')}: one prompt, two agents. Claude and Codex split the work and build it at the same time.
 
@@ -82,20 +84,40 @@ function yes(answer: string): boolean {
   return !answer.trim() || /^y(es)?$/i.test(answer.trim())
 }
 
+/** The two agents side by side when the terminal is wide enough, otherwise one under the other. */
+function bySide(lines: (side: Side, width: number) => string[]): Section[] {
+  if (sideBySide()) return [{ left: lines('claude', cardColumn()), right: lines('codex', cardColumn()) }]
+  return SIDES.map(side => lines(side, cardInner()))
+}
+
 function showPlan(plan: DuoPlan): void {
-  heading('Plan')
-  block(plan.summary)
-  if (plan.contract) {
-    console.log()
-    console.log(`   ${c.bold('Shared contract')}`)
-    block(plan.contract, '     ')
-  }
-  for (const side of SIDES) {
-    console.log()
-    console.log(`   ${c[side](c.bold(NAME[side]))}  ${c.bold(plan[side].title)}`)
-    console.log(`   ${c.dim(plan[side].files.join(', '))}`)
-  }
+  const inner = cardInner()
+  const sections: Section[] = [wrap(plan.summary, inner)]
+  if (plan.contract) sections.push([c.bold('Shared contract'), ...wrap(plan.contract, inner - 2).map(l => '  ' + l)])
+  sections.push(...bySide((side, w) => [
+    c[side](c.bold(NAME[side])),
+    ...wrap(plan[side].title, w).map(c.bold),
+    ...wrap(plan[side].files.join(', '), w).map(c.dim)
+  ]))
   console.log()
+  card('Plan', sections)
+}
+
+/** Runs agents at the same time under the live status rows. */
+let live: Live | undefined
+async function together(phase: string, jobs: Array<{ side: Side; go: (onEvent: (e: AgentEvent) => void) => Promise<AgentResult> }>): Promise<AgentResult[]> {
+  const panel = live = new Live()
+  for (const job of jobs) panel.start(job.side, phase)
+  try {
+    return await Promise.all(jobs.map(async job => {
+      const r = await job.go(e => panel.event(job.side, e))
+      panel.finish(job.side, r.ok, r.ms)
+      return r
+    }))
+  } finally {
+    panel.stop()
+    live = undefined
+  }
 }
 
 function resumeHint(side: Side, sessionId?: string): string {
@@ -107,6 +129,7 @@ function resumeHint(side: Side, sessionId?: string): string {
 let current: Run | undefined
 
 function onInterrupt(): void {
+  live?.stop()
   stopAll()
   console.log()
   say(c.yellow('Stopped.'))
@@ -123,7 +146,65 @@ function banner(root: string | undefined): void {
   console.log(`  ${c.claude('◖')}${c.codex('◗')}  ${c.mc(c.bold('mc'))} ${c.dim(VERSION)}  ${c.bold('Claude')} + ${c.bold('Codex')} on one prompt`)
   console.log(c.dim(`      Each prompt is split in two, built by both at the same time on a new branch, then cross-reviewed.`))
   if (root) console.log(c.dim(`      Repository: ${root}`))
-  console.log(c.dim(`      Type what to build. Enter on an empty line quits. Ctrl+C stops a run. mc help lists options.`))
+  console.log(c.dim(`      Type what to build · / for commands (Tab completes) · ↑ earlier prompts · Enter on an empty line quits · Ctrl+C stops a run`))
+}
+
+function statusLine(root: string, opts: Options): string {
+  const branch = tryGit(root, ['symbolic-ref', '--short', 'HEAD']) ?? 'detached'
+  return [
+    basename(root), branch,
+    `review ${opts.review ? 'on' : 'off'}`,
+    opts.access === 'full' ? 'full access' : 'edit access',
+    ...(opts.planner !== 'claude' ? [`planner ${opts.planner}`] : []),
+    ...(opts.yes ? ['auto-start'] : []),
+    ...SIDES.filter(side => opts.models[side]).map(side => `${side} ${opts.models[side]}`)
+  ].join(' · ')
+}
+
+function showCommands(): void {
+  const w = Math.max(...COMMANDS.map(cmd => cmd.usage.length)) + 2
+  console.log()
+  card('Commands', [
+    COMMANDS.map(cmd => `${c.mc(cmd.usage.padEnd(w))}${c.dim(cmd.help)}`),
+    [c.dim('Anything else you type is a request: Claude and Codex split it and build it together.')]
+  ])
+}
+
+/** A slash command at the prompt. Returns true to quit. */
+async function slash(cmd: Command | { name: 'unknown'; args: string }, root: string, opts: Options): Promise<boolean> {
+  try {
+    switch (cmd.name) {
+      case 'unknown': say(c.yellow(`There's no /${cmd.args}. Type /help for the list.`)); break
+      case 'help': showCommands(); break
+      case 'list': list(); break
+      case 'merge': merge(cmd.args || undefined); break
+      case 'clean': clean(cmd.args || undefined); break
+      case 'review': opts.review = onOff(cmd.args, opts.review); say(`Cross-review is ${c.bold(opts.review ? 'on' : 'off')}.`); break
+      case 'full':
+        opts.access = onOff(cmd.args, opts.access === 'full') ? 'full' : 'edit'
+        say(opts.access === 'full' ? `${c.yellow('Full access')}: both agents may run any command.` : 'Edit access: file edits plus read-only git and test/build commands.')
+        break
+      case 'yes': opts.yes = onOff(cmd.args, opts.yes); say(opts.yes ? 'Building starts right after the plan, without asking.' : 'mc asks before building.'); break
+      case 'planner':
+        if (cmd.args === 'claude' || cmd.args === 'codex') { opts.planner = cmd.args; say(`${NAME[cmd.args]} splits the work.`) }
+        else say(c.yellow('Use /planner claude or /planner codex.'))
+        break
+      case 'model': {
+        const [side, name] = cmd.args.split(/\s+/)
+        if ((side !== 'claude' && side !== 'codex') || !name) { say(c.yellow('Use /model claude <name> or /model codex <name> (or "default").')); break }
+        if (name === 'default') delete opts.models[side]
+        else opts.models[side] = name
+        say(`${NAME[side]} uses ${c.bold(opts.models[side] ?? 'its default model')}.`)
+        break
+      }
+      case 'status': say(statusLine(root, opts)); break
+      case 'clear': process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); banner(root); break
+      case 'exit': return true
+    }
+  } catch (err) {
+    say(c.red((err as Error).message))
+  }
+  return false
 }
 
 /** `mc` with no prompt (and how Mission Control opens it): keep asking for the next thing to build. */
@@ -137,15 +218,20 @@ async function interactive(opts: Options): Promise<number> {
     if (process.env.MC_FROM_APP) await ask(c.dim('   Press Enter to close. '))
     return 1
   }
+  startSession(complete)
   for (;;) {
     console.log()
-    const request = (await ask(`${c.mc(c.bold('mc ›'))} `)).trim()
-    if (!request || /^(exit|quit|q)$/i.test(request)) return 0
-    if (/^(help|\?)$/i.test(request)) { console.log(HELP); continue }
-    if (/^list$/i.test(request)) { list(); continue }
+    const request = (await promptBox(statusLine(root, opts))).trim()
+    if (!request) return 0
+    const cmd = parseCommand(request)
+    if (cmd) {
+      if (await slash(cmd, root, opts)) return 0
+      continue
+    }
     try {
-      await run([request], opts)
+      await run([request], opts, true)
     } catch (err) {
+      live?.stop()
       stopAll()
       say(c.red((err as Error).message))
     }
@@ -153,7 +239,7 @@ async function interactive(opts: Options): Promise<number> {
   }
 }
 
-async function run(requestParts: string[], opts: Options): Promise<number> {
+async function run(requestParts: string[], opts: Options, interactive = false): Promise<number> {
   const request = requestParts.join(' ').trim()
   if (!request) { console.log(HELP); return 1 }
   const root = requireRepo()
@@ -174,7 +260,10 @@ async function run(requestParts: string[], opts: Options): Promise<number> {
 
   // 1. Plan
   heading(`Planning with ${NAME[opts.planner]}`)
-  const planned = await runAgent({ side: opts.planner, cwd: root, prompt: plannerPrompt(request), access: 'plan', model: opts.models[opts.planner], onEvent: e => agentLine(opts.planner, 'plan', e) })
+  const [planned] = await together('plan', [{
+    side: opts.planner,
+    go: onEvent => runAgent({ side: opts.planner, cwd: root, prompt: plannerPrompt(request), access: 'plan', model: opts.models[opts.planner], onEvent })
+  }])
   costs.push(planned)
   if (!planned.ok) throw new Error(`Planning failed: ${planned.error}`)
   let plan: DuoPlan
@@ -196,15 +285,16 @@ async function run(requestParts: string[], opts: Options): Promise<number> {
 
   // 3. Build both halves at the same time
   heading('Building')
-  const built = await Promise.all(SIDES.map(side => runAgent({
-    side, cwd: wt.path, prompt: workerPrompt(request, plan, side), access: opts.access, model: opts.models[side],
-    onEvent: e => agentLine(side, 'build', e)
+  const built = await together('build', SIDES.map(side => ({
+    side,
+    go: onEvent => runAgent({ side, cwd: wt.path, prompt: workerPrompt(request, plan, side), access: opts.access, model: opts.models[side], onEvent })
   })))
   const work: Record<Side, AgentResult> = { claude: built[0], codex: built[1] }
   costs.push(...built)
   for (const side of SIDES) {
     current.sessions![side] = work[side].sessionId
-    say(work[side].ok ? `${c[side](NAME[side])} finished its half in ${duration(work[side].ms)}.` : c.red(`${NAME[side]} failed: ${work[side].error}`))
+    if (!work[side].ok) say(c.red(`${NAME[side]} failed: ${work[side].error}`))
+    else if (!process.stdout.isTTY) say(`${c[side](NAME[side])} finished its half in ${duration(work[side].ms)}.`)
   }
   if (SIDES.some(side => !work[side].ok)) {
     current.status = 'failed'
@@ -222,13 +312,16 @@ async function run(requestParts: string[], opts: Options): Promise<number> {
     current.status = 'reviewing'
     saveRun(current)
     heading('Cross-review')
-    const reviews = await Promise.all(SIDES.map(reviewer => {
+    const reviews = await together('review', SIDES.map(reviewer => {
       const author = other(reviewer)
-      return runAgent({
-        side: reviewer, cwd: wt.path, access: opts.access, model: opts.models[reviewer],
-        prompt: reviewPrompt(request, plan, reviewer, work[author].text, diffFor(wt.path, wt.baseCommit, plan[author].files)),
-        onEvent: e => agentLine(reviewer, 'review', e)
-      })
+      return {
+        side: reviewer,
+        go: (onEvent: (e: AgentEvent) => void) => runAgent({
+          side: reviewer, cwd: wt.path, access: opts.access, model: opts.models[reviewer],
+          prompt: reviewPrompt(request, plan, reviewer, work[author].text, diffFor(wt.path, wt.baseCommit, plan[author].files)),
+          onEvent
+        })
+      }
     }))
     costs.push(...reviews)
     SIDES.forEach((reviewer, i) => {
@@ -256,27 +349,53 @@ async function run(requestParts: string[], opts: Options): Promise<number> {
   saveRun(current)
 
   // 6. Summary
-  heading('Done')
   const claudeCost = costs.reduce((n, r) => n + (r.costUsd ?? 0), 0)
   const codexTokens = costs.reduce((n, r) => n + (r.tokens ?? 0), 0)
-  say(`${duration(Date.now() - started)} · Claude ${claudeCost ? `$${claudeCost.toFixed(2)}` : 'plan usage'} · Codex ${codexTokens ? `${Math.round(codexTokens / 1000)}k tokens` : 'plan usage'}`)
+  const spend = `Claude ${claudeCost ? `$${claudeCost.toFixed(2)}` : 'plan usage'} · Codex ${codexTokens ? `${Math.round(codexTokens / 1000)}k tokens` : 'plan usage'}`
+  const took = duration(Date.now() - started)
   if (!commit) {
-    say(c.yellow('The agents made no changes, so nothing was committed.'))
+    console.log()
+    card(`Nothing to commit · ${took}`, [[c.yellow('The agents made no changes, so nothing was committed.'), c.dim(spend)]], c.yellow)
     removeWorktree(root, current, true)
     deleteRun(root, id)
     return 1
   }
-  say(`Commit ${c.bold(commit)} on ${c.bold(wt.branch)}: ${tryGit(wt.path, ['diff', '--shortstat', `${wt.baseCommit}..HEAD`])?.trim()}`)
-  if (outside.length) say(c.yellow(`Changed outside both halves: ${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''}`))
-  for (const side of SIDES) {
-    console.log()
-    console.log(`   ${c[side](c.bold(NAME[side]))}  ${firstLine(work[side].text, 100) || plan[side].title}`)
-  }
+  const inner = cardInner()
+  const sections: Section[] = [[
+    `${c.green('✓')} Commit ${c.bold(commit)} on ${c.bold(wt.branch)}`,
+    ...wrap(tryGit(wt.path, ['diff', '--shortstat', `${wt.baseCommit}..HEAD`])?.trim() ?? '', inner).map(c.dim),
+    c.dim(spend)
+  ]]
+  sections.push(...bySide((side, w) => [
+    c[side](c.bold(NAME[side])) + (verdicts[side] ? c.dim(`  ${verdicts[side]}`) : ''),
+    ...wrap(firstLine(work[side].text, 400) || plan[side].title, w).slice(0, 4)
+  ]))
+  if (outside.length) sections.push(wrap(`Changed outside both halves: ${outside.slice(0, 6).join(', ')}${outside.length > 6 ? ', …' : ''}`, inner).map(c.yellow))
   console.log()
+  card(`Done · ${took}`, sections, c.green)
+  for (const side of SIDES) if (work[side].sessionId) console.log(c.dim(`   Continue ${NAME[side]}: cd "${wt.path}" && ${resumeHint(side, work[side].sessionId)}`))
+  if (interactive) return afterRun(root, current)
   say(`See the changes:  git diff ${wt.base}...${wt.branch}`)
   say(`Merge into ${wt.base}:  ${c.bold(`mc merge ${id}`)}   ·   Throw away:  mc clean ${id}`)
-  for (const side of SIDES) if (work[side].sessionId) say(c.dim(`Continue ${NAME[side]}: cd "${wt.path}" && ${resumeHint(side, work[side].sessionId)}`))
   return 0
+}
+
+/** In the interactive prompt, a finished run is merged, inspected or thrown away with one key. */
+async function afterRun(root: string, r: Run): Promise<number> {
+  for (;;) {
+    console.log()
+    const key = (await ask(`   ${c.bold('m')} merge into ${r.base}  ·  ${c.bold('d')} files changed  ·  ${c.bold('c')} throw away  ·  ${c.dim('Enter keeps it for later')}  `)).trim().toLowerCase()
+    try {
+      if (key === 'm' || key === 'merge') { merge(r.id); return 0 }
+      if (key === 'c' || key === 'clean') { clean(r.id); return 0 }
+      if (key === 'd' || key === 'diff') { block(tryGit(root, ['diff', '--stat', `${r.baseCommit}...${r.branch}`]) ?? 'No diff.'); continue }
+    } catch (err) {
+      say(c.red((err as Error).message))
+      return 1
+    }
+    say(c.dim(`Kept on ${r.branch}. Later: /merge ${r.id} or /clean ${r.id}`))
+    return 0
+  }
 }
 
 function list(): number {
@@ -336,6 +455,7 @@ async function main(): Promise<number> {
 }
 
 main().then(code => process.exit(code), err => {
+  live?.stop()
   stopAll()
   console.error(`${c.mc(c.bold('mc'))}     ${c.red((err as Error).message)}`)
   process.exit(1)
