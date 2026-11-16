@@ -8,7 +8,7 @@ import { app, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import type {
   AgentTool,
@@ -244,6 +244,46 @@ export function registerIpc(): void {
   ipcMain.handle('open:explorer', (_e, path: string) => shell.openPath(path))
   ipcMain.handle('open:vscode', (_e, path: string) => {
     spawn('code', [path], { shell: true, detached: true, stdio: 'ignore' }).unref()
+  })
+  // A file path clicked in an agent's terminal: opens it in VS Code at the line.
+  ipcMain.handle('open:file-at', async (_e, cwd: string, file: string, line?: number, col?: number) => {
+    if (typeof cwd !== 'string' || typeof file !== 'string' || !file || file.length > 1000) return false
+    const full = isAbsolute(file) ? file : resolve(cwd, file)
+    const stat = await fs.stat(full).catch(() => null)
+    if (!stat?.isFile()) return false
+    const at = Number.isInteger(line) && line! > 0 ? `:${line}${Number.isInteger(col) && col! > 0 ? `:${col}` : ''}` : ''
+    // shell: true resolves code.cmd; the path is quoted because it can contain spaces.
+    spawn('code', ['-g', `"${full}${at}"`], { shell: true, detached: true, stdio: 'ignore' }).unref()
+    return true
+  })
+  // Paths spotted in terminal output only become links when the file is there.
+  ipcMain.handle('fs:files-exist', async (_e, cwd: string, files: string[]) => {
+    if (typeof cwd !== 'string' || !Array.isArray(files)) return []
+    return Promise.all(
+      files.slice(0, 50).map(async (f) => {
+        if (typeof f !== 'string' || !f || f.length > 1000) return false
+        const s = await fs.stat(isAbsolute(f) ? f : resolve(cwd, f)).catch(() => null)
+        return !!s?.isFile()
+      })
+    )
+  })
+  // A screenshot pasted into an agent's prompt box goes in as a file path the agent can read.
+  ipcMain.handle('clipboard:save-image', async (_e, png: Uint8Array) => {
+    const bytes = png instanceof Uint8Array ? Buffer.from(png) : null
+    // PNG signature, and a sane size.
+    if (!bytes || bytes.length < 8 || bytes.length > 25_000_000 || bytes.readUInt32BE(0) !== 0x89504e47) return null
+    const dir = join(app.getPath('temp'), 'mission-control-paste')
+    await fs.mkdir(dir, { recursive: true })
+    // Pastes older than a day are cleared out.
+    const old = Date.now() - 86_400_000
+    for (const name of await fs.readdir(dir).catch(() => [] as string[])) {
+      const p = join(dir, name)
+      const s = await fs.stat(p).catch(() => null)
+      if (s && s.mtimeMs < old) await fs.rm(p, { force: true }).catch(() => undefined)
+    }
+    const file = join(dir, `paste-${new Date().toISOString().replace(/[:.]/g, '-')}.png`)
+    await fs.writeFile(file, bytes)
+    return file
   })
   ipcMain.handle('open:terminal', (_e, cwd: string, args: string[]) => {
     // Opens Windows Terminal in the folder running claude, outside the app.

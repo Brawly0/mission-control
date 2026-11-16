@@ -1,5 +1,6 @@
 import type { ProjectIcon } from './projectLook'
 import type { PromptChatReply, PromptChatRequest, PromptResource, PromptSnippet, PromptTarget } from './promptStudio'
+import type { ToolActivity } from './agentActivity'
 export interface Project {
   /** Folder name under ~/.claude/projects (encoded path). Empty for manually added projects with no sessions yet. */
   key: string
@@ -388,6 +389,8 @@ export interface HookEvent {
   notificationType?: string
   /** SessionStart source: 'startup' | 'resume' | 'clear' | 'compact'. */
   source?: string
+  /** PreToolUse / PostToolUse: the tool call, described for the activity strip. */
+  tool?: ToolActivity
   at: number
 }
 
@@ -1023,6 +1026,14 @@ export interface MissionControlApi {
   writeDoc(filePath: string, content: string): Promise<void>
   openInExplorer(path: string): Promise<void>
   openInVSCode(path: string): Promise<void>
+  /** Opens a file at a line in VS Code; a relative path is taken from `cwd`. False when the file doesn't exist. */
+  openFileAt(cwd: string, file: string, line?: number, col?: number): Promise<boolean>
+  /** Which of these paths (relative ones taken from `cwd`) are existing files, in the same order. */
+  filesExist(cwd: string, files: string[]): Promise<boolean[]>
+  /** Saves a pasted image (PNG bytes) in the app's temp folder and returns its path; null if it isn't an image. */
+  savePastedImage(png: Uint8Array): Promise<string | null>
+  /** The full path of a file dropped onto the page. */
+  pathForFile(file: File): string
   openExternalTerminal(cwd: string, args: string[]): Promise<void>
 
   ptySpawn(spec: TerminalSpec): Promise<TerminalInfo>

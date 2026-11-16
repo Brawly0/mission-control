@@ -9,6 +9,7 @@ import { displayStatus } from '../agentStatus'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
+import { ActivityStrip, ApprovalBar, PromptComposer } from './AgentAssist'
 import { Avatar, Button, EmptyState, IconButton, MenuButton, Segmented, ToolBadge } from './ui'
 
 // The terminal (xterm) loads with the first agent, not at startup. Output that comes first is buffered (terminalBus).
@@ -150,6 +151,13 @@ export default function AgentsView(props: Props) {
   const cols = (['auto', '1', '2', '3', '4'].includes(props.cols) ? props.cols : 'auto') as Cols
   const [sizes, setSizes] = useState<Sizes>(() => load('mc.agentSizes', {}))
   const [hiddenRecaps, setHiddenRecaps] = useState<Set<string>>(new Set())
+  // The prompt box under Claude/Codex terminals; on unless you've turned it off.
+  const [composerOn, setComposerOn] = useState<boolean>(() => load('mc.composer', true))
+  const toggleComposer = () =>
+    setComposerOn((on) => {
+      save('mc.composer', !on)
+      return !on
+    })
   const stageRef = useRef<HTMLDivElement>(null)
   const keyFor = useKeyFor()
 
@@ -466,9 +474,28 @@ export default function AgentsView(props: Props) {
                   {a.resumedFrom && !hiddenRecaps.has(a.id) && (
                     <SessionRecap compact sessionId={a.resumedFrom} tool={a.kind === 'codex' ? 'codex' : 'claude'} onClose={() => setHiddenRecaps((cur) => new Set([...cur, a.id]))} />
                   )}
+                  {a.kind !== 'shell' && (
+                    <ActivityStrip
+                      agent={a}
+                      st={st}
+                      onReview={reviewable(a) && !maximized ? () => { onSelect(a.id); setReviewOpen(true) } : undefined}
+                      composerOn={composerOn}
+                      onToggleComposer={isAgentTool(a.kind) && !a.exited ? toggleComposer : undefined}
+                    />
+                  )}
+                  {isAgentTool(a.kind) && <ApprovalBar agent={a} st={st} />}
                   <Suspense fallback={null}>
-                    <TerminalPane id={a.id} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />
+                    <TerminalPane
+                      id={a.id}
+                      cwd={a.cwd}
+                      visible={visible && shown && a.id === focusId}
+                      autoFocus={!(composerOn && isAgentTool(a.kind) && !a.exited)}
+                      onExit={(code) => onExit(a.id, code)}
+                    />
                   </Suspense>
+                  {composerOn && isAgentTool(a.kind) && !a.exited && (
+                    <PromptComposer agent={a} st={st} focusNow={visible && shown && a.id === focusId} />
+                  )}
                 </div>
               )
             })}

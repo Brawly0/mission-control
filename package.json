@@ -1,7 +1,7 @@
 {
   "name": "mission-control",
   "productName": "Mission Control",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "A Windows desktop workspace for Claude Code and Codex: projects, chats, agents and code review.",
   "private": true,
   "main": "./out/main/index.js",
@@ -21,6 +21,9 @@
   },
   "dependencies": {
     "@lydell/node-pty": "1.2.0-beta.15",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
     "electron-updater": "^6.8.9",
     "remark-gfm": "^4.0.1"
   },

@@ -5,6 +5,7 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import type { HookEvent } from '../shared/types'
+import { describeTool } from '../shared/agentActivity'
 
 /**
  * Receives Claude Code hook calls from the agents this app started.
@@ -14,8 +15,8 @@ import type { HookEvent } from '../shared/types'
  * URLs carry a per-run secret so other local processes can't fake events.
  */
 
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Notification', 'Stop', 'SessionEnd'] as const
-const TOOL_EVENTS = new Set(['PostToolUse'])
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionEnd'] as const
+const TOOL_EVENTS = new Set(['PreToolUse', 'PostToolUse'])
 
 let server: Server | null = null
 let port = 0
@@ -71,6 +72,7 @@ export async function startHookServer(onEvent: (e: HookEvent) => void, coach?: P
         message: typeof input.message === 'string' ? input.message : undefined,
         notificationType: typeof input.notification_type === 'string' ? input.notification_type : undefined,
         source: typeof input.source === 'string' ? input.source : undefined,
+        tool: typeof input.tool_name === 'string' ? describeTool(input.tool_name, input.tool_input) : undefined,
         at: Date.now()
       })
     })

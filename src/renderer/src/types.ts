@@ -1,4 +1,5 @@
 import type { TerminalKind, WorktreeInfo } from '@shared/types'
+import type { ToolActivity } from '@shared/agentActivity'
 
 /** Status reported by Claude Code hooks (or Codex's own state signals); exact, unlike the output-timing guess. */
 export type HookStatus = 'ready' | 'working' | 'needs-input' | 'done'
@@ -25,6 +26,10 @@ export interface Agent {
   resumedFrom?: string
   /** Last notification text from Claude, e.g. "Claude needs your permission to use Bash". */
   statusMessage?: string
+  /** The tool call Claude is on (or asking permission for), from the PreToolUse hook. Cleared when the turn ends. */
+  activity?: ToolActivity & { at: number }
+  /** Files this agent has written to since it started, newest last (from its Edit/Write calls). */
+  edited?: string[]
 }
 
 export type AgentLayout = 'tabs' | 'grid'

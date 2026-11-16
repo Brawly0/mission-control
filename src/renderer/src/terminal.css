@@ -1,0 +1,377 @@
+/* AI terminal: activity strip, approval bar and prompt box around each agent's terminal (ADR 0043). */
+
+.terminal-host {
+  padding: 10px 4px 4px 14px;
+}
+.terminal-host .xterm-viewport {
+  scrollbar-width: thin;
+}
+
+/* Working agents get a slow light sweep along the top edge of their cell. */
+.agent-cell.status-working {
+  position: relative;
+}
+.agent-cell.status-working::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.9), #7fd8ff, transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: act-sweep 2.2s ease-in-out infinite;
+}
+@keyframes act-sweep {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+
+/* ---------- Activity strip ---------- */
+.activity-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.05), transparent 55%), var(--surface);
+  font-size: 12px;
+  color: var(--text-2);
+  min-width: 0;
+  flex-shrink: 0;
+}
+.act-orb {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.act-working .act-orb {
+  background: #7fd8ff;
+  box-shadow: 0 0 8px rgba(127, 216, 255, 0.8);
+}
+.act-working .act-orb::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(127, 216, 255, 0.55);
+  animation: act-ring 1.6s ease-out infinite;
+}
+@keyframes act-ring {
+  from { transform: scale(0.5); opacity: 1; }
+  to { transform: scale(1.6); opacity: 0; }
+}
+.act-needs-input .act-orb {
+  background: var(--orange);
+  box-shadow: 0 0 8px rgba(232, 179, 108, 0.7);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.act-done .act-orb {
+  background: var(--blue);
+}
+.act-ready .act-orb {
+  background: var(--green);
+}
+.act-text {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.act-verb {
+  color: var(--text);
+  font-weight: 600;
+}
+.act-working .act-verb {
+  background: linear-gradient(90deg, var(--text) 30%, #7fd8ff 50%, var(--text) 70%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: act-shimmer 2.4s linear infinite;
+}
+@keyframes act-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+.act-needs-input .act-verb {
+  color: var(--orange);
+}
+.act-detail {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.act-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+.act-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #7fd8ff;
+  animation: act-dot 1.2s ease-in-out infinite;
+}
+.act-dots i:nth-child(2) { animation-delay: 0.15s; }
+.act-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes act-dot {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.act-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.act-spacer {
+  flex: 1;
+}
+.act-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+}
+.act-chip:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+.act-chip:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+.act-toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.act-toggle:hover {
+  background: var(--active);
+  color: var(--text);
+}
+.act-toggle.on {
+  color: var(--accent-text);
+}
+
+/* ---------- Approval bar ---------- */
+.approval-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid rgba(232, 179, 108, 0.35);
+  background: linear-gradient(90deg, rgba(232, 179, 108, 0.16), rgba(232, 179, 108, 0.05));
+  font-size: 12px;
+  min-width: 0;
+  flex-shrink: 0;
+  animation: approval-in 0.18s ease-out;
+}
+@keyframes approval-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.approval-icon {
+  color: var(--orange);
+  flex-shrink: 0;
+}
+.approval-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+.approval-detail {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  font: 11.5px var(--mono);
+  color: var(--text-2);
+}
+.approval-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.approval-btn.allow {
+  background: var(--green);
+  color: #04130d;
+}
+.approval-btn.allow:hover {
+  filter: brightness(1.1);
+}
+.approval-btn.deny {
+  border-color: rgba(228, 125, 142, 0.5);
+  color: var(--red);
+}
+.approval-btn.deny:hover {
+  background: rgba(228, 125, 142, 0.12);
+}
+.approval-btn.ghost {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.approval-btn.ghost:hover {
+  background: var(--active);
+  color: var(--text);
+}
+
+/* ---------- Prompt box ---------- */
+.composer {
+  flex-shrink: 0;
+  padding: 8px 10px 6px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.composer-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 5px 5px 5px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--term-bg);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.composer-box:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14), 0 0 18px rgba(var(--accent-rgb), 0.12);
+}
+.composer.dragging .composer-box {
+  border-style: dashed;
+  border-color: #7fd8ff;
+  background: rgba(127, 216, 255, 0.06);
+}
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #e6e6ee;
+  font: 13px/1.45 var(--font);
+  padding: 4px 0;
+  max-height: 170px;
+}
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+.composer textarea::placeholder {
+  color: #6c6c7c;
+}
+.composer-send {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.composer-send:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: #6c6c7c;
+  cursor: default;
+}
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11px;
+}
+.composer-chip:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--hover);
+}
+.composer-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.composer-chip.stop {
+  border-color: rgba(228, 125, 142, 0.45);
+  color: var(--red);
+}
+.composer-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Small grid cells: keep the essentials. */
+@container (max-width: 560px) {
+  .composer-hint,
+  .act-detail {
+    display: none;
+  }
+}
+@container (max-width: 420px) {
+  .composer-foot,
+  .act-time,
+  .approval-detail {
+    display: none;
+  }
+  .act-chip {
+    padding: 0 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-cell.status-working::before,
+  .act-working .act-orb::after,
+  .act-working .act-verb,
+  .act-dots i,
+  .approval-bar {
+    animation: none;
+  }
+}

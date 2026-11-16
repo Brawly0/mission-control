@@ -1,5 +1,12 @@
 # Roadmap
 
+## AI terminal (0.37.0)
+
+- [x] Terminal rendering: brand 16-colour palette, GPU renderer with fallback, Unicode 11 widths, clickable web links and file paths (open in VS Code at the line) (ADR 0043)
+- [x] Activity strip: what Claude is doing now (from PreToolUse), live timer, "N files changed" chip that opens Review
+- [x] Approval bar: Allow / Deny / More for Claude and Codex permission prompts
+- [x] Prompt box: multi-line, history, paste screenshots, drop files, quick slash commands, Stop; can be hidden
+
 ## mc duo CLI and Tasks archived (0.36.0)
 
 - [x] `mc` terminal command (cli/): one prompt split between Claude and Codex, built in parallel in a fresh worktree, cross-reviewed, committed to a branch; `mc list / merge / clean` (ADR 0042)

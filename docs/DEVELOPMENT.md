@@ -79,6 +79,8 @@ It also checks shared briefing preview/save/refresh, preserving manual decisions
 
 `MC_SMOKE_MC=1` (with `MC_SMOKE`, `MC_SMOKE_PROFILE` and `MC_SMOKE_CLEAN=1`) makes a temporary git repo, checks the Duo with mc card on Home in both themes, opens an mc terminal from the UI, waits for its banner, runs `list` and quits. No model calls. The CLI itself: `npm run cli:build`, tests in `cli/src/*.test.ts`.
 
+`MC_SMOKE_TERM=1` (with `MC_SMOKE`, `MC_SMOKE_PROFILE` and `MC_SMOKE_CLEAN=1`) checks the AI terminal (ADR 0043) with a fake `claude` put first on PATH and made-up hook events. It checks the activity strip, the changed-files chip, the approval bar (Allow sends Enter), the prompt box (one line, a multi-line bracketed paste, history, Esc, the /compact chip) and the file-link check. Screenshots go to `<MC_SMOKE>-term-*.png` (working, approval, done, light, narrow). No model calls.
+
 ### UI polish tour
 
 `MC_SMOKE_POLISH=1` tours Home, Projects, Tasks, Search, Usage and Settings in dark/light themes at 1440 and 960 pixel window widths. It checks page/header overflow, real menu keyboard navigation and focus return, upward placement at the bottom edge, search progress/empty states, switching and cancelling document edits, and Settings at 125% zoom. Screenshots use the `MC_SMOKE` filename with descriptive suffixes. No model calls or changes to project files; settings are restored in the isolated self-test profile.
