@@ -25,7 +25,7 @@ continues its own session. Every agent ends with the same short report, and mc m
 
 In the interactive prompt, type `/help` for slash commands (`/mode`, `/merge`, `/clean`, `/review on|off`, `/aura`, `/view`, `/full`, `/planner`, `/model`, ...). Tab completes them and ↑ brings back earlier prompts; a multi-line paste is one request. While the agents work, the transcript shows every step (tool calls, command results, reasoning) and a live tree of boxes at the bottom shows what each agent is touching. `/aura mood|violet|ocean|sunset|matrix|gold|ice|fire|rainbow` colours it, `/view lines` swaps it for one status line per agent; both are saved. After a run, `m` merges, `d` lists the files changed and `c` throws the run away.
 
-Options: `--mode auto|split|claude|codex`, `-y` (skip the plan confirmation), `--no-review`, `--full` (both agents may run any command),
+Options: `--mode auto|split|claude|codex`, `--no-review`, `--full` (both agents may run any command),
 `--planner claude|codex`, `--claude-model <m>`, `--codex-model <m>`.
 
 Needs Node 22+, git, and the `claude` and `codex` CLIs signed in. Run it inside a git repository with at least one

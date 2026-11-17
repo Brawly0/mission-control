@@ -98,7 +98,9 @@ export function parseDuoPlan(reply: string, teamwork: Teamwork = 'auto'): DuoPla
     const owner = data.owner === 'claude' || data.owner === 'codex' ? data.owner : undefined
     if (!owner) throw new Error(`${INVALID}: "owner" must be claude or codex.`)
     if (teamwork === 'split') throw new Error(`${INVALID}: two halves were asked for, but the planner gave the work to one agent.`)
-    return { ...base, halves: { [owner]: { ...half(data[owner], owner, false), files: [] } } }
+    // The work sits under "work"; planners also put it under the owner's key or, copying the example, the other key.
+    const work = [data.work, data[owner], data[other(owner)]].find(v => v && typeof v === 'object' && !Array.isArray(v))
+    return { ...base, halves: { [owner]: { ...half(work, owner, false), files: [] } } }
   }
   const plan: DuoPlan = { ...base, contract: optional(data.contract, 4000), halves: { claude: half(data.claude, 'claude', true), codex: half(data.codex, 'codex', true) } }
   const clash = overlaps(plan.halves.claude!.files, plan.halves.codex!.files)
@@ -112,7 +114,7 @@ export function soloPlan(request: string, owner: Side): DuoPlan {
 }
 
 const SPLIT_SHAPE = `{"mode":"split","summary":"One sentence on how the work is split","context":"What you learned","contract":"Shared names, interfaces and formats both halves must use","claude":{"title":"Short title","prompt":"Concrete instructions and how to verify","files":["src/example.ts"]},"codex":{"title":"Short title","prompt":"Concrete instructions and how to verify","files":["src/other.ts"]}}`
-const SOLO_SHAPE = `{"mode":"solo","summary":"One sentence on what will be done","context":"What you learned","owner":"claude","claude":{"title":"Short title","prompt":"Concrete instructions and how to verify"}}`
+const SOLO_SHAPE = `{"mode":"solo","summary":"One sentence on what will be done","context":"What you learned","owner":"claude or codex","work":{"title":"Short title","prompt":"Concrete instructions and how to verify"}}`
 const ANSWER_SHAPE = `{"mode":"answer","summary":"One sentence","answer":"The full answer in Markdown"}`
 
 export function plannerPrompt(request: string, teamwork: Teamwork = 'auto', earlier: string[] = []): string {

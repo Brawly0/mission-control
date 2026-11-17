@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { complete, onOff, parseCommand } from './commands'
-import { cut, strip, visible, wrap } from './ui'
+import { cut, rowsTaken, strip, unframe, visible, wrap } from './ui'
 
 describe('text layout', () => {
   it('measures text without colour codes', () => {
@@ -67,5 +67,20 @@ describe('transcript and answers', () => {
     const long = eventLines('codex', { kind: 'text', text: Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n') }, 80).map(strip)
     expect(long).toHaveLength(9)
     expect(long[8]).toContain('4 more lines')
+  })
+})
+
+describe('resizing and pasting', () => {
+  it('counts the rows lines take after the terminal re-wraps them for a narrower pane', () => {
+    expect(rowsTaken([109, 109, 40], 110)).toBe(3)
+    expect(rowsTaken([109, 109, 40], 66)).toBe(5)
+    expect(rowsTaken([0, 50], 50)).toBe(2)
+  })
+
+  it('drops mc box edges from text copied off its own screen', () => {
+    const pasted = 'yes add the basic set of commands like /clear /usage /compact │ \n│   and give me other basic ones │'
+    expect(unframe(pasted.split('\n')).join('\n')).toBe('yes add the basic set of commands like /clear /usage /compact\n  and give me other basic ones')
+    expect(unframe(['│ › fix the readme typo                 │'])).toEqual(['fix the readme typo'])
+    expect(unframe(['plain text stays'])).toEqual(['plain text stays'])
   })
 })

@@ -221,6 +221,14 @@ interface Row {
   tree: AgentTree
 }
 
+/**
+ * Screen rows that lines of these widths take now. When the terminal gets narrower (a pane is split, a window is
+ * dragged smaller) it re-wraps what is already on screen, so a full-width line becomes two or more rows.
+ */
+export function rowsTaken(widths: number[], cols = process.stdout.columns || 100): number {
+  return widths.reduce((n, w) => n + Math.max(1, Math.ceil(w / cols)), 0)
+}
+
 /** The tree needs room; small terminals (and /view lines) get one row per agent. */
 const treeView = () => settings.view === 'tree' && (process.stdout.rows || 0) >= 18 && columns() >= 60
 
@@ -231,7 +239,8 @@ const treeView = () => settings.view === 'tree' && (process.stdout.rows || 0) >=
  */
 export class Live {
   private rows: Row[] = []
-  private drawn = 0
+  /** Visible width of each line of the live area on screen, so it can be cleared even after the terminal re-wrapped it. */
+  private drawn: number[] = []
   private frame = 0
   private timer?: ReturnType<typeof setInterval>
 
@@ -308,8 +317,8 @@ export class Live {
   }
 
   private clearCode(): string {
-    const code = this.drawn ? `\x1b[${this.drawn}F\x1b[0J` : ''
-    this.drawn = 0
+    const code = this.drawn.length ? `\x1b[${rowsTaken(this.drawn)}F\x1b[0J` : ''
+    this.drawn = []
     return code
   }
 
@@ -327,7 +336,7 @@ export class Live {
       })
     } else lines = this.rows.map(r => this.line(r))
     lines.push(hint)
-    this.drawn = lines.length
+    this.drawn = lines.map(visible)
     return lines.join('\n') + '\n'
   }
 
@@ -340,14 +349,17 @@ export class Live {
     const max = columns() - 1
     const icon = r.state === 'ok' ? c.green('✓') : r.state === 'fail' ? c.red('✗') : c[r.side](SPIN[this.frame % SPIN.length])
     const left = `  ${icon} ${tag(r.side)} ${c.dim(r.phase.padEnd(7))}`
-    const counts = [
+    const parts = [
       duration(r.ms ?? Date.now() - r.started),
       `${r.tools} tool${r.tools === 1 ? '' : 's'}`,
       ...(r.files.size ? [`${r.files.size} file${r.files.size === 1 ? '' : 's'}`] : []),
       ...(r.tokens ? [`↓ ${tokens(r.tokens)}`] : [])
-    ].join(' · ')
-    const right = c.dim(counts)
-    const room = max - visible(left) - visible(right) - 2
+    ]
+    // In a narrow pane the counts give way (tokens first, the timer last) so the row never wraps: a wrapped row
+    // breaks the repaint and leaves a copy behind on every frame.
+    while (parts.length > 1 && visible(left) + parts.join(' · ').length + 2 + 10 > max) parts.pop()
+    const right = c.dim(cut(parts.join(' · '), Math.max(0, max - visible(left) - 2)))
+    const room = Math.max(0, max - visible(left) - visible(right) - 2)
     let status: string
     if (r.state === 'ok') status = 'done'
     else if (r.state === 'fail') status = r.now === 'stopped' ? 'stopped' : 'failed'
@@ -428,6 +440,14 @@ export async function ask(question: string): Promise<string> {
 
 const PROMPT = () => c.mc('│') + ' ' + c.mc(c.bold('›')) + ' '
 
+/**
+ * Text copied from mc's own screen (an earlier request in its box) brings the box edges along:
+ * "│ › add the commands │". Those edges are dropped so the request reads as typed.
+ */
+export function unframe(lines: string[]): string[] {
+  return lines.map(l => l.replace(/^\s*│\s?(?:›\s)?/, '').replace(/\s*│\s*$/, '').replace(/\s+│\s+/g, ' '))
+}
+
 /** readline's internal "redraw the line" step (a symbol in current Node, a method in older ones). */
 function refreshKey(rl: Interface): string | symbol | undefined {
   for (let o: object | null = rl; o; o = Object.getPrototypeOf(o)) {
@@ -444,30 +464,49 @@ function refreshKey(rl: Interface): string | symbol | undefined {
  * was typed, so the scrollback reads like a chat.
  */
 export async function promptBox(status: string, hint: string): Promise<string> {
-  const w = boxWidth()
-  const fill = Math.max(1, w - visible(`╭─ mc · ${status} `) - 1)
-  const top = c.mc('╭─ ') + c.mc(c.bold('mc')) + c.dim(` · ${status} `) + c.mc('─'.repeat(fill) + '╮')
-  const bottom = c.mc('╰' + '─'.repeat(w - 2) + '╯')
-  const hintLine = c.dim(cut('  ' + hint, columns() - 1))
-  console.log(top)
+  // Sizes are read again on every redraw: the pane can be resized while the prompt waits.
+  const edges = () => {
+    const w = boxWidth()
+    const fill = Math.max(1, w - visible(`╭─ mc · ${status} `) - 1)
+    return {
+      w,
+      top: c.mc('╭─ ') + c.mc(c.bold('mc')) + c.dim(` · ${status} `) + c.mc('─'.repeat(fill) + '╮'),
+      bottom: c.mc('╰' + '─'.repeat(w - 2) + '╯'),
+      hintLine: c.dim(cut('  ' + hint, columns() - 1))
+    }
+  }
+  let box = edges()
+  console.log(box.top)
   const rl = session
   if (!tty || !rl) return ask(PROMPT())
 
-  process.stdout.write(c.mc('│') + ' '.repeat(w - 2) + c.mc('│') + '\r\n' + bottom + '\r\n' + hintLine + '\x1b[2F')
+  process.stdout.write(c.mc('│') + ' '.repeat(box.w - 2) + c.mc('│') + '\r\n' + box.bottom + '\r\n' + box.hintLine + '\x1b[2F')
   const key = refreshKey(rl)
   const original = key ? (rl as any)[key] : undefined
+  const fits = () => visible(PROMPT()) + [...rl.line].length < (process.stdout.columns || 100)
   if (key && original) {
     // The prototype exposes it as a getter, so the override is an own data property, removed again after the prompt.
     Object.defineProperty(rl, key, {
       configurable: true, writable: true,
       value: function (this: Interface, ...args: unknown[]) {
         original.apply(this, args)
+        if (!fits()) return
         const used = visible(PROMPT()) + [...this.line].length
-        if (used >= columns()) return
+        const { w, bottom, hintLine } = box
         process.stdout.write('\x1b7' + (used < w - 1 ? `\x1b[${w}G` + c.mc('│') : '') + '\r\n\x1b[2K' + bottom + '\r\n\x1b[2K' + hintLine + '\x1b8')
       }
     })
   }
+  // On a resize the terminal re-wraps the old top edge (a narrower pane makes it two rows); readline has already
+  // redrawn the input line, so go up over the old edge, clear, and draw the whole box again at the new width.
+  const onResize = () => {
+    if (!key || !original || !fits()) return
+    const old = visible(box.top)
+    box = edges()
+    process.stdout.write(`\r\x1b[${rowsTaken([old])}A\x1b[0J` + box.top + '\r\n')
+    ;(rl as any)[key]()
+  }
+  process.stdout.on('resize', onResize)
   const extra: string[] = []
   const onLine = (line: string) => extra.push(line)
   rl.on('line', onLine)
@@ -477,14 +516,17 @@ export async function promptBox(status: string, hint: string): Promise<string> {
     // A multi-line paste arrives as several lines at once; the rest come in right after the first.
     await new Promise(resolve => setTimeout(resolve, 40))
   } finally {
+    process.stdout.off('resize', onResize)
     rl.off('line', onLine)
     rl.pause()
     if (key && original) delete (rl as any)[key]
   }
-  const answer = [first, ...extra].join('\n').trim()
+  const answer = unframe([first, ...extra]).join('\n').trim()
 
   // Replace the typed line(s), bottom edge and hint with the request wrapped inside the box.
-  const cols = columns()
+  box = edges()
+  const { w, bottom } = box
+  const cols = process.stdout.columns || 100
   const rows = Math.max(1, Math.ceil(visible(PROMPT() + first) / cols)) + extra.reduce((n, l) => n + Math.max(1, Math.ceil(visible(l) / cols)), 0)
   process.stdout.write(`\x1b[${rows}F\x1b[0J`)
   const inner = w - 4

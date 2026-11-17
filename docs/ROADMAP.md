@@ -1,5 +1,12 @@
 # Roadmap
 
+## mc fixes: no questions, no plan errors, clean resizing (0.39.1)
+
+- [x] mc no longer asks "Start building?" or shows the merge menu after a run: type the request, it builds, and you're back at the prompt (`/merge <id>`, `/clean <id>` later); `/yes` removed, `-y` still accepted
+- [x] Fix: "The plan could not be read: the Codex part is missing" when the planner filed solo work under the other agent's key; solo work now sits under `work`, and an unreadable plan falls back to an answer or a one-agent build instead of stopping
+- [x] Fix: resizing the pane (side-by-side terminals) left copies of the live rows and broke the input box; rows fit narrow panes and redraws count re-wrapped lines
+- [x] Text copied from mc's own box no longer brings the `│` edges into the request
+
 ## mc teamwork, live work tree and a faster idle app (0.39.0)
 
 - [x] The planner picks how much teamwork a request needs: answer (questions, nobody else runs), solo (one agent builds, the other reviews) or split; `/mode auto|split|claude|codex`, `--mode` (ADR 0046)

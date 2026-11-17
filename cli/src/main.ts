@@ -8,7 +8,7 @@ import { saveSettings, settings } from './settings'
 import { AURAS, type Aura } from './tree'
 import { Live, ask, block, c, card, cardColumn, cardInner, duration, heading, md, promptBox, say, sideBySide, startSession, tokens, wrap, type Section } from './ui'
 
-const VERSION = '0.3.0'
+const VERSION = '0.3.1'
 
 const HELP = `${c.bold('mc')}: one prompt, two agents. Claude and Codex share the work: mc answers questions directly, gives small
 changes to one agent and splits bigger ones so both build at the same time. The other agent reviews the result.
@@ -25,7 +25,6 @@ ${c.bold('Options')}
   --mode auto|split|claude|codex
                              auto (default): the planner picks answer, one agent, or both
                              split: always two halves · claude/codex: that agent builds alone, no planning step
-  -y, --yes                  start without confirming the plan
   --no-review                skip the review step (faster, cheaper)
   --full                     let both agents run any command (Claude bypassPermissions, Codex no sandbox)
   --planner claude|codex     who reads the repo and plans (default: claude)
@@ -44,7 +43,6 @@ ${c.bold('How it works')}
   vitest, pytest, go test, cargo); Codex runs in its workspace-write sandbox. Use --full for anything else.`
 
 interface Options {
-  yes: boolean
   review: boolean
   access: Access
   planner: Side
@@ -55,7 +53,7 @@ interface Options {
 const TEAMWORK: Teamwork[] = ['auto', 'split', 'claude', 'codex']
 
 function parse(argv: string[]): { command: string; rest: string[]; opts: Options } {
-  const opts: Options = { yes: false, review: true, access: 'edit', planner: 'claude', teamwork: 'auto', models: {} }
+  const opts: Options = { review: true, access: 'edit', planner: 'claude', teamwork: 'auto', models: {} }
   const rest: string[] = []
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
@@ -64,7 +62,7 @@ function parse(argv: string[]): { command: string; rest: string[]; opts: Options
       if (!v) throw new Error(`${a} needs a value.`)
       return v
     }
-    if (a === '-y' || a === '--yes') opts.yes = true
+    if (a === '-y' || a === '--yes') continue // accepted for old scripts; mc no longer asks before building
     else if (a === '--no-review') opts.review = false
     else if (a === '--full') opts.access = 'full'
     else if (a === '--mode') {
@@ -93,10 +91,6 @@ function requireRepo(): string {
   const root = repoRoot(process.cwd())
   if (!root) throw new Error('Run mc inside a git repository (the agents work on a new branch).')
   return root
-}
-
-function yes(answer: string): boolean {
-  return !answer.trim() || /^y(es)?$/i.test(answer.trim())
 }
 
 /** The agents side by side when the terminal is wide enough, otherwise one under the other. */
@@ -196,7 +190,6 @@ function statusLine(root: string, opts: Options): string {
     `review ${opts.review ? 'on' : 'off'}`,
     ...(opts.access === 'full' ? ['full access'] : []),
     ...(opts.planner !== 'claude' ? [`planner ${opts.planner}`] : []),
-    ...(opts.yes ? ['auto-start'] : []),
     ...SIDES.filter(side => opts.models[side]).map(side => `${side} ${opts.models[side]}`)
   ].join(' · ')
 }
@@ -232,7 +225,6 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         opts.access = onOff(cmd.args, opts.access === 'full') ? 'full' : 'edit'
         say(opts.access === 'full' ? `${c.yellow('Full access')}: both agents may run any command.` : 'Edit access: file edits plus read-only git and test/build commands.')
         break
-      case 'yes': opts.yes = onOff(cmd.args, opts.yes); say(opts.yes ? 'Building starts right after the plan, without asking.' : 'mc asks before building.'); break
       case 'planner':
         if (cmd.args === 'claude' || cmd.args === 'codex') { opts.planner = cmd.args; say(`${NAME[cmd.args]} reads the repo and plans.`) }
         else say(c.yellow('Use /planner claude or /planner codex.'))
@@ -332,9 +324,15 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
     try {
       plan = parseDuoPlan(planned.text, opts.teamwork)
     } catch (err) {
-      say(c.red((err as Error).message))
-      block(c.dim(planned.text.slice(0, 1500)))
-      return 1
+      // Don't dead-end on a plan mc can't read: prose is the answer; a broken plan goes to one agent as typed.
+      if (!/^\s*(```|\{)/.test(planned.text) && planned.text.trim()) {
+        showAnswer(planned.text, `${NAME[opts.planner]} · ${duration(Date.now() - started)} · ${spend(costs)}`)
+        remember('answered')
+        return 0
+      }
+      const owner: Side = opts.teamwork === 'split' || opts.teamwork === 'auto' ? 'codex' : opts.teamwork
+      say(c.yellow(`${(err as Error).message} ${NAME[owner]} builds it from your request instead.`))
+      plan = soloPlan(request, owner)
     }
     if (plan.mode === 'answer') {
       showAnswer(plan.answer, `${NAME[opts.planner]} · ${duration(Date.now() - started)} · ${spend(costs)}`)
@@ -345,8 +343,8 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   }
 
   const dirty = (tryGit(root, ['status', '--porcelain']) ?? '').split(/\r?\n/).filter(l => l && !/\.claude\/worktrees\//.test(l))
-  if (dirty.length && !opts.yes) say(c.yellow(`Heads-up: ${dirty.length} uncommitted change${dirty.length === 1 ? '' : 's'} in your folder. The agents start from your last commit, so these aren't included.`))
-  if (!solo && !opts.yes && !yes(await ask(`  ${c.mc(c.bold('mc'))}      Start building? ${c.dim('[Y/n]')} `))) { say('Cancelled. Nothing was changed.'); remember('cancelled'); return 1 }
+  if (dirty.length) say(c.yellow(`Heads-up: ${dirty.length} uncommitted change${dirty.length === 1 ? '' : 's'} in your folder. The agents start from your last commit, so these aren't included.`))
+  // No confirmation: building starts right after the plan (Ctrl+C stops it).
 
   // 2. Worktree
   let id = randomBytes(2).toString('hex')
@@ -445,9 +443,10 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   const rel = relative(process.cwd(), wt.path) || '.'
   for (const side of builders) if (work[side]!.sessionId) console.log(c.dim(`    Continue ${NAME[side]}: cd "${rel}" && ${resumeHint(side, work[side]!.sessionId)}`))
   remember(`committed on ${wt.branch} (${firstLine(plan.summary, 100)})`)
-  if (interactive) return afterRun(root, current, earlier)
-  say(`See the changes:  git diff ${wt.base}...${wt.branch}`)
-  say(`Merge into ${wt.base}:  ${c.bold(`mc merge ${id}`)}   ·   Throw away:  mc clean ${id}`)
+  // No question afterwards either: say how to merge or throw it away, then go straight back to the prompt.
+  const cmd = interactive ? '/' : 'mc '
+  if (!interactive) say(`See the changes:  git diff ${wt.base}...${wt.branch}`)
+  say(`Merge into ${wt.base}:  ${c.bold(`${cmd}merge ${id}`)}   ·   Throw away:  ${cmd}clean ${id}`)
   return 0
 }
 
@@ -474,7 +473,7 @@ function showResult(o: { plan: DuoPlan; builders: Side[]; reports: Partial<Recor
   let changedItems = from(r => r.changed)
   // An agent that didn't use the report format: show the start of its reply instead.
   for (const side of o.builders) if (!o.reports[side]!.changed.length) changedItems.push([side, firstLine(o.reports[side]!.rest, 300) || o.plan.halves[side]!.title])
-  if (changedItems.length > 14) changedItems = [...changedItems.slice(0, 13), [o.builders[0], `… and ${changedItems.length - 13} more (press d)`]]
+  if (changedItems.length > 14) changedItems = [...changedItems.slice(0, 13), [o.builders[0], `… and ${changedItems.length - 13} more`]]
 
   const reviewLines: string[] = []
   for (const reviewer of SIDES) {
@@ -501,24 +500,6 @@ function showResult(o: { plan: DuoPlan; builders: Side[]; reports: Partial<Recor
   sections.push([`${o.spend}${c.dim(' · ' + o.took)}`])
   console.log()
   card(`Done · ${o.took}`, sections, c.green)
-}
-
-/** In the interactive prompt, a finished run is merged, inspected or thrown away with one key. */
-async function afterRun(root: string, r: Run, earlier: string[]): Promise<number> {
-  for (;;) {
-    console.log()
-    const key = (await ask(`  ${c.bold('m')} merge into ${r.base}  ·  ${c.bold('d')} files changed  ·  ${c.bold('c')} throw away  ·  ${c.dim('Enter keeps it for later')}  `)).trim().toLowerCase()
-    try {
-      if (key === 'm' || key === 'merge') { merge(r.id); earlier.push(`(merged ${r.branch} into ${r.base})`); return 0 }
-      if (key === 'c' || key === 'clean') { clean(r.id); earlier.push(`(threw away ${r.branch})`); return 0 }
-      if (key === 'd' || key === 'diff') { block(tryGit(root, ['diff', '--stat', `${r.baseCommit}...${r.branch}`]) ?? 'No diff.'); continue }
-    } catch (err) {
-      say(c.red((err as Error).message))
-      return 1
-    }
-    say(c.dim(`Kept on ${r.branch}. Later: /merge ${r.id} or /clean ${r.id}`))
-    return 0
-  }
 }
 
 function list(): number {

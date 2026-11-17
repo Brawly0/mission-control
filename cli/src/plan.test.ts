@@ -80,6 +80,16 @@ describe('routing', () => {
     expect(w).toContain('WHAT THE PLANNER ALREADY FOUND')
     expect(w).not.toMatch(/other half/)
   })
+  it('finds solo work under "work", the owner key, or the other key (a real planner reply: owner codex, work under "claude")', () => {
+    for (const key of ['work', 'codex', 'claude']) {
+      const p = parseDuoPlan(JSON.stringify({ mode: 'solo', summary: 's', owner: 'codex', [key]: { title: 'Add commands', prompt: 'Do it' } }))
+      expect(workers(p)).toEqual(['codex'])
+      expect(p.halves.codex!.title).toBe('Add commands')
+      expect(p.halves.claude).toBeUndefined()
+    }
+    expect(() => parseDuoPlan(JSON.stringify({ mode: 'solo', summary: 's', owner: 'codex' }))).toThrow(/Codex part is missing/)
+  })
+
   it('refuses a solo plan when two halves were asked for, and an unknown owner', () => {
     const solo = JSON.stringify({ mode: 'solo', summary: 's', owner: 'claude', claude: { title: 't', prompt: 'p' } })
     expect(() => parseDuoPlan(solo, 'split')).toThrow(/two halves/)

@@ -15,7 +15,6 @@ export const COMMANDS: Array<Omit<Command, 'args'>> = [
   { name: 'mode', usage: '/mode auto|split|claude|codex', help: 'auto: mc answers, gives it to one agent or splits it · split: always both · claude/codex: that one builds alone' },
   { name: 'review', usage: '/review on|off', help: 'the other agent reviews the diff after building' },
   { name: 'full', usage: '/full on|off', help: 'let both agents run any command' },
-  { name: 'yes', usage: '/yes on|off', help: 'start building without confirming the plan' },
   { name: 'planner', usage: '/planner claude|codex', help: 'who splits the work' },
   { name: 'model', usage: '/model claude|codex <name|default>', help: 'model for one agent' },
   { name: 'aura', usage: '/aura <name>', help: 'colour of the live work tree: mood (follows the work), violet, ocean, sunset, matrix, gold, ice, fire, rainbow · saved' },
@@ -48,7 +47,7 @@ export function onOff(arg: string, current: boolean): boolean {
 }
 
 /** Values Tab completes after a command. */
-const VALUES: Record<string, string[]> = { aura: ['mood', 'violet', 'ocean', 'sunset', 'matrix', 'gold', 'ice', 'fire', 'rainbow'], view: ['tree', 'lines'], mode: ['auto', 'split', 'claude', 'codex'], planner: ['claude', 'codex'], model: ['claude', 'codex'], review: ['on', 'off'], full: ['on', 'off'], yes: ['on', 'off'] }
+const VALUES: Record<string, string[]> = { aura: ['mood', 'violet', 'ocean', 'sunset', 'matrix', 'gold', 'ice', 'fire', 'rainbow'], view: ['tree', 'lines'], mode: ['auto', 'split', 'claude', 'codex'], planner: ['claude', 'codex'], model: ['claude', 'codex'], review: ['on', 'off'], full: ['on', 'off'] }
 
 /** Tab completion for readline: slash commands, then their values. */
 export function complete(line: string): [string[], string] {
