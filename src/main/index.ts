@@ -15,7 +15,18 @@ import { startHookServer, stopHookServer } from './hookServer'
 import { killAllTerminals } from './pty'
 import { loadStore, updateStore } from './store'
 import { saveNewBriefings } from './briefings'
-import { log as smokeLog, perfMark, runSmoke } from './smoke'
+// The self-test (~2,000 lines) loads only for MC_SMOKE runs, so normal starts don't parse it.
+const smokeModule = process.env.MC_SMOKE ? import('./smoke') : null
+let smoke: typeof import('./smoke') | undefined
+const earlyMarks: Record<string, number> = {}
+void smokeModule?.then((m) => { smoke = m; Object.assign(m.perfMarks, earlyMarks) })
+/** Startup times for the speed test (MC_SMOKE_PERF), in ms since the process started. */
+const perfMark = (name: string) => {
+  if (!smokeModule) return
+  if (smoke) smoke.perfMark(name)
+  else earlyMarks[name] = Math.round(process.uptime() * 1000)
+}
+const smokeLog = (...a: unknown[]) => smoke?.log(...a)
 import { startPlanUsage, stopPlanUsage } from './planUsage'
 import { stopVaultWatch } from './vault'
 import { coachPrompt } from './eco'
@@ -160,7 +171,8 @@ app.whenReady().then(async () => {
     !process.env.MC_SMOKE
   )
   const win = getMainWindow()
-  if (process.env.MC_SMOKE && win) {
+  if (smokeModule && win) {
+    const { runSmoke } = await smokeModule
     win.webContents.once('did-finish-load', () => runSmoke(win, process.env.MC_SMOKE!, { launchTerminal, ptyTaps, hookTaps, listDocs }))
   }
   app.on('activate', () => {

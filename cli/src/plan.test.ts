@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { claudeArgs, claudeEvent, codexArgs, codexEvent, describeClaudeTool, type AgentResult } from './agents'
-import { firstLine, overlaps, ownedPath, parseDuoPlan, plannerPrompt, reviewPrompt, workerPrompt, type DuoPlan } from './plan'
+import { firstLine, overlaps, ownedPath, parseDuoPlan, parseReport, plannerPrompt, reviewPrompt, soloPlan, workerPrompt, workers, type DuoPlan } from './plan'
 
 const plan = (claudeFiles: string[], codexFiles: string[]) => JSON.stringify({
   summary: 'Backend and frontend',
@@ -12,13 +12,13 @@ const plan = (claudeFiles: string[], codexFiles: string[]) => JSON.stringify({
 describe('parseDuoPlan', () => {
   it('reads a plain or fenced JSON plan', () => {
     const p = parseDuoPlan(plan(['src/api/'], ['src/ui/List.tsx']))
-    expect(p.claude.files).toEqual(['src/api/'])
+    expect(p.halves.claude!.files).toEqual(['src/api/'])
     expect(p.contract).toContain('/api/items')
-    expect(parseDuoPlan('```json\n' + plan(['a.ts'], ['b.ts']) + '\n```').codex.title).toBe('UI')
+    expect(parseDuoPlan('```json\n' + plan(['a.ts'], ['b.ts']) + '\n```').halves.codex!.title).toBe('UI')
   })
 
   it('normalises Windows and ./ paths', () => {
-    expect(parseDuoPlan(plan(['.\\src\\a.ts'], ['b.ts'])).claude.files).toEqual(['src/a.ts'])
+    expect(parseDuoPlan(plan(['.\\src\\a.ts'], ['b.ts'])).halves.claude!.files).toEqual(['src/a.ts'])
   })
 
   it('rejects prose, missing halves and shared files', () => {
@@ -54,7 +54,7 @@ describe('prompts', () => {
   })
   it('asks the reviewer for the other half with its diff', () => {
     const r = reviewPrompt('req', p, 'claude', 'did the UI', '+ new line')
-    expect(r).toMatch(/review Codex's half/)
+    expect(r).toMatch(/Review Codex's work/)
     expect(r).toContain('+ new line')
     expect(r).toContain('- src/ui/')
   })
@@ -64,7 +64,70 @@ describe('prompts', () => {
   })
 })
 
+describe('routing', () => {
+  it('reads an answer without any builders', () => {
+    const p = parseDuoPlan(JSON.stringify({ mode: 'answer', summary: 'How auth works', answer: '## Auth\nTokens live in `src/auth.ts`.' }))
+    expect(p.mode).toBe('answer')
+    expect(workers(p)).toEqual([])
+    expect(p.answer).toContain('src/auth.ts')
+  })
+  it('reads a solo plan: one owner, owns everything, keeps the planner context', () => {
+    const p = parseDuoPlan(JSON.stringify({ mode: 'solo', summary: 'Fix the typo', context: 'Typo is in README.md line 3', owner: 'codex', codex: { title: 'Fix typo', prompt: 'Fix it' } }))
+    expect(workers(p)).toEqual(['codex'])
+    expect(p.halves.codex!.files).toEqual([])
+    expect(p.context).toContain('README.md')
+    const w = workerPrompt('fix the typo', p, 'codex')
+    expect(w).toContain('WHAT THE PLANNER ALREADY FOUND')
+    expect(w).not.toMatch(/other half/)
+  })
+  it('refuses a solo plan when two halves were asked for, and an unknown owner', () => {
+    const solo = JSON.stringify({ mode: 'solo', summary: 's', owner: 'claude', claude: { title: 't', prompt: 'p' } })
+    expect(() => parseDuoPlan(solo, 'split')).toThrow(/two halves/)
+    expect(() => parseDuoPlan(JSON.stringify({ mode: 'solo', summary: 's', owner: 'gpt' }))).toThrow(/owner/)
+  })
+  it('offers solo only when the user allows it, and passes earlier requests along', () => {
+    expect(plannerPrompt('x', 'split')).not.toContain('"mode":"solo"')
+    expect(plannerPrompt('x', 'auto')).toContain('"mode":"solo"')
+    expect(plannerPrompt('x', 'auto', ['"add login" → committed'])).toContain('EARLIER IN THIS SESSION')
+  })
+  it('makes a one-agent plan without a planner', () => {
+    const p = soloPlan('add a --json flag', 'claude')
+    expect(workers(p)).toEqual(['claude'])
+    expect(workerPrompt('add a --json flag', p, 'claude')).toMatch(/Changed:[\s\S]*Checked:[\s\S]*Notes:/)
+  })
+  it('keeps a resumed review prompt short', () => {
+    const p = parseDuoPlan(plan(['src/api/'], ['src/ui/']))
+    const resumed = reviewPrompt('req', p, 'claude', 'did the UI', '+ line', true)
+    const fresh = reviewPrompt('req', p, 'claude', 'did the UI', '+ line', false)
+    expect(resumed).not.toContain('REQUEST:')
+    expect(fresh).toContain('REQUEST:')
+    expect(resumed.length).toBeLessThan(fresh.length)
+  })
+})
+
+describe('parseReport', () => {
+  it('reads the fixed report, including bold headings and wrapped bullets', () => {
+    const r = parseReport('Done.\n\n**Changed:**\n- src/a.ts: new parser\n  that handles quotes\n- src/b.ts: wired it\nChecked:\n- npm test: 12 passed\nNotes:\n- none')
+    expect(r.changed).toEqual(['src/a.ts: new parser that handles quotes', 'src/b.ts: wired it'])
+    expect(r.checked).toEqual(['npm test: 12 passed'])
+    expect(r.notes).toEqual([])
+    expect(r.rest).toBe('Done.')
+  })
+  it('reads review verdicts and their fixes', () => {
+    expect(parseReport('Verdict: ok')).toMatchObject({ verdict: 'ok', fixes: [] })
+    expect(parseReport('Looked at it.\nVerdict: fixed\n- src/ui.ts: null check\n- src/ui.ts: wrong route')).toMatchObject({ verdict: 'fixed', fixes: ['src/ui.ts: null check', 'src/ui.ts: wrong route'] })
+  })
+  it('leaves free-form replies in rest', () => {
+    expect(parseReport('I added the button.').rest).toBe('I added the button.')
+  })
+})
+
 describe('agent arguments', () => {
+  it('continues a session for the review', () => {
+    expect(claudeArgs('edit', 'new', undefined, 'old')).toEqual(expect.arrayContaining(['--resume', 'old']))
+    expect(claudeArgs('edit', 'new', undefined, 'old')).not.toContain('--session-id')
+    expect(codexArgs('edit', undefined, 't1').slice(0, 3)).toEqual(['exec', 'resume', 't1'])
+  })
   it('keeps Claude read-only for planning and allows read-only git when editing', () => {
     expect(claudeArgs('plan', 'id')).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--session-id', 'id']))
     const edit = claudeArgs('edit', 'id', 'sonnet')
@@ -99,6 +162,35 @@ describe('stream events', () => {
     codexEvent({ type: 'item.completed', item: { type: 'agent_message', text: 'All done' } }, r)
     codexEvent({ type: 'turn.completed', usage: { input_tokens: 1000, output_tokens: 200 } }, r)
     expect(r).toMatchObject({ ok: true, text: 'All done', sessionId: 't1', tokens: 1200 })
+  })
+  it('shows Claude thinking, edit sizes, command results and output tokens', () => {
+    const r = fresh()
+    expect(claudeEvent({ type: 'system', subtype: 'thinking_tokens', estimated_tokens: 197 }, r)).toEqual([{ kind: 'thinking', text: '', tokens: 197 }])
+    const edit = claudeEvent({ type: 'assistant', message: { id: 'm1', usage: { output_tokens: 40 }, content: [
+      { type: 'thinking', thinking: '', signature: 'x' },
+      { type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: 'a.ts', old_string: 'a', new_string: 'a\nb\nc' } },
+      { type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'npm test' } }
+    ] } }, r)
+    expect(edit).toEqual([
+      { kind: 'tool', text: 'Edit a.ts', detail: '+3 −1' },
+      { kind: 'tool', text: '$ npm test' },
+      { kind: 'usage', text: '', tokens: 40 }
+    ])
+    const results = claudeEvent({ type: 'user', message: { content: [
+      { type: 'tool_result', tool_use_id: 't1', content: 'ok' },
+      { type: 'tool_result', tool_use_id: 't2', content: 'running\nTests: 12 passed' }
+    ] } }, r)
+    expect(results).toEqual([{ kind: 'output', text: 'Tests: 12 passed (2 lines)', ok: true }])
+    expect(claudeEvent({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'String not found in file' }] } }, r)[0]).toMatchObject({ kind: 'output', ok: false })
+  })
+  it('shows Codex reasoning, to-dos and failed commands', () => {
+    const r = fresh()
+    expect(codexEvent({ type: 'item.completed', item: { type: 'reasoning', text: '**Planning the parser**' } }, r)).toEqual([{ kind: 'thinking', text: 'Planning the parser' }])
+    expect(codexEvent({ type: 'item.updated', item: { type: 'todo_list', items: [{ text: 'Read code', completed: true }, { text: 'Write tests', completed: false }] } }, r)).toEqual([{ kind: 'todo', text: 'Write tests', detail: '1/2' }])
+    const [out] = codexEvent({ type: 'item.completed', item: { type: 'command_execution', command: 'npm test', exit_code: 1, aggregated_output: 'x\nError: 2 failed\ny' } }, r)
+    expect(out).toEqual({ kind: 'output', text: 'exit 1 · Error: 2 failed (3 lines)', ok: false })
+    codexEvent({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 800, output_tokens: 50 } }, r)
+    expect(r.cached).toBe(800)
   })
   it('describes Claude tools briefly', () => {
     expect(describeClaudeTool('Bash', { command: 'npm run build' })).toBe('$ npm run build')

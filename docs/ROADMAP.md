@@ -1,5 +1,16 @@
 # Roadmap
 
+## mc teamwork, live work tree and a faster idle app (0.39.0)
+
+- [x] The planner picks how much teamwork a request needs: answer (questions, nobody else runs), solo (one agent builds, the other reviews) or split; `/mode auto|split|claude|codex`, `--mode` (ADR 0046)
+- [x] Builders get the planner's findings (`context`) instead of exploring the repo again; reviewers who also built continue their own session with a short prompt; empty diffs aren't reviewed
+- [x] Every agent ends with a fixed report (Changed / Checked / Notes, or Verdict); mc merges them into one Done card
+- [x] Claude Code style transcript: every tool call, command results, edit sizes, Codex reasoning and to-dos, thinking token counts; Markdown answers
+- [x] Live work tree while agents run (boxes per folder/terminal/search/web/connector, pulse, working and finished animations, activity line, mood aura); `/aura` and `/view tree|lines`, saved in `%APPDATA%\mc`
+- [x] Closed input box with a hint line; multi-line paste is one request; the planner sees earlier requests in the session
+- [x] Fix: the first keys after a run were lost on Windows (raw/cooked switching); mc now stays in raw mode and handles Ctrl+C itself
+- [x] Idle and startup trim: no endless empty-state animation, delayed index scan, shared project listing and git cache, hidden-window polls skipped, Tasks code lazy, cached project list on start (ADR 0045)
+
 ## mc feels like an AI terminal (0.38.0)
 
 - [x] 0.37's AI terminal for Claude and Codex panes (activity strip, approval bar, prompt box, palette, GPU renderer, links) is removed: the request was about the mc terminal (ADR 0044)

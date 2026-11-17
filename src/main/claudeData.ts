@@ -17,7 +17,7 @@ import {
   worktreeParent
 } from '../shared/projectLook'
 import { codexFileFor, codexSessionsFor, getCodexSession } from './codexData'
-import { loadStore, updateStore, type StoreData } from './store'
+import { loadStore, saveProjectCache, updateStore, type StoreData } from './store'
 
 /**
  * Read-only access to Claude Code's on-disk data in ~/.claude/projects.
@@ -288,7 +288,21 @@ async function describe(path: string, meta: ProjectMeta): Promise<Pick<Project, 
   }
 }
 
-export async function listProjects(): Promise<Project[]> {
+/** A listing still running: callers asking at the same time (at startup the UI and several services do) share it. */
+/** Only a listing that started this recently is shared, so a refresh after a change (rename, move) reads fresh data. */
+let projectsInFlight: { at: number; list: Promise<Project[]> } | null = null
+
+export function listProjects(): Promise<Project[]> {
+  if (!projectsInFlight || Date.now() - projectsInFlight.at > 250) {
+    const run = { at: Date.now(), list: readProjects().then((list) => { saveProjectCache(list); return list }) }
+    projectsInFlight = run
+    void run.list.finally(() => { if (projectsInFlight === run) projectsInFlight = null }).catch(() => undefined)
+  }
+  // Each caller gets its own array, so one sorting or filtering in place can't affect another.
+  return projectsInFlight.list.then((list) => [...list])
+}
+
+async function readProjects(): Promise<Project[]> {
   const store = loadStore()
   const pinned = new Set(store.pinned.map(normalizePath))
   const byPath = new Map<string, Project>()

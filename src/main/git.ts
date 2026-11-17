@@ -29,11 +29,23 @@ const INFO_TTL_MS = 5000
 const infoInFlight = new Map<string, Promise<GitInfo>>()
 let infoGeneration = 0
 
+/** `git rev-parse` output (top level, common dir) per folder. It only changes when git itself moves things, so it lives until forgetGitInfo. */
+const rootCache = new Map<string, string>()
+
 /** After git changes something: cached and running lookups are out of date. */
 function forgetGitInfo(): void {
   infoCache.clear()
   infoInFlight.clear()
+  rootCache.clear()
   infoGeneration++
+}
+
+async function revParse(path: string): Promise<string> {
+  const cached = rootCache.get(path)
+  if (cached !== undefined) return cached
+  const out = await git(path, ['rev-parse', '--show-toplevel', '--path-format=absolute', '--git-common-dir'])
+  rootCache.set(path, out)
+  return out
 }
 
 export function gitInfo(path: string): Promise<GitInfo> {
@@ -51,12 +63,9 @@ async function readGitInfo(path: string): Promise<GitInfo> {
   let info: GitInfo = { isRepo: false }
   if (existsSync(path)) {
     try {
-      // Two git processes per project: they are slow to start on Windows.
-      const [revParse, status] = await Promise.all([
-        git(path, ['rev-parse', '--show-toplevel', '--path-format=absolute', '--git-common-dir']),
-        git(path, ['status', '--porcelain=v1', '-b'])
-      ])
-      const [top = '', commonDir = ''] = revParse.split('\n')
+      // git processes are slow to start on Windows: the root lookup is cached, so a refresh runs only status.
+      const [roots, status] = await Promise.all([revParse(path), git(path, ['status', '--porcelain=v1', '-b'])])
+      const [top = '', commonDir = ''] = roots.split('\n')
       const lines = status.split('\n').filter(Boolean)
       const head = lines[0]?.startsWith('## ') ? lines.shift()!.slice(3) : ''
       // "## main...origin/main [ahead 1, behind 2]" or "## HEAD (no branch)" or "## No commits yet on main"
@@ -74,6 +83,7 @@ async function readGitInfo(path: string): Promise<GitInfo> {
         mainRoot
       }
     } catch {
+      rootCache.delete(path)
       info = { isRepo: false }
     }
   }

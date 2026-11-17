@@ -7,7 +7,6 @@
  * `missing` is a confirmed absent requirement; `failed` is invalid manifest data;
  * `unavailable` means verification was inconclusive and must never be shown as success.
  */
-export const READINESS_MANIFESTS = ['package.json'] as const
 export const RECOGNIZED_UNSUPPORTED_MANIFESTS = ['pyproject.toml', 'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'Makefile'] as const
 export type ReadinessOutcome = 'checking' | 'ready' | 'missing' | 'failed' | 'unavailable' | 'cancelled' | 'stale'
 export type ReadinessReason = 'checking' | 'verified' | 'tool_missing' | 'signed_out' | 'auth_unknown' | 'probe_failed' | 'timeout' | 'offline' | 'cancelled' | 'superseded' | 'busy' | 'folder_missing' | 'folder_inaccessible' | 'not_repository' | 'history_missing' | 'manifest_missing' | 'manifest_unsupported' | 'manifest_invalid' | 'manifest_inaccessible' | 'manifest_oversized' | 'manifest_ambiguous' | 'scripts_missing'

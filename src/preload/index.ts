@@ -30,6 +30,7 @@ const api: MissionControlApi = {
   planRate: (force) => ipcRenderer.invoke('plan:rate', force),
   getDigest: (which) => ipcRenderer.invoke('digest:get', which),
   listProjects: () => ipcRenderer.invoke('projects:list'),
+  cachedProjects: () => ipcRenderer.invoke('projects:cached'),
   listSessions: (key, path) => ipcRenderer.invoke('sessions:list', key, path),
   moveSession: (id, path) => ipcRenderer.invoke('sessions:move', id, path),
   contextUsage: (ids) => ipcRenderer.invoke('spend:context', ids),

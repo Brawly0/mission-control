@@ -7,8 +7,6 @@ import { dirname, join } from 'node:path'
  * Mission Control starts with --plugin-dir, so nothing is installed into ~/.claude.
  */
 
-export const ECO_SKILL_NAME = 'eco:coach'
-
 export const ECO_SKILL = `---
 name: coach
 description: Use less of the user's Claude plan. Use when the user asks to save usage, credits, tokens or limits, when a note says this chat is getting long or a plan limit is nearly used up, before a big exploration or refactor, or when the user types /eco:coach. Gives one concrete recommendation (keep going, compact, hand off to a fresh chat, or switch model) and keeps the chat lean.

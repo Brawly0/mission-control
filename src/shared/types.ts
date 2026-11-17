@@ -944,6 +944,8 @@ export interface MissionControlApi {
   projectCommandReport(runId: string): Promise<{ cwd: string; prompt: string }>
   onProjectRunChanged(cb: (run: ProjectCommandRun) => void): () => void
   listProjects(): Promise<Project[]>
+  /** The last project list saved by listProjects (empty on a first start), to show while the real one loads. */
+  cachedProjects(): Promise<Project[]>
   /** Pass a project's `keys` to include chats from its worktrees. */
   listSessions(projectKey: string | string[], projectPath?: string): Promise<SessionSummary[]>
   /** Shows a chat under another project; an empty path goes back to automatic matching. */

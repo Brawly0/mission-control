@@ -26,9 +26,6 @@ import FirstTaskGuide from './components/FirstTaskGuide'
 import { deriveProblems, visibleProblems, type ProblemState, type ProblemAction } from './problems'
 import { recordTaskInspection, type TaskInspection } from './firstTaskGuidance'
 import './setup.css'
-import TasksView from './components/TasksView'
-import TaskComposer from './components/TaskComposer'
-import TaskDrawer from './components/TaskDrawer'
 import Sidebar from './components/Sidebar'
 import HomeView from './components/HomeView'
 import ProjectView from './components/ProjectView'
@@ -64,6 +61,10 @@ import { resumeArgs } from './agentStatus'
 import { TOOL_NAME } from '@shared/handoff'
 
 // Pages and dialogs most sessions never open load on first use, so they aren't part of startup.
+// The Tasks tab is archived (ADR 0042): its pages load only if TASKS_UI is on, or the composer opens from setup.
+const TasksView = lazy(() => import('./components/TasksView'))
+const TaskComposer = lazy(() => import('./components/TaskComposer'))
+const TaskDrawer = lazy(() => import('./components/TaskDrawer'))
 const TemplatesDialog = lazy(() => import('./components/TemplatesDialog'))
 const SettingsDialog = lazy(() => import('./components/SettingsDialog'))
 const SearchView = lazy(() => import('./components/SearchView'))
@@ -72,6 +73,14 @@ const SkillsView = lazy(() => import('./components/SkillsView'))
 const PromptStudioView = lazy(() => import('./components/PromptStudioView'))
 const NotebookView = lazy(() => import('./components/NotebookView'))
 const KnowledgeView = lazy(() => import('./components/KnowledgeView'))
+
+/** Two git lookups say the same thing (GitInfo is flat). */
+function sameGit(a: GitInfo | undefined, b: GitInfo | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  const keys = Object.keys(a) as (keyof GitInfo)[]
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
+}
 
 /** Mounts a page the first time it's shown, then keeps it mounted (hidden) like the others, so it keeps its state. */
 function OnceShown({ show, children }: { show: boolean; children: ReactNode }) {
@@ -241,11 +250,12 @@ export default function App() {
     for (const a of agentsRef.current) paths.add(a.projectPath)
     if (paths.size === 0) return
     const info = await window.mc.gitInfoMany([...paths])
-    setGit((prev) => ({ ...prev, ...info }))
+    // Same answer as last time (the usual case): keep the old object, so the app doesn't re-render.
+    setGit((prev) => (Object.keys(info).every((p) => sameGit(prev[p], info[p])) ? prev : { ...prev, ...info }))
   }, [showWorktrees, selectedPath])
 
   // A refresh asked for while one runs (at startup the app and the index ask at once) waits for it, then runs once more.
-  const projectsRun = useRef<{ running?: Promise<void>; again?: boolean }>({})
+  const projectsRun = useRef<{ running?: Promise<void>; again?: boolean; listed?: boolean }>({})
   const refreshProjects = useCallback((): Promise<void> => {
     const run = projectsRun.current
     if (run.running) {
@@ -258,6 +268,7 @@ export default function App() {
         do {
           run.again = false
           const list = await window.mc.listProjects()
+          run.listed = true
           setProjects(list)
           projectsRef.current = list
           setSelectedPath((cur) => (cur && list.some((p) => p.path === cur) ? cur : (list.find((p) => !p.worktree)?.path ?? null)))
@@ -272,6 +283,12 @@ export default function App() {
   }, [refreshGit])
 
   useEffect(() => {
+    // Last start's project list, shown at once; the real listing below replaces it about a second later.
+    window.mc.cachedProjects().then((cached) => {
+      if (projectsRun.current.listed || !cached.length) return
+      setProjects(cached)
+      setSelectedPath((cur) => cur ?? cached.find((p) => !p.worktree)?.path ?? null)
+    }, () => undefined)
     window.mc.getUiState().then((ui) => {
       if (ui.selectedPath) setSelectedPath(ui.selectedPath)
       if (ui.view) setView(ui.view)
@@ -293,7 +310,8 @@ export default function App() {
   // Keep git badges fresh: on an interval and whenever the window regains focus.
   useEffect(() => {
     void refreshGit()
-    const timer = setInterval(refreshGit, 15000)
+    // Minimized or in the tray: no git polling; focus refreshes on the way back.
+    const timer = setInterval(() => { if (!document.hidden) void refreshGit() }, 15000)
     window.addEventListener('focus', refreshGit)
     return () => {
       clearInterval(timer)
@@ -550,9 +568,14 @@ export default function App() {
   // Codex's plan limits and token use, read from its session files (cheap: cached by file size).
   const [codexUsage, setCodexUsage] = useState<CodexUsage | null>(null)
   useEffect(() => {
-    const load = () => window.mc.codexUsage(Date.now() - 30 * 86_400_000).then(setCodexUsage, () => undefined)
+    let last = ''
+    const load = () => window.mc.codexUsage(Date.now() - 30 * 86_400_000).then((u) => {
+      // Unchanged (the usual case): no state change, no app-wide re-render.
+      const json = JSON.stringify(u)
+      if (json !== last) { last = json; setCodexUsage(u) }
+    }, () => undefined)
     load()
-    const t = setInterval(load, 60_000)
+    const t = setInterval(() => { if (!document.hidden) load() }, 60_000)
     return () => clearInterval(t)
   }, [])
 
@@ -942,8 +965,9 @@ export default function App() {
               <KnowledgeView visible={view === 'knowledge'} onStartFromBriefing={(projectPath, file) => void startFromBriefing(projectPath, file)} />
             </OnceShown>
           </div>
-          <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
+          {TASKS_UI && <div className={view === 'tasks' ? 'view-pane' : 'view-pane hidden'}>
             {readiness.setup?.status === 'active' && firstGuide}
+            <OnceShown show={view === 'tasks'}>
             <TasksView
               tasks={tasks}
               agents={agents}
@@ -973,10 +997,12 @@ export default function App() {
               terminalFocus={terminalFocus}
               terminalFocusRequest={terminalFocusRequest}
             />
-          </div>
+            </OnceShown>
+          </div>}
         </div>
         <BottomDock context={dockContext} request={dockRequest} visible={view === 'project' || view === 'agents'} onChanged={refreshProjects} onLaunch={launch} />
-        {openTask && view === 'tasks' && (
+        {TASKS_UI && openTask && view === 'tasks' && (
+          <Suspense fallback={null}>
           <TaskDrawer
             initialTab={taskTab}
             onInspectResult={inspectResult}
@@ -1004,6 +1030,7 @@ export default function App() {
             }}
             onGitChanged={refreshGit}
           />
+          </Suspense>
         )}
         <StatusBar
           indexStatus={indexStatus}
@@ -1038,6 +1065,7 @@ export default function App() {
         />
       )}
       {composerOpen && (
+        <Suspense fallback={null}>
         <TaskComposer
           tasks={boardTasks}
           projects={projects}
@@ -1073,6 +1101,7 @@ export default function App() {
           }}
           onSaveTemplate={saveAsTemplate}
         />
+        </Suspense>
       )}
       {templatesOpen && (
         <Suspense fallback={null}>

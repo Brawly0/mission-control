@@ -6,16 +6,10 @@
   margin-bottom: -6px;
   user-select: none;
   pointer-events: none;
-  animation: empty-art-float 6s ease-in-out infinite;
 }
 .hd-empty-art { width: 76px; height: 76px; object-fit: contain; flex-shrink: 0; user-select: none; pointer-events: none; }
 .hd-empty:has(.hd-empty-art) { flex-direction: column; gap: 4px; }
 .hd-empty:has(.hd-empty-art) p { margin: 0; }
-@keyframes empty-art-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
-}
-@media (prefers-reduced-motion: reduce) { .empty-art { animation: none; } }
 
 /* Dark theme only: the art is painted on navy and would look muddy on the light theme. */
 :root:not([data-theme='light']) .main {

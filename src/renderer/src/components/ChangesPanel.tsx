@@ -34,13 +34,20 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
   const [approved, setApproved] = useState<string | null>(null)
   const generation = useRef(0)
   const latestLoad = useRef(0)
+  const lastSnapshot = useRef('')
 
   const load = useCallback(async () => {
+    if (document.hidden) return
     const owner = generation.current
     const request = ++latestLoad.current
     try {
       const snapshot = await window.mc.projectReview(path, worktree?.base)
       if (generation.current !== owner || latestLoad.current !== request) return
+      // Nothing changed since the last poll (the usual case): skip re-parsing and re-rendering the diff.
+      const json = JSON.stringify(snapshot)
+      setError(null)
+      if (json === lastSnapshot.current) return
+      lastSnapshot.current = json
       setReview(snapshot)
       setChanges(snapshot.changes)
       setError(null)
@@ -52,6 +59,7 @@ export default function ChangesPanel({ path, worktree, visible, onChanged, onDis
 
   useEffect(() => {
     generation.current++
+    lastSnapshot.current = ''
     setReview(null)
     setChanges(null)
     setApproved(null)

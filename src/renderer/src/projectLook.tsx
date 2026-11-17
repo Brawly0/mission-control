@@ -48,9 +48,3 @@ export function makeLookUp(projects: Project[]): LookUp {
 export function useLook(): LookUp {
   return useContext(LookContext)
 }
-
-/** A project's current name, for places that stored an older one (tasks, agents). */
-export function useProjectName(name: string, path?: string): string {
-  const look = useLook()
-  return (path && look(path)?.name) || look(name)?.name || name
-}

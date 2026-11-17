@@ -373,8 +373,19 @@ function counts() {
   return { sessions: s.n, messages: m.n }
 }
 
+/** True from the start of a run's scan to its end (the scan yields, so status.indexing alone is set too late). */
+let running = false
 async function run() {
-  if (status.indexing) return
+  if (running || status.indexing) return
+  running = true
+  try {
+    await runOnce()
+  } finally {
+    running = false
+  }
+}
+
+async function runOnce() {
   const jobs: { file: string; key: string; session: string; main: boolean }[] = []
   let keys: string[] = []
   try {
@@ -404,17 +415,22 @@ async function run() {
   }
 
   if (codexSessionsDir) jobs.push(...codexJobs(codexSessionsDir))
-  // Only files that changed since the last run need work.
-  const pending = jobs.filter((j) => {
+  // Only files that changed since the last run need work. Checked in slices, so queries are answered in between.
+  const pending: typeof jobs = []
+  for (let i = 0; i < jobs.length; i++) {
+    const j = jobs[i]
     const prev = q.getFile.get(j.file) as { size: number; mtime: number } | undefined
-    if (!prev) return true
-    try {
-      const st = statSync(j.file)
-      return st.size !== prev.size || st.mtimeMs !== prev.mtime
-    } catch {
-      return false
+    if (!prev) pending.push(j)
+    else {
+      try {
+        const st = statSync(j.file)
+        if (st.size !== prev.size || st.mtimeMs !== prev.mtime) pending.push(j)
+      } catch {
+        /* gone since the listing */
+      }
     }
-  })
+    if (i % 200 === 199) await new Promise((r) => setImmediate(r))
+  }
   // Main transcripts first, so a subagent's parent session row exists.
   pending.sort((a, b) => Number(b.main) - Number(a.main))
 
@@ -830,4 +846,6 @@ parentPort!.on('message', (msg: { type: string; id?: number; op?: string; args?:
 })
 
 postStatus(counts())
-run().catch((err) => postStatus({ indexing: false, error: (err as Error).message }))
+// The first run's file scan is synchronous; starting it a moment later lets the startup queries
+// (the project list asks which folders chats worked in) answer at once instead of waiting ~1s.
+setTimeout(() => run().catch((err) => postStatus({ indexing: false, error: (err as Error).message })), 2500)

@@ -158,6 +158,35 @@ export function saveStore(data: StoreData): void {
   renameSync(tmp, file)
 }
 
+/**
+ * The last project list, so the sidebar shows at once on the next start while the real listing
+ * (cold disk reads of every project's newest chat and README) runs. Its own file: it changes often
+ * and isn't worth a store.json backup. A missing or damaged file just means no instant list.
+ */
+let projectCacheJson: string | undefined
+function projectCachePath(): string {
+  return join(app.getPath('userData'), 'projects-cache.json')
+}
+export function loadProjectCache<T>(): T[] {
+  try {
+    const list = JSON.parse(readFileSync(projectCachePath(), 'utf8'))
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+export function saveProjectCache(list: unknown[]): void {
+  const json = JSON.stringify(list)
+  if (json === projectCacheJson) return
+  try {
+    const file = projectCachePath()
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(`${file}.tmp`, json, 'utf8')
+    renameSync(`${file}.tmp`, file)
+    projectCacheJson = json
+  } catch { /* the cache is optional */ }
+}
+
 export function updateStore(fn: (data: StoreData) => void): StoreData {
   const data = loadStore()
   fn(data)

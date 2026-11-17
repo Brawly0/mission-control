@@ -61,7 +61,7 @@ import { commitAll, createWorktree, getChanges, gitInfoMany, initGit, mergeWorkt
 import { allBudgets } from './budget'
 import { removeHookSettings } from './hookServer'
 import { agentEnv, killTerminal, killTerminalsIn, resizeTerminal, writeTerminal, whichSync } from './pty'
-import { loadStore, updateStore } from './store'
+import { loadProjectCache, loadStore, updateStore } from './store'
 import { worktreeParent } from '../shared/projectLook'
 import { contextUsage, startupReport } from './spend'
 import { addSummaryInstructions, hasSummaryInstructions, latestBriefing, listBriefings, saveBriefing } from './briefings'
@@ -119,6 +119,7 @@ export function registerIpc(): void {
     return readiness.cancel(owner(e), requestId)
   })
   ipcMain.handle('projects:list', () => listProjects())
+  ipcMain.handle('projects:cached', () => loadProjectCache())
   ipcMain.handle('sessions:list', (_e, key: string | string[], path?: string) => listSessions(key, path))
   ipcMain.handle('review:merge', (_e, wt: WorktreeInfo, fingerprint: string) => { assertTeamWorktreeIdle(wt.path); return mergeReviewedWorktree(wt, fingerprint) })
   ipcMain.handle('review:get', (_e, path: string, base?: string) => projectReview(path, base))

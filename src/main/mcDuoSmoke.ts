@@ -54,7 +54,7 @@ export async function mcDuoSmoke(win: BrowserWindow, outFile: string, log: (...v
 
     const info = await js(`window.__mcSmoke.launch({ cwd: ${JSON.stringify(repo)}, projectPath: ${JSON.stringify(repo)}, projectName: 'duo smoke', title: 'duo smoke · mc', kind: 'mc' })`)
     mcId = info.id
-    await until('the mc banner', () => plain().includes('on one prompt') && plain().includes('mc ›'))
+    await until('the mc banner', () => plain().includes('on one prompt') && plain().includes('╭─ mc ·') && plain().includes('│ ›'))
     if (!plain().includes(repo.slice(-12))) throw new Error('mc did not show the repository it runs in')
     await until('the mc badge', async () => !!(await js(`!!document.querySelector('.agent-tab .mc-logo, .tool-mc, .mc-logo')`)))
     await shot('dark-agent')

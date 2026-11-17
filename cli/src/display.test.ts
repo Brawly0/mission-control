@@ -23,3 +23,11 @@ describe('long worktree paths', () => {
     expect(relativeTo(cwd, ev.text)).toBe('Read src/strings.js')
   })
 })
+
+describe('real-run cleanups', () => {
+  it('drops the cd prefix and the shell notice', async () => {
+    const { describeClaudeTool, outputSummary } = await import('./agents')
+    expect(describeClaudeTool('Bash', { command: 'cd "C:/x/duo-1" && npm test' })).toBe('$ npm test')
+    expect(outputSummary('pass 5\nShell cwd was reset to C:/x', true)).toBe('pass 5')
+  })
+})
