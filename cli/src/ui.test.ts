@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import { complete, onOff, parseCommand } from './commands'
-import { cut, rowsTaken, strip, unframe, visible, wrap } from './ui'
+import { cut, cycle, enterAction, menuLines, menuWindow, pickIndex, rowsTaken, strip, unframe, visible, wrap } from './ui'
 
 describe('text layout', () => {
   it('measures text without colour codes', () => {
@@ -67,6 +68,115 @@ describe('transcript and answers', () => {
     const long = eventLines('codex', { kind: 'text', text: Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n') }, 80).map(strip)
     expect(long).toHaveLength(9)
     expect(long[8]).toContain('4 more lines')
+  })
+})
+
+describe('slash-command menu', () => {
+  const items = [
+    { value: '/mode ', label: '/mode', help: 'who works' },
+    { value: '/model ', label: '/model', help: 'pick a model' },
+    { value: '/clear', label: '/clear', help: 'clear the screen' }
+  ]
+  it('cycles both ways and wraps around', () => {
+    expect(cycle(-1, 3, 1)).toBe(0)
+    expect(cycle(-1, 3, -1)).toBe(2)
+    expect(cycle(2, 3, 1)).toBe(0)
+    expect(cycle(0, 3, -1)).toBe(2)
+    expect(cycle(0, 0, 1)).toBe(-1)
+  })
+  it('keeps the selected row in view and counts the rest', () => {
+    expect(menuWindow(3, 0, 8)).toEqual({ start: 0, end: 3, more: 0 })
+    expect(menuWindow(20, 0, 8)).toEqual({ start: 0, end: 8, more: 12 })
+    expect(menuWindow(20, 10, 8)).toEqual({ start: 3, end: 11, more: 12 })
+    expect(menuWindow(20, 19, 8)).toEqual({ start: 12, end: 20, more: 12 })
+  })
+  it('renders label, dim help, a marker on the highlighted row and "more"', () => {
+    const lines = menuLines(items, 1, 60, 2).map(strip)
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toMatch(/^ {4}\/mode {3}who works$/)
+    expect(lines[1]).toMatch(/^ {2}› \/model {2}pick a model$/)
+    expect(lines[2].trim()).toBe('… 1 more')
+    for (const l of menuLines(items, 0, 20)) expect(visible(l)).toBeLessThanOrEqual(20)
+    expect(menuLines([], 0, 60)).toEqual([])
+  })
+  it('on Enter submits a whole command, picks a partial one, and fills one that needs an argument', () => {
+    expect(enterAction('/clear', [items[2]], -1)).toEqual({ kind: 'submit', line: '/clear' })
+    expect(enterAction('/cl', [items[2]], -1)).toEqual({ kind: 'submit', line: '/clear' })
+    expect(enterAction('/mo', items.slice(0, 2), -1)).toEqual({ kind: 'fill', line: '/mode ' })
+    expect(enterAction('/mode', items.slice(0, 2), -1)).toEqual({ kind: 'submit', line: '/mode' })
+    expect(enterAction('/model ', items.slice(0, 2), 1)).toEqual({ kind: 'fill', line: '/model ' })
+    expect(enterAction('/model ', [{ value: '/model claude ', label: 'claude', help: '' }], -1)).toEqual({ kind: 'submit', line: '/model ' })
+    expect(enterAction('/x', [], -1)).toEqual({ kind: 'submit', line: '/x' })
+    expect(pickIndex('/cl', [items[2]], -1)).toBe(0)
+    expect(pickIndex('/clear', [items[2]], -1)).toBe(-1)
+  })
+})
+
+describe('live menu state', () => {
+  it('reopens after editing an escaped line and fits a short terminal', async () => {
+    class ReadlineStub extends EventEmitter {
+      line = ''
+      cursor = 0
+      answer?: (line: string) => void
+      pause() {}
+      getCursorPos() { return { cols: this.cursor + 4, rows: 0 } }
+      _refreshLine() {}
+      question(_prompt: string, answer: (line: string) => void) { this.answer = answer; this._refreshLine() }
+      _ttyWrite(text: string, key: { name?: string }) {
+        if (key.name === 'return') { this.answer?.(this.line); return }
+        if (key.name === 'backspace') this.line = this.line.slice(0, -1)
+        else this.line += text
+        this.cursor = this.line.length
+        this._refreshLine()
+      }
+    }
+    const rl = new ReadlineStub()
+    const descriptors = [
+      [process.stdin, 'isTTY'], [process.stdout, 'isTTY'],
+      [process.stdout, 'rows'], [process.stdout, 'columns']
+    ] as const
+    const saved = descriptors.map(([object, key]) => Object.getOwnPropertyDescriptor(object, key))
+    const writes: string[] = []
+    const exits = process.listeners('exit')
+    let pending: Promise<string> | undefined
+    try {
+      descriptors.forEach(([object, key]) => Object.defineProperty(object, key, { configurable: true, value: key === 'rows' ? 8 : key === 'columns' ? 80 : true }))
+      vi.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => { writes.push(String(chunk)); return true })
+      vi.doMock('node:readline', () => ({ createInterface: () => rl }))
+      vi.resetModules()
+      const ui = await import('./ui')
+      const { suggestions } = await import('./commands')
+      ui.startSession()
+      pending = ui.promptBox('test', 'normal hint', suggestions)
+      const press = (text: string, name?: string) => {
+        writes.length = 0
+        rl._ttyWrite(text, { name })
+        return writes.join('')
+      }
+      const opening = press('/')
+      // An eight-row terminal has four suggestion rows plus the overflow count and bottom edge.
+      expect(opening).toContain('\x1b[6A')
+      expect(opening).not.toContain('\x1b[10A')
+      expect(opening).toContain('13 more')
+      expect(press('', 'escape')).toContain('normal hint')
+      press('m')
+      const reopened = press('', 'backspace')
+      expect(reopened).toContain('13 more')
+      press('', 'escape')
+      press('', 'return')
+      await pending
+      pending = undefined
+    } finally {
+      if (pending) { rl.answer?.(''); await pending }
+      vi.doUnmock('node:readline')
+      vi.resetModules()
+      vi.restoreAllMocks()
+      descriptors.forEach(([object, key], i) => {
+        if (saved[i]) Object.defineProperty(object, key, saved[i]!)
+        else Reflect.deleteProperty(object, key)
+      })
+      for (const listener of process.listeners('exit')) if (!exits.includes(listener)) process.off('exit', listener)
+    }
   })
 })
 

@@ -1,5 +1,6 @@
 import { createInterface, type Completer, type Interface } from 'node:readline'
 import type { AgentEvent } from './agents'
+import type { Suggestion } from './commands'
 import { NAME, type Side } from './plan'
 import { settings } from './settings'
 import { addOutput, addTool, finishTree, newTree, renderTree, summary, type AgentTree } from './tree'
@@ -448,13 +449,74 @@ export function unframe(lines: string[]): string[] {
   return lines.map(l => l.replace(/^\s*│\s?(?:›\s)?/, '').replace(/\s*│\s*$/, '').replace(/\s+│\s+/g, ' '))
 }
 
-/** readline's internal "redraw the line" step (a symbol in current Node, a method in older ones). */
-function refreshKey(rl: Interface): string | symbol | undefined {
+/** One of readline's internal steps (a symbol in current Node, a method in older ones). */
+function internalKey(rl: Interface, name: string): string | symbol | undefined {
   for (let o: object | null = rl; o; o = Object.getPrototypeOf(o)) {
-    const sym = Object.getOwnPropertySymbols(o).find(s => s.description === '_refreshLine' && typeof (o as any)[s] === 'function')
+    const sym = Object.getOwnPropertySymbols(o).find(s => s.description === name && typeof (o as any)[s] === 'function')
     if (sym) return sym
   }
-  return typeof (rl as any)._refreshLine === 'function' ? '_refreshLine' : undefined
+  return typeof (rl as any)[name] === 'function' ? name : undefined
+}
+/** readline's "redraw the line" step. */
+const refreshKey = (rl: Interface) => internalKey(rl, '_refreshLine')
+/** readline's "handle one key" step. */
+const ttyWriteKey = (rl: Interface) => internalKey(rl, '_ttyWrite')
+
+// ── Slash-command menu ──────────────────────────────────────────────────────
+
+/** Rows of suggestions shown at once. */
+export const MENU_ROWS = 8
+
+/** The next (dir 1) or previous (dir -1) item, wrapping. From "nothing picked yet" (-1) it goes to the first or the last. */
+export function cycle(sel: number, count: number, dir: 1 | -1): number {
+  if (count <= 0) return -1
+  if (sel < 0) return dir > 0 ? 0 : count - 1
+  return (sel + dir + count) % count
+}
+
+/** Which slice of `count` items is on screen so `sel` stays visible, and how many are left out. */
+export function menuWindow(count: number, sel: number, max = MENU_ROWS): { start: number; end: number; more: number } {
+  const start = sel >= max ? sel - max + 1 : 0
+  const end = Math.min(count, start + max)
+  return { start, end, more: count - (end - start) }
+}
+
+/**
+ * The item Enter would use: the one moved to with Tab/↑↓, or else the first match while a word is still being typed
+ * ('/cl' → '/clear'). Nothing when the line is already a whole command or value, or ends in a space.
+ */
+export function pickIndex(line: string, items: Suggestion[], sel: number): number {
+  if (sel >= 0) return sel < items.length ? sel : -1
+  if (!items.length || line.endsWith(' ')) return -1
+  return items.some(i => i.value.trimEnd() === line.trimEnd()) ? -1 : 0
+}
+
+/**
+ * What Enter does while the menu is open: submit the line as it is, submit the picked value, or fill a value that
+ * still needs an argument ('/model ') and keep the prompt open so the next level shows.
+ */
+export function enterAction(line: string, items: Suggestion[], sel: number): { kind: 'submit' | 'fill'; line: string } {
+  const i = pickIndex(line, items, sel)
+  if (i < 0) return { kind: 'submit', line }
+  const value = items[i].value
+  return { kind: value.endsWith(' ') ? 'fill' : 'submit', line: value }
+}
+
+/** The menu rows: label in a column, help dimmed, the highlighted row in mc colour, and "… N more" when cut short. */
+export function menuLines(items: Suggestion[], highlight: number, width: number, max = MENU_ROWS): string[] {
+  if (!items.length) return []
+  const { start, end, more } = menuWindow(items.length, highlight, max)
+  const shown = items.slice(start, end)
+  const col = Math.min(Math.max(...shown.map(i => [...i.label].length)) + 2, Math.max(8, Math.floor(width / 2)))
+  const out = shown.map((item, k) => {
+    const on = start + k === highlight
+    const label = cut(item.label, col - 1)
+    const room = width - 4 - col
+    const help = room > 3 && item.help ? c.dim(cut(item.help, room)) : ''
+    return '  ' + (on ? c.mc(c.bold('› ' + pad(label, col))) : '  ' + pad(label, col)) + help
+  })
+  if (more > 0) out.push(c.dim(cut(`    … ${more} more`, width)))
+  return out
 }
 
 /**
@@ -462,8 +524,12 @@ function refreshKey(rl: Interface): string | symbol | undefined {
  * readline clears everything below the cursor whenever it redraws the line, so the bottom edge and the hint are drawn
  * again after each redraw. Pasting several lines sends them as one request. Once sent, the box is closed around what
  * was typed, so the scrollback reads like a chat.
+ *
+ * With `suggest`, a line starting with '/' shows a menu of matching commands in place of the hint line. Tab and ↓
+ * move to the next one, Shift+Tab and ↑ to the previous one, putting it on the line; Enter runs or fills it, Esc
+ * hides the menu until the line changes. With the menu closed, ↑↓ are history and Tab is the usual completer.
  */
-export async function promptBox(status: string, hint: string): Promise<string> {
+export async function promptBox(status: string, hint: string, suggest?: (line: string) => Suggestion[]): Promise<string> {
   // Sizes are read again on every redraw: the pane can be resized while the prompt waits.
   const edges = () => {
     const w = boxWidth()
@@ -484,16 +550,88 @@ export async function promptBox(status: string, hint: string): Promise<string> {
   const key = refreshKey(rl)
   const original = key ? (rl as any)[key] : undefined
   const fits = () => visible(PROMPT()) + [...rl.line].length < (process.stdout.columns || 100)
+
+  // Menu state. `base` is the line as typed before Tab/↑↓ started cycling, so the matches don't collapse to the one
+  // just put on the line; `sel` is the item moved to (-1 = none yet); `closedFor` is the line Esc hid the menu for.
+  const tkey = ttyWriteKey(rl)
+  const tty0 = tkey ? (rl as any)[tkey] : undefined
+  const menuOn = Boolean(suggest && key && original && tty0)
+  let base: string | null = null
+  let sel = -1
+  let closedFor: string | null = null
+  let active = true
+  const items = (): Suggestion[] => {
+    if (!menuOn || !active || closedFor === rl.line) return []
+    const line = base ?? rl.line
+    return line.startsWith('/') ? suggest!(line) : []
+  }
+  const below = (): string[] => {
+    const list = items()
+    if (!list.length) return [box.hintLine]
+    // Leave room for the top edge, input, bottom edge and the overflow count.
+    const max = Math.max(1, Math.min(MENU_ROWS, (process.stdout.rows || 24) - 4))
+    return menuLines(list, pickIndex(base ?? rl.line, list, sel), columns() - 1, max)
+  }
+  // Repaints the right edge, bottom edge and the hint or menu under the input line, then puts the cursor back.
+  const paint = () => {
+    if (!fits()) return
+    const used = visible(PROMPT()) + [...rl.line].length
+    const rows = [box.bottom, ...below()]
+    // Make room first (new lines scroll at the bottom of the screen), then go back to the cursor, so the saved
+    // position stays right when the menu is taller than the space left under the box.
+    const col = rl.getCursorPos().cols + 1
+    process.stdout.write('\r\n'.repeat(rows.length) + `\x1b[${rows.length}A\x1b[${col}G` + '\x1b7' + (used < box.w - 1 ? `\x1b[${box.w}G` + c.mc('│') : '') +
+      rows.map(r => '\r\n\x1b[2K' + r).join('') + '\x1b[0J\x1b8')
+  }
+  const setLine = (value: string) => {
+    const r = rl as unknown as { line: string; cursor: number }
+    r.line = value
+    r.cursor = value.length
+    ;(rl as any)[key!]()
+  }
+
   if (key && original) {
     // The prototype exposes it as a getter, so the override is an own data property, removed again after the prompt.
     Object.defineProperty(rl, key, {
       configurable: true, writable: true,
       value: function (this: Interface, ...args: unknown[]) {
         original.apply(this, args)
-        if (!fits()) return
-        const used = visible(PROMPT()) + [...this.line].length
-        const { w, bottom, hintLine } = box
-        process.stdout.write('\x1b7' + (used < w - 1 ? `\x1b[${w}G` + c.mc('│') : '') + '\r\n\x1b[2K' + bottom + '\r\n\x1b[2K' + hintLine + '\x1b8')
+        if (active) paint()
+      }
+    })
+  }
+  if (menuOn) {
+    Object.defineProperty(rl, tkey!, {
+      configurable: true, writable: true,
+      value: function (this: Interface, s: unknown, k?: { name?: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) {
+        if (!active) return tty0.call(this, s, k)
+        const name = k?.name
+        const list = items()
+        if (list.length && name === 'escape') { base = null; sel = -1; closedFor = rl.line; paint(); return }
+        if (list.length && !k?.ctrl && !k?.meta) {
+          if (name === 'tab' || name === 'down' || name === 'up') {
+            if (base === null) base = rl.line
+            sel = cycle(sel, list.length, name === 'up' || (name === 'tab' && k?.shift) ? -1 : 1)
+            setLine(list[sel].value)
+            return
+          }
+          if (name === 'return' || name === 'enter') {
+            const act = enterAction(rl.line, list, sel)
+            base = null; sel = -1
+            if (act.kind === 'fill') { setLine(act.line); return }
+            if (act.line !== rl.line) setLine(act.line)
+            return tty0.call(this, s, k)
+          }
+        }
+        // Any other key ends the cycle; the menu follows the line as typed again.
+        base = null; sel = -1
+        const before = rl.line
+        tty0.call(this, s, k)
+        if (!active) return
+        if (rl.line !== before) closedFor = null
+        // ↑↓ through history can bring back a '/' line: keep the menu shut for it so the next ↑ is history too.
+        if ((name === 'up' || name === 'down') && rl.line !== before) closedFor = rl.line
+        paint()
       }
     })
   }
@@ -512,18 +650,21 @@ export async function promptBox(status: string, hint: string): Promise<string> {
   rl.on('line', onLine)
   let first: string
   try {
-    first = await new Promise<string>(resolve => rl.question(PROMPT(), resolve))
+    first = await new Promise<string>(resolve => rl.question(PROMPT(), a => { active = false; resolve(a) }))
     // A multi-line paste arrives as several lines at once; the rest come in right after the first.
     await new Promise(resolve => setTimeout(resolve, 40))
   } finally {
+    active = false
     process.stdout.off('resize', onResize)
     rl.off('line', onLine)
     rl.pause()
     if (key && original) delete (rl as any)[key]
+    if (menuOn) delete (rl as any)[tkey!]
   }
   const answer = unframe([first, ...extra]).join('\n').trim()
 
-  // Replace the typed line(s), bottom edge and hint with the request wrapped inside the box.
+  // Replace the typed line(s), bottom edge and hint or menu with the request wrapped inside the box (the clear to
+  // the end of the screen also erases any menu rows, so they never reach the scrollback).
   box = edges()
   const { w, bottom } = box
   const cols = process.stdout.columns || 100

@@ -7,24 +7,27 @@ export interface Command {
   help: string
 }
 
-export const COMMANDS: Array<Omit<Command, 'args'>> = [
+export const COMMANDS: Array<Omit<Command, 'args'> & { takesArgs?: boolean }> = [
   { name: 'help', usage: '/help', help: 'commands and options' },
-  { name: 'list', usage: '/list', help: 'runs in this repository' },
-  { name: 'merge', usage: '/merge [id]', help: 'merge a finished run into your branch (default: the latest)' },
-  { name: 'clean', usage: '/clean [id]', help: 'throw a run away (worktree and branch)' },
-  { name: 'mode', usage: '/mode auto|split|claude|codex', help: 'auto: mc answers, gives it to one agent or splits it · split: always both · claude/codex: that one builds alone' },
-  { name: 'review', usage: '/review on|off', help: 'the other agent reviews the diff after building' },
-  { name: 'full', usage: '/full on|off', help: 'let both agents run any command' },
-  { name: 'planner', usage: '/planner claude|codex', help: 'who splits the work' },
-  { name: 'model', usage: '/model claude|codex <name|default>', help: 'model for one agent' },
-  { name: 'aura', usage: '/aura <name>', help: 'colour of the live work tree: mood (follows the work), violet, ocean, sunset, matrix, gold, ice, fire, rainbow · saved' },
-  { name: 'view', usage: '/view tree|lines', help: 'animated work tree, or one status line per agent · saved' },
-  { name: 'status', usage: '/status', help: 'current settings' },
   { name: 'clear', usage: '/clear', help: 'clear the screen' },
+  { name: 'usage', usage: '/usage', help: 'session spend, agent calls and last run' },
+  { name: 'model', usage: '/model claude|codex <name|default>', takesArgs: true, help: "show current models or set one agent's model" },
+  { name: 'mode', usage: '/mode auto|split|claude|codex', takesArgs: true, help: 'auto: mc answers, gives it to one agent or splits it · split: always both · claude/codex: that one builds alone' },
+  { name: 'new', usage: '/new', help: 'start fresh without earlier request context' },
+  { name: 'status', usage: '/status', help: 'current settings' },
+  { name: 'list', usage: '/list', help: 'runs in this repository' },
+  { name: 'merge', usage: '/merge [id]', takesArgs: true, help: 'merge a finished run into your branch (default: the latest)' },
+  { name: 'clean', usage: '/clean [id]', takesArgs: true, help: 'throw a run away (worktree and branch)' },
+  { name: 'review', usage: '/review on|off', takesArgs: true, help: 'the other agent reviews the diff after building' },
+  { name: 'full', usage: '/full on|off', takesArgs: true, help: 'let both agents run any command' },
+  { name: 'planner', usage: '/planner claude|codex', takesArgs: true, help: 'who splits the work' },
+  { name: 'aura', usage: '/aura <name>', takesArgs: true, help: 'colour of the live work tree: mood (follows the work), violet, ocean, sunset, matrix, gold, ice, fire, rainbow · saved' },
+  { name: 'view', usage: '/view tree|lines', takesArgs: true, help: 'animated work tree, or one status line per agent · saved' },
+  { name: 'version', usage: '/version', help: 'show the mc version' },
   { name: 'exit', usage: '/exit', help: 'quit mc' }
 ]
 
-const ALIASES: Record<string, string> = { quit: 'exit', q: 'exit', '?': 'help', h: 'help', ls: 'list', settings: 'status', team: 'mode' }
+const ALIASES: Record<string, string> = { quit: 'exit', q: 'exit', '?': 'help', h: 'help', ls: 'list', settings: 'status', team: 'mode', cost: 'usage', cls: 'clear', reset: 'new' }
 
 /** "/merge ab12" → { name: 'merge', args: 'ab12' }. Plain "help", "list" and "exit" work without the slash. */
 export function parseCommand(input: string): Command | { name: 'unknown'; args: string } | null {
@@ -46,14 +49,40 @@ export function onOff(arg: string, current: boolean): boolean {
   return !current
 }
 
-/** Values Tab completes after a command. */
-const VALUES: Record<string, string[]> = { aura: ['mood', 'violet', 'ocean', 'sunset', 'matrix', 'gold', 'ice', 'fire', 'rainbow'], view: ['tree', 'lines'], mode: ['auto', 'split', 'claude', 'codex'], planner: ['claude', 'codex'], model: ['claude', 'codex'], review: ['on', 'off'], full: ['on', 'off'] }
+export interface Suggestion { value: string; label: string; help: string }
 
-/** Tab completion for readline: slash commands, then their values. */
+/** Shared values for the live menu and readline. Free-text arguments still work. */
+const VALUES: Record<string, string[]> = {
+  aura: ['mood', 'violet', 'ocean', 'sunset', 'matrix', 'gold', 'ice', 'fire', 'rainbow'],
+  view: ['tree', 'lines'], mode: ['auto', 'split', 'claude', 'codex'],
+  planner: ['claude', 'codex'], model: ['claude', 'codex'], review: ['on', 'off'], full: ['on', 'off'],
+  'model claude': ['default', 'opus', 'sonnet', 'haiku', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2'],
+  // Codex is not on PATH here; this model is confirmed by the local Codex config.
+  'model codex': ['default', 'gpt-6-astra']
+}
+
+export function suggestions(line: string): Suggestion[] {
+  if (!line.startsWith('/')) return []
+  if (!/\s/.test(line)) {
+    return COMMANDS.filter(cmd => cmd.name.startsWith(line.slice(1).toLowerCase())).map(cmd => ({
+      value: '/' + cmd.name + (cmd.takesArgs ? ' ' : ''), label: '/' + cmd.name, help: cmd.help
+    }))
+  }
+  const match = /^\/(\S+)\s+([\s\S]*)$/.exec(line)
+  if (!match) return []
+  const name = ALIASES[match[1].toLowerCase()] ?? match[1].toLowerCase()
+  const words = match[2].toLowerCase().split(/\s+/)
+  const prefix = words.pop()!
+  const key = [name, ...words].join(' ')
+  const help = COMMANDS.find(cmd => cmd.name === name)?.help ?? ''
+  return (VALUES[key] ?? []).filter(value => value.startsWith(prefix) ||
+    (key === 'model claude' && value.replace(/^claude-/, '').startsWith(prefix))).map(value => ({
+      value: '/' + key + ' ' + value + (key === 'model' ? ' ' : ''), label: value,
+      help: key.startsWith('model ') ? (value === 'default' ? 'use the CLI default model' : words[0] + ' model') : help
+    }))
+}
+
+/** Keep readline's completion shape, using the same candidates as the live menu. */
 export function complete(line: string): [string[], string] {
-  const arg = /^\/(\w+) (\w*)$/.exec(line)
-  if (arg && VALUES[arg[1]]) return [VALUES[arg[1]].filter(v => v.startsWith(arg[2].toLowerCase())).map(v => `/${arg[1]} ${v}`), line]
-  if (!line.startsWith('/') || /\s/.test(line)) return [[], line]
-  const hits = COMMANDS.map(c => `/${c.name}`).filter(n => n.startsWith(line.toLowerCase()))
-  return [hits, line]
+  return [suggestions(line).map(item => item.value.trimEnd()), line]
 }

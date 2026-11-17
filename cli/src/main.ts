@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { basename, relative } from 'node:path'
 import { runAgent, stopAll, which, type Access, type AgentEvent, type AgentResult } from './agents'
-import { COMMANDS, complete, onOff, parseCommand, type Command } from './commands'
+import { COMMANDS, complete, onOff, parseCommand, suggestions, type Command } from './commands'
 import { changedFiles, commitAll, createWorktree, deleteRun, diffFor, findRun, git, listRuns, removeWorktree, repoRoot, saveRun, tryGit, type Run } from './git'
 import { NAME, SIDES, firstLine, other, overlaps, parseDuoPlan, parseReport, plannerPrompt, reviewPrompt, soloPlan, workerPrompt, workers, type DuoPlan, type Report, type Side, type Teamwork } from './plan'
 import { saveSettings, settings } from './settings'
@@ -9,6 +9,10 @@ import { AURAS, type Aura } from './tree'
 import { Live, ask, block, c, card, cardColumn, cardInner, duration, heading, md, promptBox, say, sideBySide, startSession, tokens, wrap, type Section } from './ui'
 
 const VERSION = '0.3.1'
+type Cost = { side: Side; r: AgentResult }
+const sessionRuns: Cost[][] = []
+/** /new clears only the planner's earlier-request context. */
+const earlier: string[] = []
 
 const HELP = `${c.bold('mc')}: one prompt, two agents. Claude and Codex share the work: mc answers questions directly, gives small
 changes to one agent and splits bigger ones so both build at the same time. The other agent reviews the result.
@@ -143,12 +147,12 @@ function spend(costs: Array<{ side: Side; r: AgentResult }>): string {
   const claude = mine('claude'), codex = mine('codex')
   if (claude.length) {
     const usd = claude.reduce((n, r) => n + (r.costUsd ?? 0), 0)
-    parts.push(`${c.claude('Claude')} ${usd ? `$${usd.toFixed(2)}` : 'plan usage'}`)
+    parts.push(`${c.claude('Claude')} ${claude.some(r => r.costUsd !== undefined) ? `$${usd.toFixed(2)}` : 'plan usage'}`)
   }
   if (codex.length) {
     const total = codex.reduce((n, r) => n + (r.tokens ?? 0), 0)
     const cached = codex.reduce((n, r) => n + (r.cached ?? 0), 0)
-    parts.push(`${c.codex('Codex')} ${total ? `${tokens(total)} tokens${cached ? ` (${Math.round((cached / total) * 100)}% cached)` : ''}` : 'plan usage'}`)
+    parts.push(`${c.codex('Codex')} ${codex.some(r => r.tokens !== undefined) ? `${tokens(total)} tokens (${total ? Math.round((cached / total) * 100) : 0}% cached)` : 'plan usage'}`)
   }
   return parts.join(c.dim(' · '))
 }
@@ -180,7 +184,7 @@ function banner(root: string | undefined): void {
   }
 }
 
-const PROMPT_HINT = '/ for commands · Tab completes · ↑ earlier prompts · paste keeps lines together · Enter on an empty line quits'
+const PROMPT_HINT = '/ for commands · Tab/↑↓ pick · Enter runs · ↑ earlier prompts · paste keeps lines together · Enter on an empty line quits'
 
 function statusLine(root: string, opts: Options): string {
   const branch = tryGit(root, ['symbolic-ref', '--short', 'HEAD']) ?? 'detached'
@@ -229,7 +233,21 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         if (cmd.args === 'claude' || cmd.args === 'codex') { opts.planner = cmd.args; say(`${NAME[cmd.args]} reads the repo and plans.`) }
         else say(c.yellow('Use /planner claude or /planner codex.'))
         break
+      case 'usage': {
+        const costs = sessionRuns.flat()
+        say(`${sessionRuns.length} runs · ${costs.length} agent calls`)
+        say(costs.length ? spend(costs) : 'Claude $0.00 · Codex 0 tokens (0% cached)')
+        const last = sessionRuns.at(-1)
+        say('Last run: ' + (last ? spend(last) || 'no reported usage' : 'none yet'))
+        break
+      }
+      case 'new': earlier.length = 0; say('Earlier request context cleared. Your next prompt starts fresh.'); break
+      case 'version': say('mc ' + VERSION); break
       case 'model': {
+        if (!cmd.args) {
+          say(SIDES.map(side => NAME[side] + ': ' + (opts.models[side] ?? 'default')).join(' · '))
+          break
+        }
         const [side, name] = cmd.args.split(/\s+/)
         if ((side !== 'claude' && side !== 'codex') || !name) { say(c.yellow('Use /model claude <name> or /model codex <name> (or "default").')); break }
         if (name === 'default') delete opts.models[side]
@@ -274,11 +292,9 @@ async function interactive(opts: Options): Promise<number> {
     return 1
   }
   startSession(complete)
-  /** One line per earlier request, so the planner can follow up ("now add tests for it"). */
-  const earlier: string[] = []
   for (;;) {
     console.log()
-    const request = (await promptBox(statusLine(root, opts), PROMPT_HINT)).trim()
+    const request = (await promptBox(statusLine(root, opts), PROMPT_HINT, suggestions)).trim()
     if (!request) return 0
     const cmd = parseCommand(request)
     if (cmd) {
@@ -303,10 +319,17 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   const root = requireRepo()
   for (const side of SIDES) if (!which(side)) throw new Error(`${side} was not found on PATH. Install it first.`)
   if (!tryGit(root, ['rev-parse', '--verify', 'HEAD'])) throw new Error('This repository has no commits yet. Make a first commit, then run mc.')
+  // Counted for /usage only once the run can actually start.
+  const costs: Cost[] = []
+  sessionRuns.push(costs)
+  const callAgent: typeof runAgent = async options => {
+    const r = await runAgent(options)
+    costs.push({ side: options.side, r })
+    return r
+  }
   const remember = (outcome: string) => earlier.push(`${JSON.stringify(firstLine(request, 100))} → ${outcome}`)
 
   const started = Date.now()
-  const costs: Array<{ side: Side; r: AgentResult }> = []
   current = undefined
 
   // 1. Plan: the planner reads the repo once and decides how much teamwork this needs.
@@ -317,9 +340,8 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
     heading('Plan', `${NAME[opts.planner]} reads the repo and decides who does what`)
     const [planned] = await together('plan', 'reading only, nothing is changed', [{
       side: opts.planner,
-      go: onEvent => runAgent({ side: opts.planner, cwd: root, prompt: plannerPrompt(request, opts.teamwork, earlier), access: 'plan', model: opts.models[opts.planner], onEvent })
+      go: onEvent => callAgent({ side: opts.planner, cwd: root, prompt: plannerPrompt(request, opts.teamwork, earlier), access: 'plan', model: opts.models[opts.planner], onEvent })
     }])
-    costs.push({ side: opts.planner, r: planned })
     if (!planned.ok) throw new Error(`Planning failed: ${planned.error}`)
     try {
       plan = parseDuoPlan(planned.text, opts.teamwork)
@@ -359,10 +381,10 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   heading('Build', builders.length === 2 ? 'Claude and Codex build their halves at the same time' : `${NAME[builders[0]]} builds it`)
   const built = await together('build', where, builders.map(side => ({
     side,
-    go: onEvent => runAgent({ side, cwd: wt.path, prompt: workerPrompt(request, plan, side), access: opts.access, model: opts.models[side], onEvent })
+    go: onEvent => callAgent({ side, cwd: wt.path, prompt: workerPrompt(request, plan, side), access: opts.access, model: opts.models[side], onEvent })
   })))
   const work: Partial<Record<Side, AgentResult>> = {}
-  builders.forEach((side, i) => { work[side] = built[i]; costs.push({ side, r: built[i] }); current!.sessions![side] = built[i].sessionId })
+  builders.forEach((side, i) => { work[side] = built[i]; current!.sessions![side] = built[i].sessionId })
   const failed = builders.filter(side => !work[side]!.ok)
   for (const side of failed) say(c.red(`${NAME[side]} failed: ${work[side]!.error}`))
   if (failed.length) {
@@ -388,15 +410,14 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
       side: reviewer,
       go: async (onEvent: (e: AgentEvent) => void) => {
         const session = work[reviewer]?.sessionId
-        const fresh = () => runAgent({ side: reviewer, cwd: wt.path, access: opts.access, model: opts.models[reviewer], prompt: reviewPrompt(request, plan, reviewer, work[author]!.text, diff), onEvent })
+        const fresh = () => callAgent({ side: reviewer, cwd: wt.path, access: opts.access, model: opts.models[reviewer], prompt: reviewPrompt(request, plan, reviewer, work[author]!.text, diff), onEvent })
         if (!session) return fresh()
-        const r = await runAgent({ side: reviewer, cwd: wt.path, access: opts.access, model: opts.models[reviewer], resume: session, prompt: reviewPrompt(request, plan, reviewer, work[author]!.text, diff, true), onEvent })
+        const r = await callAgent({ side: reviewer, cwd: wt.path, access: opts.access, model: opts.models[reviewer], resume: session, prompt: reviewPrompt(request, plan, reviewer, work[author]!.text, diff, true), onEvent })
         // If the session can't be continued, review from scratch rather than skip it.
         return r.ok || r.text ? r : fresh()
       }
     })))
     toReview.forEach(({ reviewer }, i) => {
-      costs.push({ side: reviewer, r: results[i] })
       reviews[reviewer] = results[i].ok ? parseReport(results[i].text) : { changed: [], checked: [], notes: [`Review failed: ${results[i].error}`], fixes: [], rest: '' }
     })
   }
