@@ -211,8 +211,8 @@ describe('live menu state', () => {
       }
       const opening = press('/')
       // An eight-row terminal has four suggestion rows plus the overflow count and bottom edge.
-      expect(opening).toContain('\x1b[6A')
-      expect(opening).not.toContain('\x1b[10A')
+      expect(opening).toContain('\x1b[H\x1b[0J')
+      expect(opening).toContain('\x1b[2;6H')
       const { COMMANDS } = await import('./commands')
       const more = `${COMMANDS.length - 4} more`
       expect(opening).toContain(more)

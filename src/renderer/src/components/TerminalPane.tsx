@@ -10,6 +10,11 @@ interface Props {
   onExit: (code: number) => void
   /** Focus the terminal when it's shown (off for a terminal mirrored somewhere else). */
   autoFocus?: boolean
+  /**
+   * mc draws its live area and prompt on the alternate screen, where xterm turns the wheel into ↑↓ keys (which would
+   * walk the prompt history). For mc, wheel-up sends Page Up instead, which shows the real scrollback.
+   */
+  mc?: boolean
 }
 
 export const terminalTheme = {
@@ -21,13 +26,15 @@ export const terminalTheme = {
   brightBlack: '#5c6370'
 }
 
-export default function TerminalPane({ id, visible, onExit, autoFocus = true }: Props) {
+export default function TerminalPane({ id, visible, onExit, autoFocus = true, mc = false }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const resizeRef = useRef<((delay?: number) => void) | null>(null)
   const busRef = useRef<ReturnType<typeof subscribe> | null>(null)
   const onExitRef = useRef(onExit)
   onExitRef.current = onExit
+  const mcRef = useRef(mc)
+  mcRef.current = mc
 
   useEffect(() => {
     const term = new Terminal({
@@ -71,6 +78,12 @@ export default function TerminalPane({ id, visible, onExit, autoFocus = true }: 
       // Typing in a pane makes it the one that talks to the terminal.
       if (hostRef.current?.contains(document.activeElement)) bus.claimInput()
       if (bus.ownsInput()) window.mc.ptyWrite(id, data)
+    })
+
+    term.attachCustomWheelEventHandler((e) => {
+      if (!mcRef.current || term.buffer.active.type !== 'alternate') return true
+      if (e.deltaY < 0 && bus.ownsInput()) window.mc.ptyWrite(id, '\x1b[5~')
+      return false
     })
 
     // Fitting on every ResizeObserver tick makes xterm reflow (and the CLI redraw) many times per drag, and a pane

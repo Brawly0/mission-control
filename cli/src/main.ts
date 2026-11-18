@@ -1,3 +1,4 @@
+import { log, clearHistory as clearScrollback } from './viewport'
 import { randomBytes } from 'node:crypto'
 import { basename, relative } from 'node:path'
 import { contextWindowFor, runAgent, stopAll, which, type Access, type AgentEvent, type AgentResult } from './agents'
@@ -147,7 +148,7 @@ function showPlan(plan: DuoPlan, opts: Options): void {
     ...wrap(plan.halves[side]!.files.join(', '), w).map(c.dim)
   ]))
   if (sides.length === 1) sections.push([c.dim(opts.review ? `${NAME[other(sides[0])]} reviews the diff afterwards.` : 'No review (/review on to add one).')])
-  console.log()
+  log()
   card(sides.length === 2 ? 'Plan · split in two' : 'Plan · one agent', sections)
 }
 
@@ -196,7 +197,7 @@ let current: Run | undefined
 function onInterrupt(): void {
   live?.stop()
   stopAll()
-  console.log()
+  log()
   say(c.yellow('Stopped.'))
   if (pending && !pending.saved) {
     pending.saved = true
@@ -215,16 +216,16 @@ function onInterrupt(): void {
 }
 
 function banner(root: string | undefined): void {
-  console.log()
-  console.log(`  ${c.claude('◖')}${c.codex('◗')}  ${c.mc(c.bold('mc'))} ${c.dim(VERSION)}  ${c.bold('Claude')} + ${c.bold('Codex')} on one prompt`)
-  console.log(c.dim(`      Ask a question or describe a change. mc answers it, gives it to one agent, or splits it between both;`))
-  console.log(c.dim(`      the other agent reviews. Work happens on a new branch, so your folder is never touched.`))
+  log()
+  log(`  ${c.claude('◖')}${c.codex('◗')}  ${c.mc(c.bold('mc'))} ${c.dim(VERSION)}  ${c.bold('Claude')} + ${c.bold('Codex')} on one prompt`)
+  log(c.dim(`      Ask a question or describe a change. mc answers it, gives it to one agent, or splits it between both;`))
+  log(c.dim(`      the other agent reviews. Work happens on a new branch, so your folder is never touched.`))
   if (root) {
     const room = Math.max(20, (process.stdout.columns || 100) - 8)
-    console.log(c.dim(`      ${root.length > room ? '…' + root.slice(root.length - room + 1) : root}`))
+    log(c.dim(`      ${root.length > room ? '…' + root.slice(root.length - room + 1) : root}`))
     const brief = latestBriefing(root)
     const title = brief?.text.split(/\r?\n/).find(l => l.trim())?.replace(/^#+\s*/, '').replace(/^Session briefing:\s*/i, '')
-    if (title) console.log(c.dim(`      Last briefing: ${cut(title, room - 15)}`))
+    if (title) log(c.dim(`      Last briefing: ${cut(title, room - 15)}`))
   }
 }
 
@@ -245,7 +246,7 @@ function statusLine(root: string, opts: Options): string {
 function showCommands(): void {
   const w = Math.max(...COMMANDS.map(cmd => cmd.usage.length)) + 2
   const inner = cardInner()
-  console.log()
+  log()
   card('Commands', [
     COMMANDS.flatMap(cmd => wrap(cmd.help, Math.max(20, inner - w)).map((l, i) => `${i ? ' '.repeat(w) : c.mc(cmd.usage.padEnd(w))}${c.dim(l)}`)),
     wrap('Anything else you type is a request. Questions get an answer straight away; changes are built on a new branch.', inner).map(c.dim)
@@ -283,7 +284,7 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         say(costs.length ? spend(costs) : 'Claude $0.00 · Codex 0 tokens (0% cached)')
         const last = sessionRuns.at(-1)
         say('Last run: ' + (last ? spend(last) || 'no reported usage' : 'none yet'))
-        for (const line of contextLines(opts, false)) console.log(line)
+        for (const line of contextLines(opts, false)) log(line)
         break
       }
       case 'new': earlier.length = 0; say('Earlier request context cleared. Your next prompt starts fresh (/history clear also forgets the saved history).'); break
@@ -329,8 +330,8 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         say(cmd.args === 'tree' ? 'Agents show as a live tree of boxes while they work. Saved.' : 'Agents show as one status line each. Saved.')
         break
       }
-      case 'status': say(statusLine(root, opts)); for (const line of contextLines(opts, false)) console.log(line); break
-      case 'clear': process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); banner(root); break
+      case 'status': say(statusLine(root, opts)); for (const line of contextLines(opts, false)) log(line); break
+      case 'clear': clearScrollback(); process.stdout.write('[2J[3J[H'); banner(root); break
       case 'exit': return true
     }
   } catch (err) {
@@ -344,13 +345,13 @@ const OUTCOME: Record<HistoryEntry['outcome'], (s: string) => string> = { answer
 function showHistory(entries: HistoryEntry[]): void {
   if (!entries.length) { say('No history in this repository yet. It fills up as you use mc here.'); return }
   const w = columns() - 1
-  console.log()
+  log()
   for (const e of entries) {
     const when = new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     const head = `  ${c.dim(when.padEnd(16))} ${OUTCOME[e.outcome](e.outcome.padEnd(10))} `
-    console.log(head + cut(firstLine(e.request, 200), Math.max(10, w - 30)))
+    log(head + cut(firstLine(e.request, 200), Math.max(10, w - 30)))
   }
-  console.log()
+  log()
   say(c.dim(`${entries.length} most recent · kept between sessions in this repo · /history clear forgets them`))
 }
 
@@ -364,31 +365,31 @@ async function chats(root: string, arg: string): Promise<void> {
     const chat = shownChats[n - 1]
     if (!chat) { say(c.yellow(`There's no chat ${n}. /chats lists ${shownChats.length}.`)); return }
     const messages = await readChatTail(chat)
-    console.log()
-    console.log(`${c[chat.tool]('●')} ${c.bold(chat.title || chat.id)}  ${c.dim(`${NAME[chat.tool]} · ${ago(chat.updatedAt)}`)}`)
+    log()
+    log(`${c[chat.tool]('●')} ${c.bold(chat.title || chat.id)}  ${c.dim(`${NAME[chat.tool]} · ${ago(chat.updatedAt)}`)}`)
     if (!messages.length) { say(c.dim('No messages to show.')); return }
     for (const m of messages) {
-      console.log()
-      console.log('  ' + (m.role === 'user' ? c.bold('You') : c[chat.tool](c.bold(NAME[chat.tool]))) + (m.at ? c.dim('  ' + ago(m.at)) : ''))
-      for (const line of md(m.text, cardInner())) console.log('  ' + line)
+      log()
+      log('  ' + (m.role === 'user' ? c.bold('You') : c[chat.tool](c.bold(NAME[chat.tool]))) + (m.at ? c.dim('  ' + ago(m.at)) : ''))
+      for (const line of md(m.text, cardInner())) log('  ' + line)
     }
     return
   }
   const w = columns() - 1
-  console.log()
+  log()
   shownChats.forEach((chat, i) => {
     const badge = c[chat.tool](NAME[chat.tool].padEnd(6))
     const when = ago(chat.updatedAt)
-    console.log(`  ${c.dim(String(i + 1).padStart(2))}  ${badge}  ${cut(chat.title || chat.id, Math.max(10, w - 26 - when.length))}  ${c.dim(when)}`)
+    log(`  ${c.dim(String(i + 1).padStart(2))}  ${badge}  ${cut(chat.title || chat.id, Math.max(10, w - 26 - when.length))}  ${c.dim(when)}`)
   })
-  console.log()
+  log()
   say(c.dim('/chats <n> shows the end of one. mc also gives the planner a short digest of the latest ones.'))
 }
 
 /** /context: full bars for both agents, and how much of the planner prompt earlier history and chats take up. */
 async function showContext(root: string, opts: Options): Promise<void> {
-  console.log()
-  for (const line of contextLines(opts, false)) console.log(line)
+  log()
+  for (const line of contextLines(opts, false)) log(line)
   if (!SIDES.some(side => contextUse[side])) say(c.dim('No agent calls yet in this session; the bars fill after the first run.'))
   let digest = ''
   try { digest = await chatDigest(root) } catch { digest = '' }
@@ -404,7 +405,7 @@ async function interactive(opts: Options): Promise<number> {
   const root = repoRoot(process.cwd())
   banner(root)
   if (!root) {
-    console.log()
+    log()
     say(c.yellow('This folder is not a git repository. mc builds on a new branch, so it needs git.'))
     say(c.dim('Turn on git first (in Mission Control: Changes tab → Turn on git, or run git init and make a first commit).'))
     if (process.env.MC_FROM_APP) await ask(c.dim('   Press Enter to close. '))
@@ -414,7 +415,7 @@ async function interactive(opts: Options): Promise<number> {
   // mc remembers earlier sessions in this repo: the saved history seeds the planner's context.
   earlier.push(...historyContext(readHistory(root)))
   for (;;) {
-    console.log()
+    log()
     const request = (await promptBox(statusLine(root, opts), PROMPT_HINT, suggestions, () => contextLines(opts, true))).trim()
     if (!request) return 0
     const cmd = parseCommand(request)
@@ -441,7 +442,7 @@ async function interactive(opts: Options): Promise<number> {
 
 async function run(requestParts: string[], opts: Options, interactive = false, earlier: string[] = []): Promise<number> {
   const request = requestParts.join(' ').trim()
-  if (!request) { console.log(HELP); return 1 }
+  if (!request) { log(HELP); return 1 }
   const root = requireRepo()
   for (const side of SIDES) if (!which(side)) throw new Error(`${side} was not found on PATH. Install it first.`)
   if (!tryGit(root, ['rev-parse', '--verify', 'HEAD'])) throw new Error('This repository has no commits yet. Make a first commit, then run mc.')
@@ -598,7 +599,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
       record('answered', plan.summary || reply, { answer: reply, sides: builders })
       return 0
     }
-    console.log()
+    log()
     card(`Nothing to commit · ${took}`, [[c.yellow('The agents made no changes, so nothing was committed.'), spend(costs)]], c.yellow)
     remember('no changes')
     record('no changes', plan.summary, { sides: builders })
@@ -630,9 +631,9 @@ function shortStat(stat: string): string {
 }
 
 function showAnswer(text: string, meta: string): void {
-  console.log()
-  console.log(`${c.mc('●')} ${c.bold('Answer')}  ${c.dim(meta)}`)
-  for (const line of md(text, cardInner())) console.log('  ' + line)
+  log()
+  log(`${c.mc('●')} ${c.bold('Answer')}  ${c.dim(meta)}`)
+  for (const line of md(text, cardInner())) log('  ' + line)
 }
 
 /** The run's one result, short: the summary, what each agent delivered, checks, review, at most two notes, cost. */
@@ -650,7 +651,7 @@ function showResult(o: { plan: DuoPlan; builders: Side[]; reports: Partial<Recor
     `${o.spend}${c.dim(' · ' + o.took)}`,
     c.dim(o.next)
   ]]
-  console.log()
+  log()
   card(`Done · ${o.took}`, sections, c.green)
 }
 
@@ -661,11 +662,11 @@ let lastRun: LastRun | undefined
 function showReport(): void {
   if (!lastRun) { say('No finished run in this session yet.'); return }
   for (const r of lastRun.replies) {
-    console.log()
-    console.log(`${c[r.side]('●')} ${c.bold(r.title)}`)
-    for (const line of md(r.text || '(no reply)', cardInner())) console.log('  ' + line)
+    log()
+    log(`${c[r.side]('●')} ${c.bold(r.title)}`)
+    for (const line of md(r.text || '(no reply)', cardInner())) log('  ' + line)
   }
-  console.log()
+  log()
   say(c.dim(`Branch ${lastRun.branch} · worktree ${lastRun.worktree}`))
   for (const hint of lastRun.resume) say(c.dim(hint))
 }
@@ -677,7 +678,7 @@ function list(): number {
   for (const r of runs) {
     const when = new Date(r.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     const status = r.status === 'done' ? c.green(r.status) : r.status === 'failed' || r.status === 'stopped' ? c.red(r.status) : c.yellow(r.status)
-    console.log(`  ${c.bold(r.id)}  ${status.padEnd(18)} ${c.dim(when.padEnd(16))} ${firstLine(r.request, 70)}`)
+    log(`  ${c.bold(r.id)}  ${status.padEnd(18)} ${c.dim(when.padEnd(16))} ${firstLine(r.request, 70)}`)
   }
   return 0
 }
@@ -717,8 +718,8 @@ function clean(id: string | undefined): number {
 async function main(): Promise<number> {
   process.on('SIGINT', onInterrupt)
   const { command, rest, opts } = parse(process.argv.slice(2))
-  if (command === 'help') { console.log(HELP); return 0 }
-  if (command === 'version') { console.log(`mc ${VERSION}`); return 0 }
+  if (command === 'help') { log(HELP); return 0 }
+  if (command === 'version') { log(`mc ${VERSION}`); return 0 }
   if (command === 'list') return list()
   if (command === 'merge') return merge(rest[0])
   if (command === 'clean') return clean(rest[0])
