@@ -153,6 +153,8 @@ Settings are restored afterwards.
 
 `MC_SMOKE_SHOTS=<project folder name, e.g. bot>` screenshots every screen: Home, that project's tabs, Tasks, Agents, Usage, Search, the palette, Settings and the shortcuts list. It then presses real shortcuts and checks each one: `Ctrl+1/2/3/5`, `Ctrl+Shift+F`, `Ctrl+/` and `Ctrl+B`. Last, it switches to the light theme with `Ctrl+Shift+L`, screenshots it, and puts your theme back. Free. Use it for before/after comparisons of UI changes.
 
+`MC_SMOKE_DEMO=<output folder>` takes the README screenshots without showing your own projects or chats. Make a demo home (for example `C:\mcdemo-home`) whose `.claude\projects` holds only chats from sample projects such as `C:\code\*`, then start the app with `USERPROFILE` set to that demo home, `MC_SMOKE_CLEAN=1`, a fresh `MC_SMOKE_PROFILE`, and `MC_DEMO_REAL_HOME` set to your real home so the agents can sign in. `MC_DEMO_AGENTS` lists one `<project path>|<prompt>` per line. The tour shoots Home, Projects, a project's Overview and Chats, Usage and the palette. It then starts the agents, accepts Claude's folder-trust prompt, and shoots the grid at about 25, 50 and 80 seconds, the tabs view, Home with live agents and the light theme. Unset every `CLAUDE*` variable first when you launch it from inside a Claude Code session, or the agents show a "Transcript saving is off" warning. Paid: the agents run real prompts (a few cents each). Their chats are written to your real `~/.claude`.
+
 `MC_SMOKE_HUB=<empty scratch folder>` checks the v0.11 pieces, for free:
 - Notes: save, pin and delete.
 - Knowledge: the doc list, and a search.

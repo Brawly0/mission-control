@@ -1598,6 +1598,11 @@ export async function runSmoke(win: BrowserWindow, outFile: string, deps: SmokeD
       log('update check: PASS')
       return
     }
+    if (process.env.MC_SMOKE_DEMO) {
+      const { demoShotsSmoke } = await import('./demoShotsSmoke')
+      await demoShotsSmoke(win, process.env.MC_SMOKE_DEMO, log)
+      return
+    }
     if (process.env.MC_SMOKE_POLISH) {
       const { uiPolishSmoke } = await import('./uiPolishSmoke')
       await uiPolishSmoke(win, outFile, log)
