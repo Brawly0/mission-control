@@ -120,17 +120,30 @@ export async function saveNewBriefings(notify: (b: Briefing, file: string) => vo
 /** The newest saved briefing for a project, for "New session from latest briefing". */
 export async function latestBriefing(projectPath: string): Promise<string | null> {
   const want = normalizePath(projectPath)
-  const saved = (await listBriefings()).filter((b) => b.savedPath && normalizePath(b.projectPath) === want && existsSync(b.savedPath))
-  if (saved[0]?.savedPath) return saved[0].savedPath
-  // Briefings written by hand (or by "Write briefing") in docs/briefings/.
+  // Both sources count: briefings auto-saved from compactions, and ones written by hand,
+  // "Write briefing" or a handoff in docs/briefings/. The newest of either wins.
+  const candidates = new Set(
+    (await listBriefings()).filter((b) => b.savedPath && normalizePath(b.projectPath) === want && existsSync(b.savedPath)).map((b) => b.savedPath as string)
+  )
   try {
     const dir = join(projectPath, 'docs', 'briefings')
-    const files = (await fs.readdir(dir)).filter((f) => f.toLowerCase().endsWith('.md'))
-    const stats = await Promise.all(files.map(async (f) => ({ f, t: (await fs.stat(join(dir, f))).mtimeMs })))
-    stats.sort((a, b) => b.t - a.t)
-    return stats[0] ? join(dir, stats[0].f) : null
+    for (const f of await fs.readdir(dir)) if (f.toLowerCase().endsWith('.md')) candidates.add(join(dir, f))
   } catch {
-    return null
+    /* no docs/briefings/ folder */
+  }
+  const ranked = await Promise.all([...candidates].map(async (file) => ({ file, t: await briefingTime(file) })))
+  ranked.sort((a, b) => b.t - a.t)
+  return ranked[0]?.file ?? null
+}
+
+/** When a briefing was written: the "YYYY-MM-DD-HHMM" its file name starts with, else the file's modified time. */
+async function briefingTime(file: string): Promise<number> {
+  const m = /(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})[^\\/]*$/.exec(file)
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime()
+  try {
+    return (await fs.stat(file)).mtimeMs
+  } catch {
+    return 0
   }
 }
 
