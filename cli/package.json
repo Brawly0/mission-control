@@ -1,6 +1,6 @@
 {
   "name": "mc-duo",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "mc: one prompt, two agents. Claude and Codex split the work and build it at the same time.",
   "private": true,
   "type": "module",

@@ -3,7 +3,7 @@ import { COMMANDS, complete, parseCommand, suggestions } from './commands'
 
 describe('command suggestions', () => {
   it('lists every command in the agreed order', () => {
-    const names = 'help clear usage model mode new status list merge clean review full planner aura view version exit'.split(' ')
+    const names = 'help clear usage model mode new status list merge clean review full planner aura view report version exit'.split(' ')
     expect(COMMANDS.map(cmd => cmd.name)).toEqual(names)
     expect(suggestions('/').map(item => item.label)).toEqual(names.map(name => '/' + name))
   })

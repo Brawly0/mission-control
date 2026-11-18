@@ -1,5 +1,12 @@
 # Roadmap
 
+## mc slash menu, a short Done card, and arrangeable agent grids (0.40.0)
+
+- [x] mc: typing `/` opens a command menu under the prompt; Tab and ↑↓ move through it, Enter runs or fills, Esc hides it; values (modes, models, views) get their own short help
+- [x] mc: new `/clear`, `/usage` (spend for both agents), `/model` (shows both, with model names), `/new` (forget earlier requests), `/version`, `/report` (everything the agents said in the last run)
+- [x] mc: the Done card is short: what each agent delivered in one line, the checks from both merged into one line, the review in one line, at most two notes for you; agents report a one-sentence summary and leave out messages meant for each other
+- [x] Agents tab and task agent grids: layout presets (Auto, 1–8 columns, 4+4, 8+8, 4×4, 8×8), drag a panel to swap or move it (or Alt + arrows), resizable dividers that snap even, Reset grid
+
 ## mc fixes: no questions, no plan errors, clean resizing (0.39.1)
 
 - [x] mc no longer asks "Start building?" or shows the merge menu after a run: type the request, it builds, and you're back at the prompt (`/merge <id>`, `/clean <id>` later); `/yes` removed, `-y` still accepted

@@ -1,11 +1,12 @@
 import { isAgentTool, KIND_LABEL } from '@shared/terminalKind'
 import { McBadge, McLogo } from './McLogo'
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowRightLeft, Bot, Columns3, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, ListFilter, Maximize2, Minimize2, MoreHorizontal, Minus, Play, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRightLeft, Bot, FileText, FolderOpen, GitBranch, GitCompareArrows, LayoutGrid, ListFilter, Maximize2, Minimize2, MoreHorizontal, Minus, Play, Plus, Rows2, Save, Send, Shrink, Terminal, X } from 'lucide-react'
 import type { ContextUsage, GitInfo, Workspace } from '@shared/types'
 import type { Agent, AgentLayout } from '../types'
 import { useLook } from '../projectLook'
 import { displayStatus } from '../agentStatus'
+import { GridPicker, usePanelGrid } from './PanelGrid'
 import SessionRecap from './SessionRecap'
 import { useKeyFor, useShortcutEvent, withKey } from '../shortcuts'
 import ChangesPanel from './ChangesPanel'
@@ -49,28 +50,6 @@ interface Props {
   /** Starts the other agent (Claude <-> Codex) with a handoff of this agent's chat (ADR 0020). */
   onHandOff: (agent: Agent) => void
 }
-
-type Cols = 'auto' | '1' | '2' | '3' | '4'
-/** Track sizes (fr) per grid shape, e.g. "3x2". */
-type Sizes = Record<string, { cols: number[]; rows: number[] }>
-
-function load<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as T) : fallback
-  } catch {
-    return fallback
-  }
-}
-function save(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value))
-  } catch {
-    /* just won't be remembered */
-  }
-}
-
-const even = (n: number) => Array.from({ length: n }, () => 1)
 
 /** How full a chat is. Amber from your warning level, red at 2.5x it or 85% of the window. */
 function ContextMeter({ usage, warnAt, onCompact, canCompact }: { usage: ContextUsage; warnAt: number; onCompact: () => void; canCompact: boolean }) {
@@ -147,10 +126,7 @@ export default function AgentsView(props: Props) {
   const [reviewOpen, setReviewOpen] = useState(false)
   const [renameRequest, setRenameRequest] = useState(0)
   const [minimized, setMinimized] = useState<Set<string>>(new Set())
-  const cols = (['auto', '1', '2', '3', '4'].includes(props.cols) ? props.cols : 'auto') as Cols
-  const [sizes, setSizes] = useState<Sizes>(() => load('mc.agentSizes', {}))
   const [hiddenRecaps, setHiddenRecaps] = useState<Set<string>>(new Set())
-  const stageRef = useRef<HTMLDivElement>(null)
   const keyFor = useKeyFor()
 
   // Forget closed agents.
@@ -162,6 +138,7 @@ export default function AgentsView(props: Props) {
   }, [agents])
 
   const shownAgents = agents.filter((a) => !minimized.has(a.id))
+  const panelGrid = usePanelGrid(shownAgents.map(a => a.id), props.cols, 'mc.agentSizes')
   const active = agents.find((a) => a.id === activeId) ?? agents[0]
   // In tabs, a minimized agent isn't shown; the stage shows the nearest one that isn't.
   const onStage = active && !minimized.has(active.id) ? active : shownAgents[shownAgents.length - 1]
@@ -226,59 +203,6 @@ export default function AgentsView(props: Props) {
 
   // Grid shape and track sizes.
   const grid = layout === 'grid' && !maximized
-  const n = Math.max(1, shownAgents.length)
-  const c = Math.min(n, cols === 'auto' ? Math.ceil(Math.sqrt(n)) : Number(cols))
-  const r = Math.ceil(n / c)
-  const shape = `${c}x${r}`
-  const track = sizes[shape] && sizes[shape].cols.length === c && sizes[shape].rows.length === r ? sizes[shape] : { cols: even(c), rows: even(r) }
-  const customSized = !!sizes[shape]
-  const template = (fr: number[]) => fr.map((f) => `minmax(0, ${f}fr)`).join(' 6px ')
-
-  /** Dragging a gutter moves the line between two columns (or rows); double-click evens them out. */
-  const startDrag = (axis: 'cols' | 'rows', k: number) => (e: ReactPointerEvent<HTMLDivElement>) => {
-    const stage = stageRef.current
-    if (!stage) return
-    e.preventDefault()
-    const el = e.currentTarget
-    el.setPointerCapture(e.pointerId)
-    const rect = stage.getBoundingClientRect()
-    const count = axis === 'cols' ? c : r
-    const avail = (axis === 'cols' ? rect.width : rect.height) - 16 - 6 * (count - 1)
-    const start = axis === 'cols' ? e.clientX : e.clientY
-    const base = [...track[axis]]
-    const sum = base.reduce((a, b) => a + b, 0)
-    const min = (sum / count) * 0.2
-    let latest = track
-    const move = (ev: PointerEvent) => {
-      const delta = (((axis === 'cols' ? ev.clientX : ev.clientY) - start) / Math.max(1, avail)) * sum
-      const pair = base[k] + base[k + 1]
-      const a = Math.min(pair - min, Math.max(min, base[k] + delta))
-      const next = [...base]
-      next[k] = a
-      next[k + 1] = pair - a
-      latest = { ...track, [axis]: next }
-      setSizes((cur) => ({ ...cur, [shape]: latest }))
-    }
-    const up = () => {
-      el.removeEventListener('pointermove', move)
-      el.removeEventListener('pointerup', up)
-      setSizes((cur) => {
-        const all = { ...cur, [shape]: latest }
-        save('mc.agentSizes', all)
-        return all
-      })
-    }
-    el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up)
-  }
-  const evenOut = () =>
-    setSizes((cur) => {
-      const { [shape]: _gone, ...rest } = cur
-      save('mc.agentSizes', rest)
-      return rest
-    })
-
-  const stageStyle = grid ? { gridTemplateColumns: template(track.cols), gridTemplateRows: template(track.rows) } : undefined
   const focusId = maximized ?? onStage?.id
 
   return (
@@ -313,24 +237,7 @@ export default function AgentsView(props: Props) {
           {agents.some(a => a.hookStatus === 'needs-input' && !a.exited) && <button className="agent-needs-action" onClick={() => { const next = agents.find(a => a.hookStatus === 'needs-input' && !a.exited); if (next) select(next.id) }}>{agents.filter(a => a.hookStatus === 'needs-input' && !a.exited).length} need you</button>}
           <Button size="sm" variant="ghost" icon={Terminal} onClick={props.onTerminal} disabled={!props.terminalFolder} title={`Open PowerShell in ${props.terminalFolder ?? 'a selected project'}`}>Terminal</Button>
           <Button size="sm" variant="ghost" icon={Play} onClick={props.onRun} disabled={!props.terminalFolder}>Run</Button>
-          {layout === 'grid' && (
-            <>
-              {customSized && <IconButton icon={Columns3} label="Even out the sizes (or double-click a divider)" size={14} onClick={evenOut} />}
-              <span className="agent-cols" title="Columns in the grid">
-                <Segmented<Cols>
-                  value={cols}
-                  onChange={(v) => props.onCols(v)}
-                  options={[
-                    { value: 'auto', label: 'Auto' },
-                    { value: '1', label: '1' },
-                    { value: '2', label: '2' },
-                    { value: '3', label: '3' },
-                    { value: '4', label: '4' }
-                  ]}
-                />
-              </span>
-            </>
-          )}
+          {layout === 'grid' && <><GridPicker value={props.cols} onChange={props.onCols} /><button className="btn btn-ghost btn-sm" onClick={panelGrid.reset}>Reset grid</button></>}
           <Button
             size="sm"
             variant="ghost"
@@ -382,18 +289,11 @@ export default function AgentsView(props: Props) {
 
       <div className={`agent-workspace ${showReview ? 'with-review' : ''}`}>
         <div className="agent-stage-wrap">
-          <div ref={stageRef} className={`agent-stage ${grid ? 'grid' : 'tabs'}`} style={stageStyle}>
+          <div ref={panelGrid.stageRef} className={`agent-stage ${grid ? 'grid' : 'tabs'}`} style={grid ? panelGrid.style : undefined}>
             {agents.map((a) => {
               const isMin = minimized.has(a.id)
               const shown = maximized ? a.id === maximized : grid ? !isMin : a.id === onStage?.id
-              const pos = shownAgents.indexOf(a)
-              const row = Math.floor(pos / c)
-              const col = pos % c
-              // The last cell stretches over the empty columns of its row.
-              const place =
-                grid && pos >= 0
-                  ? { gridRow: `${2 * row + 1}`, gridColumn: pos === shownAgents.length - 1 && col < c - 1 ? `${2 * col + 1} / ${2 * c}` : `${2 * col + 1}` }
-                  : undefined
+              const place = grid && shown ? panelGrid.place(a.id) : undefined
               const st = displayStatus(a, lastOutput[a.id])
               const isMax = maximized === a.id
               return (
@@ -401,9 +301,11 @@ export default function AgentsView(props: Props) {
                   key={a.id}
                   className={`agent-cell ${shown ? '' : 'stacked-hidden'} ${a.id === focusId ? 'focused' : ''} status-${st.cls}`}
                   style={place}
+                  {...(grid && shown ? panelGrid.target(a.id) : {})}
                   onMouseDown={() => onSelect(a.id)}
                 >
                   <div className="agent-cell-head" onDoubleClick={(e) => (e.target as HTMLElement).closest('button') || toggleMax(a.id)} title="Double-click to maximize or restore">
+                    {grid && panelGrid.handle(a.id)}
                     <Avatar name={a.projectName} path={a.projectPath} size={20} />
                     {isAgentTool(a.kind) ? <ToolBadge tool={a.kind} /> : a.kind === 'mc' && <McBadge />}
                     <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
@@ -472,14 +374,7 @@ export default function AgentsView(props: Props) {
                 </div>
               )
             })}
-            {grid &&
-              track.cols.slice(1).map((_, k) => (
-                <div key={`c${k}`} className="grid-gutter col" style={{ gridColumn: `${2 * k + 2}`, gridRow: '1 / -1' }} onPointerDown={startDrag('cols', k)} onDoubleClick={evenOut} title="Drag to resize · double-click to even out" />
-              ))}
-            {grid &&
-              track.rows.slice(1).map((_, k) => (
-                <div key={`r${k}`} className="grid-gutter row" style={{ gridRow: `${2 * k + 2}`, gridColumn: '1 / -1' }} onPointerDown={startDrag('rows', k)} onDoubleClick={evenOut} title="Drag to resize · double-click to even out" />
-              ))}
+            {grid && panelGrid.gutters}
             {shownAgents.length === 0 && !maximized && (
               <div className="stage-empty muted">All agents are minimized. Click one below to bring it back.</div>
             )}

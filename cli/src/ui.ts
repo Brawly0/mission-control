@@ -147,7 +147,7 @@ export function eventLines(side: Side, e: AgentEvent, width = boxWidth()): strin
       return [head + (file ? c.green('✎') : c[side]('▸')) + ' ' + toolText({ ...e, text: cut(e.text, room - detail) })]
     }
     case 'output': return [indent + c.dim('⎿ ') + (e.ok === false ? c.red(cut(e.text, room)) : c.dim(cut(e.text, room)))]
-    case 'text': return many(c[side]('●'), md(e.text, room), s => s, 8)
+    case 'text': return many(c[side]('●'), md(e.text, room), s => s, 4)
     case 'thinking': return many(c.dim('∴'), wrap(e.text.replace(/\n\s*\n/g, '\n'), room), s => c.dim(c.italic(s)), 4)
     case 'todo': return [head + c.dim('◦ ') + c.dim(`${e.detail ?? ''} `) + cut(e.text, room - 8)]
     case 'error': return many(c.red('✗'), wrap(e.text, room), c.red, 4)

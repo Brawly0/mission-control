@@ -149,13 +149,15 @@ ${JSON.stringify(request)}`
 }
 
 /** How every builder and reviewer ends, so mc can merge both into one clear result. */
-const REPORT = `Finish with a short report in exactly this form (plain lines, no other headings):
+const REPORT = `Finish with a short report in exactly this form (plain lines, no other headings, no nested bullets):
+Summary: one plain sentence for the user on what they got, no file names or code
 Changed:
-- path/to/file: what changed
+- path/to/file: what changed, in at most 12 words
 Checked:
-- the command or check you ran: the result
+- the command or check you ran: the result, in a few words
 Notes:
-- anything the user must know, or "none"`
+- only what the user must do or know, or "none". Messages for the other agent don't go here.
+mc shows this report to the user as it is, so keep it short.`
 
 export function workerPrompt(request: string, plan: DuoPlan, side: Side): string {
   const mine = plan.halves[side]!
@@ -232,11 +234,13 @@ What to do:
 - Check it against the request${plan.contract ? ', the shared contract and how your half uses it' : ''}.
 - Fix real problems only: bugs, missing pieces, contract mismatches, broken types or tests. Do not restyle or rewrite working code.
 - Do not commit or run git commands that change the repository.
-- Reply with one line "Verdict: ok" if nothing needed fixing, or "Verdict: fixed" followed by one "- file: fix" line per fix.`
+- Reply with one line "Verdict: ok" if nothing needed fixing, or "Verdict: fixed" followed by one "- file: fix" line per fix, at most 12 words each. Nothing else after the verdict.`
 }
 
 /** The fixed report every agent ends with, read back into lists. Anything unrecognised stays in `rest`. */
 export interface Report {
+  /** One sentence for the user on what they got. */
+  summary?: string
   changed: string[]
   checked: string[]
   notes: string[]
@@ -251,10 +255,13 @@ export function parseReport(textValue: string): Report {
   const rest: string[] = []
   for (const raw of String(textValue ?? '').split(/\r?\n/)) {
     const line = raw.trim().replace(/^\*\*(.+?)\*\*/, '$1')
-    const head = /^(?:#+\s*)?(changed|checked|notes|verdict)\s*:\s*(.*)$/i.exec(line)
+    const head = /^(?:#+\s*)?(summary|changed|checked|notes|verdict)\s*:\s*(.*)$/i.exec(line)
     if (head) {
       const key = head[1].toLowerCase()
-      if (key === 'verdict') {
+      if (key === 'summary') {
+        if (head[2].trim()) report.summary = head[2].trim()
+        section = undefined
+      } else if (key === 'verdict') {
         report.verdict = /^fixed/i.test(head[2]) ? 'fixed' : /^ok/i.test(head[2]) ? 'ok' : report.verdict
         section = 'fixes'
         const after = head[2].replace(/^(ok|fixed)\b[\s:.,-]*/i, '').trim()
@@ -266,6 +273,8 @@ export function parseReport(textValue: string): Report {
       continue
     }
     const item = /^(?:[-*•]|\d+[.)])\s+(.+)$/.exec(line)
+    // Nested bullets are detail: the lists keep the top level (the full reply is still there for /report).
+    if (section && item && /^\s{2,}/.test(raw) && report[section].length) continue
     if (section && item) report[section].push(item[1].trim())
     else if (section && line && report[section].length) report[section][report[section].length - 1] += ' ' + line
     else if (line) rest.push(raw)

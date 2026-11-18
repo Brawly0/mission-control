@@ -23,6 +23,7 @@ export const COMMANDS: Array<Omit<Command, 'args'> & { takesArgs?: boolean }> = 
   { name: 'planner', usage: '/planner claude|codex', takesArgs: true, help: 'who splits the work' },
   { name: 'aura', usage: '/aura <name>', takesArgs: true, help: 'colour of the live work tree: mood (follows the work), violet, ocean, sunset, matrix, gold, ice, fire, rainbow · saved' },
   { name: 'view', usage: '/view tree|lines', takesArgs: true, help: 'animated work tree, or one status line per agent · saved' },
+  { name: 'report', usage: '/report', help: 'everything the agents said in the last run' },
   { name: 'version', usage: '/version', help: 'show the mc version' },
   { name: 'exit', usage: '/exit', help: 'quit mc' }
 ]
@@ -61,6 +62,25 @@ const VALUES: Record<string, string[]> = {
   'model codex': ['default', 'gpt-6-astra']
 }
 
+/** A short line per value, so the menu doesn't repeat the command's whole help on every row. */
+const VALUE_HELP: Record<string, string> = {
+  'mode auto': 'mc decides: answer, one agent, or both',
+  'mode split': 'always split between Claude and Codex',
+  'mode claude': 'Claude builds alone, Codex reviews',
+  'mode codex': 'Codex builds alone, Claude reviews',
+  'planner claude': 'Claude reads the repo and plans',
+  'planner codex': 'Codex reads the repo and plans',
+  'model claude': "pick Claude's model",
+  'model codex': "pick Codex's model",
+  'view tree': 'animated work tree',
+  'view lines': 'one status line per agent',
+  'review on': 'the other agent checks the diff',
+  'review off': 'skip the review (faster, cheaper)',
+  'full on': 'both agents may run any command',
+  'full off': 'edits plus safe commands only',
+  'aura mood': 'colour follows the work'
+}
+
 export function suggestions(line: string): Suggestion[] {
   if (!line.startsWith('/')) return []
   if (!/\s/.test(line)) {
@@ -74,11 +94,10 @@ export function suggestions(line: string): Suggestion[] {
   const words = match[2].toLowerCase().split(/\s+/)
   const prefix = words.pop()!
   const key = [name, ...words].join(' ')
-  const help = COMMANDS.find(cmd => cmd.name === name)?.help ?? ''
   return (VALUES[key] ?? []).filter(value => value.startsWith(prefix) ||
     (key === 'model claude' && value.replace(/^claude-/, '').startsWith(prefix))).map(value => ({
       value: '/' + key + ' ' + value + (key === 'model' ? ' ' : ''), label: value,
-      help: key.startsWith('model ') ? (value === 'default' ? 'use the CLI default model' : words[0] + ' model') : help
+      help: key.startsWith('model ') ? (value === 'default' ? 'use the CLI default model' : words[0] + ' model') : VALUE_HELP[`${key} ${value}`] ?? (key === 'aura' ? 'live tree colour' : '')
     }))
 }
 

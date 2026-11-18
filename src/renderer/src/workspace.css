@@ -1,4 +1,16 @@
 /* Shared workspace surfaces and the persistent project tools dock. */
+.panel-grid-picker { max-width: 180px; }
+.panel-drag-handle { cursor: grab; flex-shrink: 0; color: var(--muted); padding: 3px; touch-action: none; }
+.panel-drag-handle:active { cursor: grabbing; }
+.panel-drag-handle:focus-visible { outline: 2px solid var(--accent); }
+.agent-cell[data-drop], .task-term[data-drop] { position: relative; }
+[data-drop]::after { position: absolute; z-index: 10; pointer-events: none; background: var(--accent-soft); border: 2px solid var(--accent); border-radius: 5px; color: var(--text); display: grid; place-items: center; font-size: 12px; }
+[data-drop="swap"]::after { content: 'Swap panels'; inset: 4px; }
+[data-drop="before"]::after { content: 'Move before'; inset: 4px auto 4px 4px; width: 28%; }
+[data-drop="after"]::after { content: 'Move after'; inset: 4px 4px 4px auto; width: 28%; }
+.task-agent-stage.grid:not(.has-max) { gap: 0; padding: 8px; grid-auto-rows: unset; overflow: hidden; }
+.task-agent-stage.grid:not(.has-max) .task-term-head { flex-wrap: wrap; gap: 4px; }
+.task-agent-stage.grid:not(.has-max) .task-term-title { flex: 1; min-width: 0; }
 .brand-mark { background: transparent; box-shadow: none; padding: 0; }
 .brand-logo { display: block; flex-shrink: 0; border-radius: 9px; }
 .page-header { flex-wrap: wrap; }

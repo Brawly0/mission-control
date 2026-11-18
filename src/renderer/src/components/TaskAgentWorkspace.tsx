@@ -5,6 +5,7 @@ import type { Agent } from '../types'
 import { displayStatus } from '../agentStatus'
 import { elapsed, formatCost } from '../util'
 import { EmptyState, IconButton, ToolBadge } from './ui'
+import { GridPicker, usePanelGrid } from './PanelGrid'
 import { TaskTerminal } from './TaskTerminal'
 import { TaskCliControls } from './TaskCliControls'
 import { taskWorkspaces, workspaceAgentStatus } from '../taskWorkspace'
@@ -28,6 +29,7 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
   const [layout, setLayout] = useState<'tabs' | 'grid'>(() => {
     try { return localStorage.getItem('mc.taskAgentLayout') === 'grid' ? 'grid' : 'tabs' } catch { return 'tabs' }
   })
+  const [cols, setCols] = useState(() => { try { return localStorage.getItem('mc.taskGridCols') || 'auto' } catch { return 'auto' } })
   const [maximized, setMaximized] = useState<string | null>(null)
   const tabStrip = useRef<HTMLDivElement>(null)
   const [, tick] = useState(0)
@@ -53,6 +55,8 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
   const members = group?.agents ?? []
   const active = members.find(t => t.id === agentId) ?? members.find(t => t.column === 'running') ?? members[0]
   const max = members.some(t => t.id === maximized) ? maximized : null
+  const grid = layout === 'grid' && !max
+  const panelGrid = usePanelGrid(members.map(t => t.id), cols, `mc.taskGridSizes.${group?.root.id ?? 'empty'}`)
 
   useEffect(() => {
     if (!visible) return
@@ -85,6 +89,7 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
       <span className="task-workspace-summary muted small">{members.filter(t => t.column === 'running').length} working · {group.root.team?.phase ?? group.root.column}</span>
       <IconButton icon={PanelRightOpen} label="Task and team controls" onClick={() => onOpen(group.root)} />
       <button className="btn btn-secondary btn-sm" onClick={() => setMode('grid')} title="Show every agent in this task together">View all CLI agents</button>
+      {layout === 'grid' && <><GridPicker value={cols} onChange={value => { setCols(value); try { localStorage.setItem('mc.taskGridCols', value) } catch { /* optional */ } }} /><button className="btn btn-ghost btn-sm" onClick={panelGrid.reset}>Reset grid</button></>}
       <div className="segmented task-agent-layout" role="group" aria-label="Task agents layout">
         <button type="button" aria-pressed={layout === 'tabs'} className={layout === 'tabs' ? 'active' : ''} onClick={() => setMode('tabs')}><Rows2 size={14} /> Tabs</button>
         <button type="button" aria-pressed={layout === 'grid'} className={layout === 'grid' ? 'active' : ''} onClick={() => setMode('grid')}><LayoutGrid size={14} /> Grid</button>
@@ -108,15 +113,15 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
       })}
     </div>
     {!members.length && <div className="muted pad">Review the plan and start the team from Task and team controls.</div>}
-    <div className={`task-terminals task-agent-stage ${layout} ${max ? 'has-max' : ''} count-${Math.min(members.length, 4)}`}>
+    <div ref={panelGrid.stageRef} style={grid ? panelGrid.style : undefined} className={`task-terminals task-agent-stage ${layout} ${max ? 'has-max' : ''} count-${Math.min(members.length, 4)}`}>
       {members.map(t => {
         const run = t.run
         const status = workspaceAgentStatus(t, tasks)
         const agent = run?.agentId ? agents.find(a => a.id === run.agentId) : undefined
-        const archivedPlanner = layout === 'grid' && group.root.team?.mode === 'interactive' && t.teamRole === 'planner' && t.column !== 'running' && active?.id !== t.id && members.some(member => member.teamRole === 'worker')
-        const hidden = max ? t.id !== max : archivedPlanner || layout === 'tabs' && t.id !== active?.id
-        return <section key={t.id} id={`task-agent-panel-${t.id}`} role={layout === 'tabs' ? 'tabpanel' : 'region'} aria-labelledby={`task-agent-tab-${t.id}`} className={`task-term ${t.column === 'running' ? 'is-running' : status.tone === 'error' ? 'has-error' : 'is-done'} ${hidden ? 'stacked-hidden' : ''}`} data-task-id={t.id}>
+        const hidden = max ? t.id !== max : layout === 'tabs' && t.id !== active?.id
+        return <section key={t.id} id={`task-agent-panel-${t.id}`} role={layout === 'tabs' ? 'tabpanel' : 'region'} aria-labelledby={`task-agent-tab-${t.id}`} className={`task-term ${t.column === 'running' ? 'is-running' : status.tone === 'error' ? 'has-error' : 'is-done'} ${hidden ? 'stacked-hidden' : ''}`} data-task-id={t.id} style={grid ? panelGrid.place(t.id) : undefined} {...(grid ? panelGrid.target(t.id) : {})}>
           <header className="task-term-head">
+            {grid && panelGrid.handle(t.id)}
             <ToolBadge tool={t.tool ?? 'claude'} />
             <div className="task-term-title"><button className="link-plain ellipsis strong" onClick={() => onOpen(t)} title="Open assignment details">{t.title}</button><span className="muted small">{t.teamRole ?? 'Task agent'} · {t.mode === 'interactive' ? 'Live CLI · type to chat' : 'Coordinated run · read-only'}</span></div>
             <span className="spacer" />
@@ -130,6 +135,7 @@ export default function TaskAgentWorkspace({ tasks, agents, visible, projectFilt
           <div className="task-term-body">{run ? <TaskTerminal task={t} visible={visible && !hidden} /> : <div className="task-agent-waiting"><Users size={28} /><strong>{status.label}</strong><p>{status.detail}</p><details><summary>Assigned task</summary><p>{t.prompt}</p></details></div>}</div>
         </section>
       })}
+      {grid && panelGrid.gutters}
     </div>
   </div>
 }

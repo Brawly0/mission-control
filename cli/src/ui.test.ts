@@ -66,8 +66,8 @@ describe('transcript and answers', () => {
     const out2 = eventLines('codex', { kind: 'output', text: 'exit 1 · failed', ok: false }, 80).map(strip)
     expect(out2[0].trim()).toBe('⎿ exit 1 · failed')
     const long = eventLines('codex', { kind: 'text', text: Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n') }, 80).map(strip)
-    expect(long).toHaveLength(9)
-    expect(long[8]).toContain('4 more lines')
+    expect(long).toHaveLength(5)
+    expect(long[4]).toContain('8 more lines')
   })
 })
 
@@ -157,11 +157,11 @@ describe('live menu state', () => {
       // An eight-row terminal has four suggestion rows plus the overflow count and bottom edge.
       expect(opening).toContain('\x1b[6A')
       expect(opening).not.toContain('\x1b[10A')
-      expect(opening).toContain('13 more')
+      expect(opening).toContain('14 more')
       expect(press('', 'escape')).toContain('normal hint')
       press('m')
       const reopened = press('', 'backspace')
-      expect(reopened).toContain('13 more')
+      expect(reopened).toContain('14 more')
       press('', 'escape')
       press('', 'return')
       await pending

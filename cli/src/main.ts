@@ -5,10 +5,11 @@ import { COMMANDS, complete, onOff, parseCommand, suggestions, type Command } fr
 import { changedFiles, commitAll, createWorktree, deleteRun, diffFor, findRun, git, listRuns, removeWorktree, repoRoot, saveRun, tryGit, type Run } from './git'
 import { NAME, SIDES, firstLine, other, overlaps, parseDuoPlan, parseReport, plannerPrompt, reviewPrompt, soloPlan, workerPrompt, workers, type DuoPlan, type Report, type Side, type Teamwork } from './plan'
 import { saveSettings, settings } from './settings'
+import { resultLines } from './result'
 import { AURAS, type Aura } from './tree'
 import { Live, ask, block, c, card, cardColumn, cardInner, duration, heading, md, promptBox, say, sideBySide, startSession, tokens, wrap, type Section } from './ui'
 
-const VERSION = '0.3.1'
+const VERSION = '0.4.0'
 type Cost = { side: Side; r: AgentResult }
 const sessionRuns: Cost[][] = []
 /** /new clears only the planner's earlier-request context. */
@@ -243,6 +244,7 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
       }
       case 'new': earlier.length = 0; say('Earlier request context cleared. Your next prompt starts fresh.'); break
       case 'version': say('mc ' + VERSION); break
+      case 'report': showReport(); break
       case 'model': {
         if (!cmd.args) {
           say(SIDES.map(side => NAME[side] + ': ' + (opts.models[side] ?? 'default')).join(' · '))
@@ -400,6 +402,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
 
   // 4. Review: each author's diff goes to the other agent. A reviewer that also built continues its own session.
   const reviews: Partial<Record<Side, Report>> = {}
+  const reviewTexts: string[] = []
   const paths = (side: Side) => (plan.halves[side]!.files.length ? plan.halves[side]!.files : ['.'])
   const toReview = opts.review ? builders.map(author => ({ author, reviewer: other(author), diff: diffFor(wt.path, wt.baseCommit, paths(author)) })).filter(x => x.diff.trim()) : []
   if (toReview.length) {
@@ -418,6 +421,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
       }
     })))
     toReview.forEach(({ reviewer }, i) => {
+      reviewTexts[i] = results[i].text
       reviews[reviewer] = results[i].ok ? parseReport(results[i].text) : { changed: [], checked: [], notes: [`Review failed: ${results[i].error}`], fixes: [], rest: '' }
     })
   }
@@ -460,14 +464,20 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
     remember('no changes')
     return 1
   }
-  showResult({ plan, builders, reports, reviews, outside, commit, branch: wt.branch, stat: tryGit(wt.path, ['diff', '--shortstat', `${wt.baseCommit}..HEAD`])?.trim() ?? '', took, spend: spend(costs) })
-  const rel = relative(process.cwd(), wt.path) || '.'
-  for (const side of builders) if (work[side]!.sessionId) console.log(c.dim(`    Continue ${NAME[side]}: cd "${rel}" && ${resumeHint(side, work[side]!.sessionId)}`))
-  remember(`committed on ${wt.branch} (${firstLine(plan.summary, 100)})`)
-  // No question afterwards either: say how to merge or throw it away, then go straight back to the prompt.
+  // No question afterwards: the card ends with how to merge, throw away or read everything, then the prompt is back.
   const cmd = interactive ? '/' : 'mc '
-  if (!interactive) say(`See the changes:  git diff ${wt.base}...${wt.branch}`)
-  say(`Merge into ${wt.base}:  ${c.bold(`${cmd}merge ${id}`)}   ·   Throw away:  ${cmd}clean ${id}`)
+  const next = `${cmd}merge ${id} · ${cmd}clean ${id}${interactive ? ' · /report for everything they said' : ` · git diff ${wt.base}...${wt.branch}`}`
+  const rel = relative(process.cwd(), wt.path) || '.'
+  lastRun = {
+    branch: wt.branch, worktree: wt.path,
+    replies: [
+      ...builders.map(side => ({ side, title: `${NAME[side]} · ${plan.halves[side]!.title}`, text: work[side]!.text })),
+      ...toReview.map(({ reviewer, author }, i) => ({ side: reviewer, title: `${NAME[reviewer]} reviewed ${NAME[author]}'s work`, text: reviewTexts[i] ?? '' }))
+    ],
+    resume: builders.filter(side => work[side]!.sessionId).map(side => `Continue ${NAME[side]}: cd "${rel}" && ${resumeHint(side, work[side]!.sessionId)}`)
+  }
+  showResult({ plan, builders, reports, reviews, outside, commit, branch: wt.branch, stat: tryGit(wt.path, ['diff', '--shortstat', `${wt.baseCommit}..HEAD`])?.trim() ?? '', took, spend: spend(costs), next })
+  remember(`committed on ${wt.branch} (${firstLine(plan.summary, 100)})`)
   return 0
 }
 
@@ -484,43 +494,39 @@ function showAnswer(text: string, meta: string): void {
   for (const line of md(text, cardInner())) console.log('  ' + line)
 }
 
-/** The run's one result: what changed, how it was checked, what the review found, and notes, from both agents. */
-function showResult(o: { plan: DuoPlan; builders: Side[]; reports: Partial<Record<Side, Report>>; reviews: Partial<Record<Side, Report>>; outside: string[]; commit: string; branch: string; stat: string; took: string; spend: string }): void {
+/** The run's one result, short: the summary, what each agent delivered, checks, review, at most two notes, cost. */
+function showResult(o: { plan: DuoPlan; builders: Side[]; reports: Partial<Record<Side, Report>>; reviews: Partial<Record<Side, Report>>; outside: string[]; commit: string; branch: string; stat: string; took: string; spend: string; next: string }): void {
   const inner = cardInner()
-  const bullet = (side: Side, textValue: string) => wrap(textValue, inner - 4).map((l, i) => (i ? '    ' : `  ${c[side]('•')} `) + l.replace(/`([^`]+)`/g, (_, t) => c.code(t)))
-  const list = (title: string, items: Array<[Side, string]>) => (items.length ? [c.bold(title), ...items.flatMap(([side, t]) => bullet(side, t))] : [])
-  const from = (pick: (r: Report) => string[]) => o.builders.flatMap(side => pick(o.reports[side]!).map(t => [side, t] as [Side, string]))
-
-  let changedItems = from(r => r.changed)
-  // An agent that didn't use the report format: show the start of its reply instead.
-  for (const side of o.builders) if (!o.reports[side]!.changed.length) changedItems.push([side, firstLine(o.reports[side]!.rest, 300) || o.plan.halves[side]!.title])
-  if (changedItems.length > 14) changedItems = [...changedItems.slice(0, 13), [o.builders[0], `… and ${changedItems.length - 13} more`]]
-
-  const reviewLines: string[] = []
-  for (const reviewer of SIDES) {
-    const r = o.reviews[reviewer]
-    if (!r) continue
-    const verdict = r.verdict === 'ok' ? c.green('ok, nothing to fix') : r.verdict === 'fixed' ? c.yellow(r.fixes.length ? `fixed ${r.fixes.length} issue${r.fixes.length === 1 ? '' : 's'}` : 'fixed issues') : c.dim(firstLine(r.rest || r.notes[0] || 'done', 120))
-    reviewLines.push(`  ${c[reviewer]('•')} ${c[reviewer](NAME[reviewer])} → ${NAME[other(reviewer)]}: ${verdict}`)
-    for (const fix of r.fixes.slice(0, 5)) reviewLines.push(...wrap(fix, inner - 6).map((l, i) => (i ? '      ' : '    – ') + l))
-  }
-  const notes: Array<[Side, string]> = [...from(r => r.notes), ...SIDES.flatMap(side => (o.reviews[side]?.notes ?? []).map(t => [side, t] as [Side, string]))]
-
+  const titles: Partial<Record<Side, string>> = {}
+  for (const side of o.builders) titles[side] = o.plan.halves[side]!.title
   const sections: Section[] = [[
-    ...wrap(o.plan.summary, inner).map((l, i) => (i ? '  ' : c.green('✓ ')) + l),
+    ...wrap(o.plan.summary, inner - 2).map((l, i) => (i ? '  ' : c.green('✓ ')) + l),
     c.dim(`  ${o.branch} · commit ${o.commit}${o.stat ? ' · ' + shortStat(o.stat) : ''}`)
+  ], [
+    ...resultLines({ builders: o.builders, reports: o.reports, reviews: o.reviews, titles }, inner),
+    ...(o.outside.length ? [c.yellow(`Changed outside both halves: ${o.outside.slice(0, 4).join(', ')}${o.outside.length > 4 ? ', …' : ''}`)] : [])
+  ], [
+    `${o.spend}${c.dim(' · ' + o.took)}`,
+    c.dim(o.next)
   ]]
-  const details = [
-    ...list('What changed', changedItems),
-    ...list('Checked', from(r => r.checked)),
-    ...(reviewLines.length ? [c.bold('Review'), ...reviewLines] : []),
-    ...list('Notes', notes),
-    ...(o.outside.length ? [c.yellow(`Changed outside both halves: ${o.outside.slice(0, 6).join(', ')}${o.outside.length > 6 ? ', …' : ''}`)] : [])
-  ]
-  if (details.length) sections.push(details)
-  sections.push([`${o.spend}${c.dim(' · ' + o.took)}`])
   console.log()
   card(`Done · ${o.took}`, sections, c.green)
+}
+
+/** Everything the last run's agents said, for /report: the Done card only shows the short version. */
+interface LastRun { branch: string; worktree: string; replies: Array<{ title: string; side: Side; text: string }>; resume: string[] }
+let lastRun: LastRun | undefined
+
+function showReport(): void {
+  if (!lastRun) { say('No finished run in this session yet.'); return }
+  for (const r of lastRun.replies) {
+    console.log()
+    console.log(`${c[r.side]('●')} ${c.bold(r.title)}`)
+    for (const line of md(r.text || '(no reply)', cardInner())) console.log('  ' + line)
+  }
+  console.log()
+  say(c.dim(`Branch ${lastRun.branch} · worktree ${lastRun.worktree}`))
+  for (const hint of lastRun.resume) say(c.dim(hint))
 }
 
 function list(): number {
