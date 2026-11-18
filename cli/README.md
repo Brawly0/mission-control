@@ -25,6 +25,23 @@ continues its own session. Every agent ends with the same short report, and mc m
 
 In the interactive prompt, type `/` to see the slash commands (`/clear`, `/usage`, `/model`, `/mode`, `/new`, `/report`, `/merge`, `/clean`, `/review on|off`, `/aura`, `/view`, `/full`, `/planner`, `/version`, ...) in a menu under the prompt: Tab and ↑↓ move through it, Enter runs or fills the picked one, Esc hides it. ↑ brings back earlier prompts; a multi-line paste is one request. While the agents work, the transcript shows every step (tool calls, command results, reasoning) and a live tree of boxes at the bottom shows what each agent is touching. `/aura mood|violet|ocean|sunset|matrix|gold|ice|fire|rainbow` colours it, `/view lines` swaps it for one status line per agent; both are saved. mc never stops to ask: building starts right after the plan, and after a run you are back at the prompt (`/merge <id>` or `/clean <id>` when you want).
 
+### Memory and context
+
+- **History**: every request and how it ended (answered, committed, failed, no changes, stopped) is saved per repo in
+  `<git common dir>/mc-history/history.jsonl`, so a new mc session remembers the last few. `/history` shows the last 20,
+  `/history clear` forgets them (`/hist` works too). `/new` only clears the current session's context.
+- **Project chats**: mc reads this project's Claude Code chats (`~/.claude/projects/…`) and Codex chats
+  (`~/.codex/sessions/…`), read-only and only the ends of the files, and gives the planner a short digest of the latest
+  ones. `/chats` lists them; `/chats <n>` shows the end of one.
+- **Briefings**: `/brief` writes a session briefing to `docs/briefings/` and prints its path. The banner shows the
+  newest briefing's title.
+- **Context window**: a bar per agent under the prompt box (green, yellow from 60 %, red from 85 %) shows how full each
+  agent's context was on its last call; the live view shows `ctx N%` while they work. `/context` shows the full bars and how
+  much of the planner prompt earlier history and chats take up; `/status` and `/usage` include the bars.
+
+Resizing or moving the pane while the prompt waits or agents run no longer leaves stale box edges or repeated live rows:
+mc repaints once the size settles and the app fits the terminal only after a drag ends.
+
 Options: `--mode auto|split|claude|codex`, `--no-review`, `--full` (both agents may run any command),
 `--planner claude|codex`, `--claude-model <m>`, `--codex-model <m>`.
 

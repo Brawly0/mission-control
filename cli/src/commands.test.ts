@@ -3,7 +3,7 @@ import { COMMANDS, complete, parseCommand, suggestions } from './commands'
 
 describe('command suggestions', () => {
   it('lists every command in the agreed order', () => {
-    const names = 'help clear usage model mode new status list merge clean review full planner aura view report version exit'.split(' ')
+    const names = 'help clear usage model mode new status list merge clean review full planner aura view report chats history brief context version exit'.split(' ')
     expect(COMMANDS.map(cmd => cmd.name)).toEqual(names)
     expect(suggestions('/').map(item => item.label)).toEqual(names.map(name => '/' + name))
   })
@@ -19,7 +19,7 @@ describe('command suggestions', () => {
     expect(suggestions('/model claude opus ')).toEqual([])
   })
   it('adds a space only to commands accepting arguments', () => {
-    const withArgs = 'model mode merge clean review full planner aura view'.split(' ')
+    const withArgs = 'model mode merge clean review full planner aura view chats history'.split(' ')
     for (const item of suggestions('/')) expect(item.value.endsWith(' ')).toBe(withArgs.includes(item.label.slice(1)))
   })
   it('ignores non-slash input and unknown values', () => {
@@ -37,5 +37,19 @@ describe('command suggestions', () => {
 describe('new slash commands', () => {
   it.each([['usage', 'usage'], ['cost', 'usage'], ['clear', 'clear'], ['cls', 'clear'], ['new', 'new'], ['reset', 'new'], ['version', 'version']])('resolves /%s to %s', (input, name) => {
     expect(parseCommand('/' + input)).toMatchObject({ name, args: '' })
+  })
+})
+
+describe('memory and context commands', () => {
+  it.each([['chats', 'chats'], ['chat', 'chats'], ['history', 'history'], ['hist', 'history'], ['brief', 'brief'], ['briefing', 'brief'], ['context', 'context'], ['ctx', 'context']])('resolves /%s to %s', (input, name) => {
+    expect(parseCommand('/' + input)).toMatchObject({ name, args: '' })
+  })
+  it('keeps arguments for /chats and /history', () => {
+    expect(parseCommand('/chats 3')).toMatchObject({ name: 'chats', args: '3' })
+    expect(parseCommand('/hist clear')).toMatchObject({ name: 'history', args: 'clear' })
+  })
+  it('suggests clear for /history', () => {
+    expect(suggestions('/history ').map(item => item.value)).toEqual(['/history clear'])
+    expect(suggestions('/hist c').map(item => item.label)).toEqual(['clear'])
   })
 })

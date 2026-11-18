@@ -1,7 +1,63 @@
 import { describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { complete, onOff, parseCommand } from './commands'
-import { cut, cycle, enterAction, menuLines, menuWindow, pickIndex, rowsTaken, strip, unframe, visible, wrap } from './ui'
+import { c, clearDrawn, contextBar, contextColor, contextPercent, cut, cycle, debounce, enterAction, menuLines, menuWindow, pickIndex, rowsTaken, strip, unframe, visible, wrap } from './ui'
+
+describe('context bar', () => {
+  it('shows the bar, percent and tokens', () => {
+    const bar = strip(contextBar('Claude', 76_000, 200_000, 40))
+    expect(bar).toMatch(/^Claude [▰▱]+ 38% 76k\/200k$/)
+    expect(visible(bar)).toBe(40)
+    expect([...bar].filter(ch => ch === '▰').length).toBe(Math.round(((40 - 7 - 12) * 38) / 100))
+  })
+  it('picks green, yellow and red by fullness', () => {
+    expect(contextColor(0)).toBe(c.green)
+    expect(contextColor(59)).toBe(c.green)
+    expect(contextColor(60)).toBe(c.yellow)
+    expect(contextColor(84)).toBe(c.yellow)
+    expect(contextColor(85)).toBe(c.red)
+  })
+  it('clamps the percent and never goes past the width', () => {
+    expect(contextPercent(500_000, 200_000)).toBe(100)
+    expect(contextPercent(-5, 200_000)).toBe(0)
+    for (const w of [0, 5, 12, 20, 30, 80]) expect(visible(contextBar('Codex', 300_000, 272_000, w))).toBeLessThanOrEqual(w)
+    expect(strip(contextBar('Codex', 300_000, 272_000, 80))).toContain('100%')
+    expect(strip(contextBar('Codex', 1000, 272_000, 80)).split('▰').length - 1 + strip(contextBar('Codex', 1000, 272_000, 80)).split('▱').length - 1).toBe(20)
+  })
+  it('handles an unknown (0) window', () => {
+    expect(contextPercent(1000, 0)).toBe(0)
+    expect(strip(contextBar('Claude', 1000, 0, 40))).toMatch(/0% 1\.0k\/\?$/)
+  })
+  it('drops the bar when there is no room', () => {
+    expect(strip(contextBar('Claude', 76_000, 200_000, 22))).toBe('Claude 38% 76k/200k')
+  })
+})
+
+describe('resize helpers', () => {
+  it('clears what was drawn, counting rows at the new width', () => {
+    expect(clearDrawn([], 80)).toBe('')
+    expect(clearDrawn([109, 40], 110)).toBe('\x1b[2F\x1b[0J')
+    expect(clearDrawn([109, 40], 50)).toBe('\x1b[4F\x1b[0J')
+  })
+  it('debounces to one trailing call and can be cancelled', () => {
+    vi.useFakeTimers()
+    try {
+      const fn = vi.fn()
+      const d = debounce(fn, 50)
+      d(1); d(2); d(3)
+      vi.advanceTimersByTime(49)
+      expect(fn).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(fn).toHaveBeenCalledTimes(1)
+      expect(fn).toHaveBeenCalledWith(3)
+      d(4); d.cancel()
+      vi.advanceTimersByTime(100)
+      expect(fn).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
 
 describe('text layout', () => {
   it('measures text without colour codes', () => {
@@ -157,11 +213,13 @@ describe('live menu state', () => {
       // An eight-row terminal has four suggestion rows plus the overflow count and bottom edge.
       expect(opening).toContain('\x1b[6A')
       expect(opening).not.toContain('\x1b[10A')
-      expect(opening).toContain('14 more')
+      const { COMMANDS } = await import('./commands')
+      const more = `${COMMANDS.length - 4} more`
+      expect(opening).toContain(more)
       expect(press('', 'escape')).toContain('normal hint')
       press('m')
       const reopened = press('', 'backspace')
-      expect(reopened).toContain('14 more')
+      expect(reopened).toContain(more)
       press('', 'escape')
       press('', 'return')
       await pending

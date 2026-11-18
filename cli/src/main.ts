@@ -1,19 +1,51 @@
 import { randomBytes } from 'node:crypto'
 import { basename, relative } from 'node:path'
-import { runAgent, stopAll, which, type Access, type AgentEvent, type AgentResult } from './agents'
+import { contextWindowFor, runAgent, stopAll, which, type Access, type AgentEvent, type AgentResult } from './agents'
+import { latestBriefing, briefingMarkdown, writeBriefing } from './briefing'
+import { chatDigest, listProjectChats, readChatTail, type ProjectChat } from './chats'
 import { COMMANDS, complete, onOff, parseCommand, suggestions, type Command } from './commands'
+import { appendHistory, clearHistory, historyContext, readHistory, type HistoryEntry } from './history'
 import { changedFiles, commitAll, createWorktree, deleteRun, diffFor, findRun, git, listRuns, removeWorktree, repoRoot, saveRun, tryGit, type Run } from './git'
 import { NAME, SIDES, firstLine, other, overlaps, parseDuoPlan, parseReport, plannerPrompt, reviewPrompt, soloPlan, workerPrompt, workers, type DuoPlan, type Report, type Side, type Teamwork } from './plan'
 import { saveSettings, settings } from './settings'
 import { resultLines } from './result'
 import { AURAS, type Aura } from './tree'
-import { Live, ask, block, c, card, cardColumn, cardInner, duration, heading, md, promptBox, say, sideBySide, startSession, tokens, wrap, type Section } from './ui'
+import { Live, ask, block, c, card, cardColumn, cardInner, columns, contextBar, cut, duration, heading, md, promptBox, say, sideBySide, startSession, tokens, wrap, type Section } from './ui'
 
 const VERSION = '0.4.0'
 type Cost = { side: Side; r: AgentResult }
 const sessionRuns: Cost[][] = []
-/** /new clears only the planner's earlier-request context. */
+/** /new clears only the planner's earlier-request context (the saved history in the repo stays). */
 const earlier: string[] = []
+
+/** Each agent's prompt size on its latest call and its context window, for the context bars. */
+const contextUse: Partial<Record<Side, { used: number; window: number }>> = {}
+/** The options of the run in progress, so the live view knows each agent's window. */
+let activeOpts: Options | undefined
+const windowOf = (side: Side, opts?: Options) => contextUse[side]?.window ?? contextWindowFor(side, opts?.models[side])
+
+/** One context bar per agent. Compact: both on one line under the prompt box; otherwise one per line. */
+function contextLines(opts: Options, compact: boolean): string[] {
+  const max = columns() - 1
+  const bar = (side: Side, width: number) => contextBar(c[side](NAME[side]), contextUse[side]?.used ?? 0, windowOf(side, opts), width)
+  if (compact) {
+    const w = Math.min(44, Math.floor((max - 4) / 2))
+    return ['  ' + SIDES.map(side => bar(side, w)).join('  ')]
+  }
+  return SIDES.map(side => '  ' + bar(side, Math.min(60, max - 2)))
+}
+
+/** "3m ago", "5h ago", "2d ago". */
+function ago(at: number): string {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000))
+  return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`
+}
+
+/** The last /chats list, so /chats <n> picks from what was shown. */
+let shownChats: ProjectChat[] = []
+
+/** The request being worked on, so Ctrl+C can save it to the history as stopped. */
+let pending: { root: string; request: string; saved: boolean } | undefined
 
 const HELP = `${c.bold('mc')}: one prompt, two agents. Claude and Codex share the work: mc answers questions directly, gives small
 changes to one agent and splits bigger ones so both build at the same time. The other agent reviews the result.
@@ -122,7 +154,7 @@ function showPlan(plan: DuoPlan, opts: Options): void {
 /** Runs agents at the same time under the live status rows. */
 let live: Live | undefined
 async function together(phase: string, hint: string, jobs: Array<{ side: Side; go: (onEvent: (e: AgentEvent) => void) => Promise<AgentResult> }>): Promise<AgentResult[]> {
-  const panel = live = new Live(hint)
+  const panel = live = new Live(hint, side => windowOf(side, activeOpts))
   for (const job of jobs) panel.start(job.side, phase)
   try {
     return await Promise.all(jobs.map(async job => {
@@ -166,6 +198,14 @@ function onInterrupt(): void {
   stopAll()
   console.log()
   say(c.yellow('Stopped.'))
+  if (pending && !pending.saved) {
+    pending.saved = true
+    appendHistory(pending.root, {
+      at: Date.now(), request: pending.request, outcome: 'stopped',
+      summary: current ? `stopped with Ctrl+C; worktree kept on ${current.branch}` : 'stopped with Ctrl+C',
+      ...(current ? { branch: current.branch, runId: current.id } : {})
+    })
+  }
   if (current && current.status !== 'done') {
     current.status = 'stopped'
     saveRun(current)
@@ -182,6 +222,9 @@ function banner(root: string | undefined): void {
   if (root) {
     const room = Math.max(20, (process.stdout.columns || 100) - 8)
     console.log(c.dim(`      ${root.length > room ? '…' + root.slice(root.length - room + 1) : root}`))
+    const brief = latestBriefing(root)
+    const title = brief?.text.split(/\r?\n/).find(l => l.trim())?.replace(/^#+\s*/, '').replace(/^Session briefing:\s*/i, '')
+    if (title) console.log(c.dim(`      Last briefing: ${cut(title, room - 15)}`))
   }
 }
 
@@ -240,9 +283,23 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         say(costs.length ? spend(costs) : 'Claude $0.00 · Codex 0 tokens (0% cached)')
         const last = sessionRuns.at(-1)
         say('Last run: ' + (last ? spend(last) || 'no reported usage' : 'none yet'))
+        for (const line of contextLines(opts, false)) console.log(line)
         break
       }
-      case 'new': earlier.length = 0; say('Earlier request context cleared. Your next prompt starts fresh.'); break
+      case 'new': earlier.length = 0; say('Earlier request context cleared. Your next prompt starts fresh (/history clear also forgets the saved history).'); break
+      case 'chats': await chats(root, cmd.args); break
+      case 'history': {
+        if (cmd.args.toLowerCase() === 'clear') { clearHistory(root); earlier.length = 0; say("mc's history in this repo is cleared."); break }
+        if (cmd.args) { say(c.yellow('Use /history or /history clear.')); break }
+        showHistory(readHistory(root, 20))
+        break
+      }
+      case 'brief': {
+        const path = writeBriefing(root, briefingMarkdown({ project: basename(root), history: readHistory(root) }))
+        say(`Briefing written: ${c.bold(path)}`)
+        break
+      }
+      case 'context': await showContext(root, opts); break
       case 'version': say('mc ' + VERSION); break
       case 'report': showReport(); break
       case 'model': {
@@ -272,7 +329,7 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         say(cmd.args === 'tree' ? 'Agents show as a live tree of boxes while they work. Saved.' : 'Agents show as one status line each. Saved.')
         break
       }
-      case 'status': say(statusLine(root, opts)); break
+      case 'status': say(statusLine(root, opts)); for (const line of contextLines(opts, false)) console.log(line); break
       case 'clear': process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); banner(root); break
       case 'exit': return true
     }
@@ -280,6 +337,66 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
     say(c.red((err as Error).message))
   }
   return false
+}
+
+const OUTCOME: Record<HistoryEntry['outcome'], (s: string) => string> = { answered: c.mc, committed: c.green, failed: c.red, 'no changes': c.yellow, stopped: c.yellow }
+
+function showHistory(entries: HistoryEntry[]): void {
+  if (!entries.length) { say('No history in this repository yet. It fills up as you use mc here.'); return }
+  const w = columns() - 1
+  console.log()
+  for (const e of entries) {
+    const when = new Date(e.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const head = `  ${c.dim(when.padEnd(16))} ${OUTCOME[e.outcome](e.outcome.padEnd(10))} `
+    console.log(head + cut(firstLine(e.request, 200), Math.max(10, w - 30)))
+  }
+  console.log()
+  say(c.dim(`${entries.length} most recent · kept between sessions in this repo · /history clear forgets them`))
+}
+
+/** /chats lists this project's Claude and Codex chats; /chats <n> shows the end of one. */
+async function chats(root: string, arg: string): Promise<void> {
+  const n = arg ? Number(arg) : 0
+  if (arg && (!Number.isInteger(n) || n < 1)) { say(c.yellow('Use /chats or /chats <number>.')); return }
+  if (!n || !shownChats.length) shownChats = await listProjectChats(root)
+  if (!shownChats.length) { say('No Claude or Codex chats found for this project.'); return }
+  if (n) {
+    const chat = shownChats[n - 1]
+    if (!chat) { say(c.yellow(`There's no chat ${n}. /chats lists ${shownChats.length}.`)); return }
+    const messages = await readChatTail(chat)
+    console.log()
+    console.log(`${c[chat.tool]('●')} ${c.bold(chat.title || chat.id)}  ${c.dim(`${NAME[chat.tool]} · ${ago(chat.updatedAt)}`)}`)
+    if (!messages.length) { say(c.dim('No messages to show.')); return }
+    for (const m of messages) {
+      console.log()
+      console.log('  ' + (m.role === 'user' ? c.bold('You') : c[chat.tool](c.bold(NAME[chat.tool]))) + (m.at ? c.dim('  ' + ago(m.at)) : ''))
+      for (const line of md(m.text, cardInner())) console.log('  ' + line)
+    }
+    return
+  }
+  const w = columns() - 1
+  console.log()
+  shownChats.forEach((chat, i) => {
+    const badge = c[chat.tool](NAME[chat.tool].padEnd(6))
+    const when = ago(chat.updatedAt)
+    console.log(`  ${c.dim(String(i + 1).padStart(2))}  ${badge}  ${cut(chat.title || chat.id, Math.max(10, w - 26 - when.length))}  ${c.dim(when)}`)
+  })
+  console.log()
+  say(c.dim('/chats <n> shows the end of one. mc also gives the planner a short digest of the latest ones.'))
+}
+
+/** /context: full bars for both agents, and how much of the planner prompt earlier history and chats take up. */
+async function showContext(root: string, opts: Options): Promise<void> {
+  console.log()
+  for (const line of contextLines(opts, false)) console.log(line)
+  if (!SIDES.some(side => contextUse[side])) say(c.dim('No agent calls yet in this session; the bars fill after the first run.'))
+  let digest = ''
+  try { digest = await chatDigest(root) } catch { digest = '' }
+  const prompt = plannerPrompt('', opts.teamwork, earlier, digest).length
+  const share = (chars: number) => `~${tokens(Math.round(chars / 4))} tokens (${prompt ? Math.round((chars / prompt) * 100) : 0}%)`
+  const hist = earlier.join('\n').length
+  say(`Planner prompt before your request: ~${tokens(Math.round(prompt / 4))} tokens`)
+  say(c.dim(`  earlier history ${share(hist)} · project chats ${share(digest.length)} · estimated at 4 characters per token`))
 }
 
 /** `mc` with no prompt (and how Mission Control opens it): keep asking for the next thing to do. */
@@ -294,9 +411,11 @@ async function interactive(opts: Options): Promise<number> {
     return 1
   }
   startSession(complete)
+  // mc remembers earlier sessions in this repo: the saved history seeds the planner's context.
+  earlier.push(...historyContext(readHistory(root)))
   for (;;) {
     console.log()
-    const request = (await promptBox(statusLine(root, opts), PROMPT_HINT, suggestions)).trim()
+    const request = (await promptBox(statusLine(root, opts), PROMPT_HINT, suggestions, () => contextLines(opts, true))).trim()
     if (!request) return 0
     const cmd = parseCommand(request)
     if (cmd) {
@@ -309,9 +428,14 @@ async function interactive(opts: Options): Promise<number> {
       live?.stop()
       stopAll()
       say(c.red((err as Error).message))
+      if (pending && !pending.saved) {
+        pending.saved = true
+        appendHistory(root, { at: Date.now(), request, outcome: 'failed', summary: firstLine((err as Error).message, 160) })
+      }
     }
-    if (earlier.length > 6) earlier.shift()
+    while (earlier.length > 6) earlier.shift()
     current = undefined
+    pending = undefined
   }
 }
 
@@ -324,12 +448,20 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   // Counted for /usage only once the run can actually start.
   const costs: Cost[] = []
   sessionRuns.push(costs)
+  activeOpts = opts
   const callAgent: typeof runAgent = async options => {
     const r = await runAgent(options)
     costs.push({ side: options.side, r })
+    if (r.contextTokens !== undefined) contextUse[options.side] = { used: r.contextTokens, window: r.contextWindow ?? contextWindowFor(options.side, options.model) }
     return r
   }
   const remember = (outcome: string) => earlier.push(`${JSON.stringify(firstLine(request, 100))} → ${outcome}`)
+  // Saved to the repo's mc history too, so the next session remembers it.
+  const saving: { root: string; request: string; saved: boolean } = pending = { root, request, saved: false }
+  const record = (outcome: HistoryEntry['outcome'], summary: string, extra: Partial<HistoryEntry> = {}) => {
+    saving.saved = true
+    appendHistory(root, { at: Date.now(), request, outcome, summary: firstLine(summary, 200), ...extra })
+  }
 
   const started = Date.now()
   current = undefined
@@ -340,9 +472,12 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   if (solo) plan = soloPlan(request, solo)
   else {
     heading('Plan', `${NAME[opts.planner]} reads the repo and decides who does what`)
+    // The project's recent Claude and Codex chats, for reference (never fatal: mc plans without them).
+    let chats = ''
+    try { chats = await chatDigest(root) } catch { chats = '' }
     const [planned] = await together('plan', 'reading only, nothing is changed', [{
       side: opts.planner,
-      go: onEvent => callAgent({ side: opts.planner, cwd: root, prompt: plannerPrompt(request, opts.teamwork, earlier), access: 'plan', model: opts.models[opts.planner], onEvent })
+      go: onEvent => callAgent({ side: opts.planner, cwd: root, prompt: plannerPrompt(request, opts.teamwork, earlier, chats), access: 'plan', model: opts.models[opts.planner], onEvent })
     }])
     if (!planned.ok) throw new Error(`Planning failed: ${planned.error}`)
     try {
@@ -352,6 +487,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
       if (!/^\s*(```|\{)/.test(planned.text) && planned.text.trim()) {
         showAnswer(planned.text, `${NAME[opts.planner]} · ${duration(Date.now() - started)} · ${spend(costs)}`)
         remember('answered')
+        record('answered', planned.text, { answer: planned.text, sides: [opts.planner] })
         return 0
       }
       const owner: Side = opts.teamwork === 'split' || opts.teamwork === 'auto' ? 'codex' : opts.teamwork
@@ -361,6 +497,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
     if (plan.mode === 'answer') {
       showAnswer(plan.answer, `${NAME[opts.planner]} · ${duration(Date.now() - started)} · ${spend(costs)}`)
       remember(`answered: ${firstLine(plan.summary, 120)}`)
+      record('answered', plan.summary || plan.answer, { answer: plan.answer, sides: [opts.planner] })
       return 0
     }
     showPlan(plan, opts)
@@ -397,6 +534,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
     for (const side of builders) if (work[side]!.sessionId) say(c.dim(`Continue ${NAME[side]}: cd "${wt.path}" && ${resumeHint(side, work[side]!.sessionId)}`))
     say(`Remove it with: mc clean ${id}`)
     remember('failed')
+    record('failed', current.error ?? 'build failed', { branch: wt.branch, runId: id, sides: builders })
     return 1
   }
 
@@ -457,11 +595,13 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
     if (reply) {
       showAnswer(reply, `${builders.map(s => NAME[s]).join(' + ')} · ${took} · ${spend(costs)} · nothing was changed`)
       remember('answered, no changes')
+      record('answered', plan.summary || reply, { answer: reply, sides: builders })
       return 0
     }
     console.log()
     card(`Nothing to commit · ${took}`, [[c.yellow('The agents made no changes, so nothing was committed.'), spend(costs)]], c.yellow)
     remember('no changes')
+    record('no changes', plan.summary, { sides: builders })
     return 1
   }
   // No question afterwards: the card ends with how to merge, throw away or read everything, then the prompt is back.
@@ -478,6 +618,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
   }
   showResult({ plan, builders, reports, reviews, outside, commit, branch: wt.branch, stat: tryGit(wt.path, ['diff', '--shortstat', `${wt.baseCommit}..HEAD`])?.trim() ?? '', took, spend: spend(costs), next })
   remember(`committed on ${wt.branch} (${firstLine(plan.summary, 100)})`)
+  record('committed', plan.summary, { branch: wt.branch, runId: id, sides: builders })
   return 0
 }
 
@@ -582,12 +723,22 @@ async function main(): Promise<number> {
   if (command === 'merge') return merge(rest[0])
   if (command === 'clean') return clean(rest[0])
   if (!rest.length && process.stdin.isTTY) return interactive(opts)
+  const root = repoRoot(process.cwd())
+  if (root) earlier.push(...historyContext(readHistory(root)))
   return run(rest, opts)
 }
 
 main().then(code => process.exit(code), err => {
   live?.stop()
   stopAll()
+  if (pending && !pending.saved) {
+    pending.saved = true
+    appendHistory(pending.root, {
+      at: Date.now(), request: pending.request, outcome: 'failed',
+      summary: firstLine((err as Error).message, 160),
+      ...(current ? { branch: current.branch, runId: current.id } : {})
+    })
+  }
   console.error(`  ${c.mc(c.bold('mc'))}      ${c.red((err as Error).message)}`)
   process.exit(1)
 })

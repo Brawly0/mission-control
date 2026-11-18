@@ -1,0 +1,4 @@
+{"type":"session_meta","payload":{"id":"codex-one","cwd":"__ROOT__"}}
+{"type":"response_item","timestamp":"2026-11-18T11:00:00Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Test the chat reader"}]}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec","arguments":"hidden"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Tests passed"}]}}
