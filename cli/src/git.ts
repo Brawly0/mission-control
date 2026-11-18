@@ -14,7 +14,7 @@ export function repoRoot(cwd: string): string | undefined {
   return tryGit(cwd, ['rev-parse', '--show-toplevel'])?.replace(/\//g, process.platform === 'win32' ? '\\' : '/')
 }
 
-function commonDir(root: string): string {
+export function commonDir(root: string): string {
   const dir = git(root, ['rev-parse', '--git-common-dir'])
   return isAbsolute(dir) ? dir : resolve(root, dir)
 }

@@ -1,0 +1,6 @@
+{"type":"user","cwd":"__ROOT__","sessionId":"claude-one","timestamp":"2026-11-18T10:00:00Z","message":{"content":"Build the chat reader"}}
+this is corrupt
+{"type":"summary","summary":"Project chat reader"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"},{"type":"text","text":"Reader implemented"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"private tool output"}]}}
+{"type":"user","message":{"content":"<system-reminder>ignore this</system-reminder>Thanks"}}

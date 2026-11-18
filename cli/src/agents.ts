@@ -21,6 +21,7 @@ export interface AgentEvent {
   detail?: string
   ok?: boolean
   tokens?: number
+  context?: number
 }
 
 export interface AgentResult {
@@ -34,7 +35,19 @@ export interface AgentResult {
   tokens?: number
   /** Input tokens served from cache (Codex). */
   cached?: number
+  contextTokens?: number
+  contextWindow?: number
   ms: number
+}
+
+export function contextWindowFor(side: 'claude' | 'codex', model?: string): number {
+  return side === 'codex' ? 272_000 : /\[1m\]|-1m/i.test(model ?? '') ? 1_000_000 : 200_000
+}
+
+function promptTokens(usage: any): number | undefined {
+  const values = [usage?.input_tokens, usage?.cache_read_input_tokens, usage?.cache_creation_input_tokens]
+  return values.some(n => typeof n === 'number' && Number.isFinite(n))
+    ? values.reduce((sum, n) => sum + (typeof n === 'number' && Number.isFinite(n) ? n : 0), 0) : undefined
 }
 
 export type Access = 'plan' | 'edit' | 'full'
@@ -181,6 +194,13 @@ export function claudeEvent(e: any, result: AgentResult): AgentEvent[] {
   let st = claudeState.get(result)
   if (!st) claudeState.set(result, st = { tools: new Map(), output: new Map() })
   const out: AgentEvent[] = []
+  result.contextWindow ??= contextWindowFor('claude', e?.model ?? e?.message?.model)
+  if (e?.type === 'system' && e.subtype === 'init' && typeof e.model === 'string') result.contextWindow = contextWindowFor('claude', e.model)
+  // Result usage can be cumulative. Prefer the last assistant's prompt measurement.
+  // A subagent's (Task tool) turns carry parent_tool_use_id and their own, separate context.
+  const context = e?.type === 'assistant' && !e.parent_tool_use_id ? promptTokens(e.message?.usage)
+    : e?.type === 'result' && result.contextTokens === undefined ? promptTokens(e.usage) : undefined
+  if (context !== undefined) result.contextTokens = context
   if (e?.type === 'system' && e.subtype === 'init' && e.session_id) result.sessionId = e.session_id
   // Claude Code hides the thinking text in -p mode but reports how much it's thinking.
   if (e?.type === 'system' && e.subtype === 'thinking_tokens' && typeof e.estimated_tokens === 'number') {
@@ -203,7 +223,7 @@ export function claudeEvent(e: any, result: AgentResult): AgentEvent[] {
     const usage = e.message?.usage
     if (e.message?.id && typeof usage?.output_tokens === 'number') {
       st.output.set(e.message.id, usage.output_tokens)
-      out.push({ kind: 'usage', text: '', tokens: [...st.output.values()].reduce((a, b) => a + b, 0) })
+      out.push({ kind: 'usage', text: '', tokens: [...st.output.values()].reduce((a, b) => a + b, 0), ...(context !== undefined ? { context } : {}) })
     }
   }
   if (e?.type === 'user' && Array.isArray(e.message?.content)) {
@@ -223,12 +243,27 @@ export function claudeEvent(e: any, result: AgentResult): AgentEvent[] {
     if (e.is_error || e.subtype !== 'success') result.error = short(e.result || e.subtype || 'Claude stopped with an error', 400)
     else result.ok = true
   }
+  if (context !== undefined && !out.some(ev => ev.kind === 'usage')) out.push({ kind: 'usage', text: '', context })
   return out
 }
+
+/** Codex results that got an exact last-call prompt size from a token_count event. */
+const measured = new WeakSet<AgentResult>()
 
 /** Applies one `codex exec --json` line to the result; returns progress to show. */
 export function codexEvent(e: any, result: AgentResult): AgentEvent[] {
   const out: AgentEvent[] = []
+  result.contextWindow ??= contextWindowFor('codex')
+  const tokenEvent = e?.type === 'token_count' ? e : e?.payload?.type === 'token_count' ? e.payload : undefined
+  const info = tokenEvent?.info
+  const window = info?.model_context_window ?? tokenEvent?.model_context_window ?? e?.model_context_window
+  if (typeof window === 'number' && Number.isFinite(window) && window > 0) result.contextWindow = window
+  const context = info?.last_token_usage?.input_tokens
+  if (typeof context === 'number' && Number.isFinite(context)) {
+    measured.add(result)
+    result.contextTokens = context
+    out.push({ kind: 'usage', text: '', context })
+  }
   if (e?.type === 'thread.started') result.sessionId = e.thread_id
   const item = e?.item
   if (item?.type === 'todo_list' && Array.isArray(item.items) && /^item\.(started|updated|completed)$/.test(e.type)) {
@@ -255,9 +290,11 @@ export function codexEvent(e: any, result: AgentResult): AgentEvent[] {
     result.ok = !result.error
     const u = e.usage
     if (u) {
+      // turn.completed sums every model call in the turn; a token_count's last-call size is the real prompt size.
+      if (!measured.has(result) && typeof u.input_tokens === 'number' && Number.isFinite(u.input_tokens)) result.contextTokens = u.input_tokens
       result.tokens = (result.tokens ?? 0) + (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
       result.cached = (result.cached ?? 0) + (u.cached_input_tokens ?? 0)
-      out.push({ kind: 'usage', text: '', tokens: u.output_tokens ?? 0 })
+      out.push({ kind: 'usage', text: '', tokens: u.output_tokens ?? 0, ...(result.contextTokens !== undefined ? { context: result.contextTokens } : {}) })
     }
   }
   if (e?.type === 'error' || e?.type === 'turn.failed') {
@@ -270,7 +307,7 @@ export function codexEvent(e: any, result: AgentResult): AgentEvent[] {
 /** Runs one headless turn of Claude or Codex in `cwd`, streaming progress; the prompt goes in on stdin. */
 export function runAgent(o: RunOptions): Promise<AgentResult> {
   const started = Date.now()
-  const result: AgentResult = { ok: false, text: '', ms: 0 }
+  const result: AgentResult = { ok: false, text: '', ms: 0, contextWindow: contextWindowFor(o.side, o.model) }
   const { file, prefix } = command(o.side)
   const sessionId = o.resume ?? randomUUID()
   const args = [...prefix, ...(o.side === 'claude' ? claudeArgs(o.access, sessionId, o.model, o.resume) : codexArgs(o.access, o.model, o.resume))]

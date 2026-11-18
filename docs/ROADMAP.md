@@ -1,5 +1,13 @@
 # Roadmap
 
+## mc memory, project chats and a context bar
+
+- [x] mc keeps its own history per repo (git common dir) and seeds new sessions with it; `/history`, `/history clear` (ADR 0047)
+- [x] mc reads the project's Claude and Codex chats read-only (tail reads) and gives the planner a digest; `/chats`, `/chats <n>`
+- [x] `/brief` writes a session briefing to `docs/briefings/`; the banner shows the latest one
+- [x] Context bar per agent under the prompt box, live `ctx %` while agents run, `/context`, bars in `/status` and `/usage`
+- [x] Fix: resizing or moving the mc pane no longer leaves stale box edges or duplicated live rows (debounced repaint in mc, debounced fit and no fit mid-drag in the app)
+
 ## mc slash menu, a short Done card, and arrangeable agent grids (0.40.0)
 
 - [x] mc: typing `/` opens a command menu under the prompt; Tab and ↑↓ move through it, Enter runs or fills, Esc hides it; values (modes, models, views) get their own short help

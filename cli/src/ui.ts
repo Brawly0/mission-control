@@ -3,7 +3,7 @@ import type { AgentEvent } from './agents'
 import type { Suggestion } from './commands'
 import { NAME, type Side } from './plan'
 import { settings } from './settings'
-import { addOutput, addTool, finishTree, newTree, renderTree, summary, type AgentTree } from './tree'
+import { addOutput, addTool, cutVisible, finishTree, newTree, renderTree, summary, type AgentTree } from './tree'
 
 const tty = Boolean(process.stdout.isTTY)
 const color = tty && !process.env.NO_COLOR
@@ -23,7 +23,7 @@ export const c = {
 }
 
 /** Real terminal columns (boxes and live rows must never wrap, or redrawing breaks). */
-const columns = () => Math.max(40, process.stdout.columns || 100)
+export const columns = () => Math.max(40, process.stdout.columns || 100)
 /** Width of cards, the input box and the transcript. */
 const boxWidth = () => Math.max(40, Math.min(columns() - 1, 110))
 
@@ -78,6 +78,57 @@ export function duration(ms: number): string {
 export function tokens(n: number): string {
   return n < 1000 ? String(n) : n < 1_000_000 ? `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k` : `${(n / 1_000_000).toFixed(1)}M`
 }
+
+// ── Context window ──────────────────────────────────────────────────────────
+
+/** How full a context window is, 0–100 (0 when the window is unknown). */
+export function contextPercent(used: number, window: number): number {
+  if (!(window > 0) || !(used > 0)) return 0
+  return Math.min(100, Math.round((used / window) * 100))
+}
+
+/** Green under 60 %, yellow under 85 %, red from there. */
+export function contextColor(pct: number): (s: string) => string {
+  return pct < 60 ? c.green : pct < 85 ? c.yellow : c.red
+}
+
+/**
+ * "Claude ▰▰▰▱▱▱▱▱ 38% 76k/200k", never wider than `width` visible columns. The bar shrinks first and is dropped
+ * when there is no room; the label may be coloured.
+ */
+export function contextBar(label: string, used: number, window: number, width: number): string {
+  if (width <= 0) return ''
+  const pct = contextPercent(used, window)
+  const paintIt = contextColor(pct)
+  const tail = ` ${pct}% ${tokens(Math.max(0, used || 0))}/${window > 0 ? tokens(window) : '?'}`
+  const cells = Math.max(0, Math.min(20, width - visible(label) - 1 - tail.length))
+  const filled = Math.round((cells * pct) / 100)
+  const bar = cells >= 3 ? ' ' + paintIt('▰'.repeat(filled)) + c.dim('▱'.repeat(cells - filled)) : ''
+  return cutVisible(label + bar + paintIt(tail), width)
+}
+
+// ── Resizing ────────────────────────────────────────────────────────────────
+
+/**
+ * Goes up over lines drawn with these visible widths and clears to the end of the screen. The rows are counted at
+ * the current width, because the terminal re-wraps what is on screen when the pane gets narrower.
+ */
+export function clearDrawn(widths: number[], cols = process.stdout.columns || 100): string {
+  return widths.length ? `\x1b[${rowsTaken(widths, cols)}F\x1b[0J` : ''
+}
+
+/** Runs `fn` once, `ms` after the last call (a drag fires dozens of resize events). */
+export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number): ((...args: A) => void) & { cancel(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const run = (...args: A) => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => { timer = undefined; fn(...args) }, ms)
+  }
+  return Object.assign(run, { cancel: () => { if (timer) clearTimeout(timer); timer = undefined } })
+}
+
+/** How long a resize must settle before mc repaints. */
+export const RESIZE_MS = 50
 
 // ── Markdown (answers and reports) ──────────────────────────────────────────
 
@@ -217,6 +268,8 @@ interface Row {
   tools: number
   files: Set<string>
   tokens: number
+  /** Prompt size of the agent's latest turn, when its CLI reports it. */
+  context?: number
   state: 'run' | 'ok' | 'fail'
   ms?: number
   tree: AgentTree
@@ -244,8 +297,17 @@ export class Live {
   private drawn: number[] = []
   private frame = 0
   private timer?: ReturnType<typeof setInterval>
+  /** True between a resize and the repaint once it has settled: no frames are drawn at a half-known width. */
+  private resizing = false
+  private settle = debounce(() => {
+    this.resizing = false
+    // `drawn` holds the widths at the old size; clearDrawn counts their rows at the new one.
+    this.repaint()
+  }, RESIZE_MS)
+  private onResize = () => { this.resizing = true; this.settle() }
 
-  constructor(private hint = '') {}
+  /** `windowFor` gives each agent's context window, for the live context %. */
+  constructor(private hint = '', private windowFor?: (side: Side) => number) {}
 
   start(side: Side, phase: string): void {
     this.rows.push({ side, phase, now: 'starting…', started: Date.now(), tools: 0, files: new Set(), tokens: 0, state: 'run', tree: newTree(side, phase, this.frame) })
@@ -253,9 +315,16 @@ export class Live {
     if (!this.timer) {
       holdInput()
       process.stdout.write('\x1b[?25l')
+      process.stdout.on('resize', this.onResize)
       this.timer = setInterval(() => { this.frame++; this.repaint() }, 100)
     }
     this.repaint()
+  }
+
+  /** "Claude ctx 38%" for each running agent whose CLI reported its prompt size. */
+  private contextNote(r: Row): string {
+    const win = r.context !== undefined && this.windowFor?.(r.side)
+    return win ? `ctx ${contextPercent(r.context!, win)}%` : ''
   }
 
   event(side: Side, e: AgentEvent): void {
@@ -272,7 +341,12 @@ export class Live {
         break
       }
       case 'thinking': row.thinking = row.tree.thinking = e.tokens ?? row.thinking ?? 0; row.now = 'thinking'; if (!e.text) return; break
-      case 'usage': row.tokens = row.tree.tokens = side === 'codex' ? row.tokens + (e.tokens ?? 0) : e.tokens ?? row.tokens; return
+      case 'usage': {
+        row.tokens = row.tree.tokens = side === 'codex' ? row.tokens + (e.tokens ?? 0) : e.tokens ?? row.tokens
+        const context = (e as AgentEvent & { context?: number }).context
+        if (context !== undefined) row.context = context
+        return
+      }
       case 'output': addOutput(row.tree, e.ok !== false, this.frame); break
       case 'todo': if (row.step === e.text) return; row.step = e.text; break
       case 'text': row.now = 'writing'; if (/^\s*(```|\{\s*")/.test(e.text)) { this.print([`  ${tag(side)} ${c[side]('●')} ${c.dim('plan ready')}`]); return } if (REPORT.test(e.text)) { this.print([`  ${tag(side)} ${c[side]('●')} ${c.dim('finished · report in the summary')}`]); return } break
@@ -294,6 +368,9 @@ export class Live {
   stop(): void {
     if (this.timer) { clearInterval(this.timer); releaseInput() }
     this.timer = undefined
+    this.settle.cancel()
+    this.resizing = false
+    process.stdout.off('resize', this.onResize)
     if (tty) {
       this.clear()
       const tree = treeView()
@@ -310,7 +387,7 @@ export class Live {
   private print(lines: string[]): void {
     if (!tty) { console.log(lines.join('\n')); return }
     // One write per frame (synchronized output where the terminal supports it), so the tree doesn't flicker.
-    process.stdout.write('\x1b[?2026h' + this.clearCode() + lines.join('\n') + '\n' + this.frameCode() + '\x1b[?2026l')
+    process.stdout.write('\x1b[?2026h' + this.clearCode() + lines.join('\n') + '\n' + (this.resizing ? '' : this.frameCode()) + '\x1b[?2026l')
   }
 
   private clear(): void {
@@ -318,7 +395,7 @@ export class Live {
   }
 
   private clearCode(): string {
-    const code = this.drawn.length ? `\x1b[${rowsTaken(this.drawn)}F\x1b[0J` : ''
+    const code = clearDrawn(this.drawn)
     this.drawn = []
     return code
   }
@@ -326,7 +403,8 @@ export class Live {
   /** The live area: the work tree (or one row per agent), then the hint line. */
   private frameCode(): string {
     if (!tty || !this.rows.length) return ''
-    const hint = c.dim(cut(`  ctrl+c stops${this.hint ? ' · ' + this.hint : ''}`, columns() - 1))
+    const ctx = treeView() ? this.rows.filter(r => r.state === 'run').map(r => this.contextNote(r) && `${NAME[r.side]} ${this.contextNote(r)}`).filter(Boolean) : []
+    const hint = c.dim(cut(`  ctrl+c stops${ctx.length ? ' · ' + ctx.join(' · ') : ''}${this.hint ? ' · ' + this.hint : ''}`, columns() - 1))
     let lines: string[]
     if (treeView()) {
       // Leave part of the screen for the transcript above.
@@ -337,12 +415,14 @@ export class Live {
       })
     } else lines = this.rows.map(r => this.line(r))
     lines.push(hint)
+    // A line as wide as the terminal makes some terminals wrap the cursor, which throws the next clear off by a row.
+    lines = lines.map(l => (visible(l) > columns() - 1 ? cutVisible(l, columns() - 1) : l))
     this.drawn = lines.map(visible)
     return lines.join('\n') + '\n'
   }
 
   private repaint(): void {
-    if (!tty) return
+    if (!tty || this.resizing) return
     process.stdout.write('\x1b[?2026h' + this.clearCode() + this.frameCode() + '\x1b[?2026l')
   }
 
@@ -354,7 +434,8 @@ export class Live {
       duration(r.ms ?? Date.now() - r.started),
       `${r.tools} tool${r.tools === 1 ? '' : 's'}`,
       ...(r.files.size ? [`${r.files.size} file${r.files.size === 1 ? '' : 's'}`] : []),
-      ...(r.tokens ? [`↓ ${tokens(r.tokens)}`] : [])
+      ...(r.tokens ? [`↓ ${tokens(r.tokens)}`] : []),
+      ...(r.state === 'run' && this.contextNote(r) ? [this.contextNote(r)] : [])
     ]
     // In a narrow pane the counts give way (tokens first, the timer last) so the row never wraps: a wrapped row
     // breaks the repaint and leaves a copy behind on every frame.
@@ -529,24 +610,29 @@ export function menuLines(items: Suggestion[], highlight: number, width: number,
  * move to the next one, Shift+Tab and ↑ to the previous one, putting it on the line; Enter runs or fills it, Esc
  * hides the menu until the line changes. With the menu closed, ↑↓ are history and Tab is the usual completer.
  */
-export async function promptBox(status: string, hint: string, suggest?: (line: string) => Suggestion[]): Promise<string> {
-  // Sizes are read again on every redraw: the pane can be resized while the prompt waits.
+export async function promptBox(status: string, hint: string, suggest?: (line: string) => Suggestion[], footer?: () => string[]): Promise<string> {
+  // Sizes are read again on every paint: the pane can be resized while the prompt waits.
   const edges = () => {
     const w = boxWidth()
-    const fill = Math.max(1, w - visible(`╭─ mc · ${status} `) - 1)
+    const max = columns() - 1
+    const fill = Math.max(1, w - visible(`╭─ mc · ${cut(status, Math.max(1, w - 12))} `) - 1)
     return {
       w,
-      top: c.mc('╭─ ') + c.mc(c.bold('mc')) + c.dim(` · ${status} `) + c.mc('─'.repeat(fill) + '╮'),
+      top: cutVisible(c.mc('╭─ ') + c.mc(c.bold('mc')) + c.dim(` · ${cut(status, Math.max(1, w - 12))} `) + c.mc('─'.repeat(fill) + '╮'), max),
       bottom: c.mc('╰' + '─'.repeat(w - 2) + '╯'),
-      hintLine: c.dim(cut('  ' + hint, columns() - 1))
+      // The hint and the context bars are cut, never wrapped: a wrapped row would break the next repaint.
+      hintLines: [c.dim(cut('  ' + hint, max)), ...(footer?.() ?? []).map(l => cutVisible(l, max))]
     }
   }
   let box = edges()
+  /** Visible width of the top edge as it was drawn, so a resize can count the rows it re-wrapped into. */
+  let topDrawn = visible(box.top)
   console.log(box.top)
   const rl = session
   if (!tty || !rl) return ask(PROMPT())
 
-  process.stdout.write(c.mc('│') + ' '.repeat(box.w - 2) + c.mc('│') + '\r\n' + box.bottom + '\r\n' + box.hintLine + '\x1b[2F')
+  const firstRows = [box.bottom, ...box.hintLines]
+  process.stdout.write(c.mc('│') + ' '.repeat(box.w - 2) + c.mc('│') + firstRows.map(r => '\r\n' + r).join('') + `\x1b[${firstRows.length}F`)
   const key = refreshKey(rl)
   const original = key ? (rl as any)[key] : undefined
   const fits = () => visible(PROMPT()) + [...rl.line].length < (process.stdout.columns || 100)
@@ -567,7 +653,7 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
   }
   const below = (): string[] => {
     const list = items()
-    if (!list.length) return [box.hintLine]
+    if (!list.length) return box.hintLines
     // Leave room for the top edge, input, bottom edge and the overflow count.
     const max = Math.max(1, Math.min(MENU_ROWS, (process.stdout.rows || 24) - 4))
     return menuLines(list, pickIndex(base ?? rl.line, list, sel), columns() - 1, max)
@@ -575,6 +661,8 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
   // Repaints the right edge, bottom edge and the hint or menu under the input line, then puts the cursor back.
   const paint = () => {
     if (!fits()) return
+    // The bottom edge, hint and menu always follow the current width; the top edge waits for the resize to settle.
+    box = { ...edges(), top: box.top }
     const used = visible(PROMPT()) + [...rl.line].length
     const rows = [box.bottom, ...below()]
     // Make room first (new lines scroll at the bottom of the screen), then go back to the cursor, so the saved
@@ -635,15 +723,16 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
       }
     })
   }
-  // On a resize the terminal re-wraps the old top edge (a narrower pane makes it two rows); readline has already
-  // redrawn the input line, so go up over the old edge, clear, and draw the whole box again at the new width.
-  const onResize = () => {
-    if (!key || !original || !fits()) return
-    const old = visible(box.top)
+  // On a resize the terminal re-wraps the old top edge (a narrower pane makes it two rows); readline redraws the
+  // input line itself. Once the size has settled, go up over the old edge (its rows counted at the new width),
+  // clear, and draw the whole box again, menu included, at the new width.
+  const onResize = debounce(() => {
+    if (!active || !key || !original || !fits()) return
     box = edges()
-    process.stdout.write(`\r\x1b[${rowsTaken([old])}A\x1b[0J` + box.top + '\r\n')
+    process.stdout.write(`\r\x1b[${rowsTaken([topDrawn])}A\x1b[0J` + box.top + '\r\n')
+    topDrawn = visible(box.top)
     ;(rl as any)[key]()
-  }
+  }, RESIZE_MS)
   process.stdout.on('resize', onResize)
   const extra: string[] = []
   const onLine = (line: string) => extra.push(line)
@@ -655,6 +744,7 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
     await new Promise(resolve => setTimeout(resolve, 40))
   } finally {
     active = false
+    onResize.cancel()
     process.stdout.off('resize', onResize)
     rl.off('line', onLine)
     rl.pause()

@@ -24,11 +24,15 @@ export const COMMANDS: Array<Omit<Command, 'args'> & { takesArgs?: boolean }> = 
   { name: 'aura', usage: '/aura <name>', takesArgs: true, help: 'colour of the live work tree: mood (follows the work), violet, ocean, sunset, matrix, gold, ice, fire, rainbow · saved' },
   { name: 'view', usage: '/view tree|lines', takesArgs: true, help: 'animated work tree, or one status line per agent · saved' },
   { name: 'report', usage: '/report', help: 'everything the agents said in the last run' },
+  { name: 'chats', usage: '/chats [n]', takesArgs: true, help: "this project's Claude and Codex chats · /chats <n> shows the end of one" },
+  { name: 'history', usage: '/history [clear]', takesArgs: true, help: "mc's own history in this repo (kept between sessions) · clear wipes it" },
+  { name: 'brief', usage: '/brief', help: 'write a session briefing to docs/briefings/ and show its path' },
+  { name: 'context', usage: '/context', help: "each agent's context window, and what history and chats add to the plan" },
   { name: 'version', usage: '/version', help: 'show the mc version' },
   { name: 'exit', usage: '/exit', help: 'quit mc' }
 ]
 
-const ALIASES: Record<string, string> = { quit: 'exit', q: 'exit', '?': 'help', h: 'help', ls: 'list', settings: 'status', team: 'mode', cost: 'usage', cls: 'clear', reset: 'new' }
+const ALIASES: Record<string, string> = { quit: 'exit', q: 'exit', '?': 'help', h: 'help', ls: 'list', settings: 'status', team: 'mode', cost: 'usage', cls: 'clear', reset: 'new', hist: 'history', chat: 'chats', briefing: 'brief', ctx: 'context' }
 
 /** "/merge ab12" → { name: 'merge', args: 'ab12' }. Plain "help", "list" and "exit" work without the slash. */
 export function parseCommand(input: string): Command | { name: 'unknown'; args: string } | null {
@@ -56,7 +60,7 @@ export interface Suggestion { value: string; label: string; help: string }
 const VALUES: Record<string, string[]> = {
   aura: ['mood', 'violet', 'ocean', 'sunset', 'matrix', 'gold', 'ice', 'fire', 'rainbow'],
   view: ['tree', 'lines'], mode: ['auto', 'split', 'claude', 'codex'],
-  planner: ['claude', 'codex'], model: ['claude', 'codex'], review: ['on', 'off'], full: ['on', 'off'],
+  planner: ['claude', 'codex'], model: ['claude', 'codex'], review: ['on', 'off'], full: ['on', 'off'], history: ['clear'],
   'model claude': ['default', 'opus', 'sonnet', 'haiku', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2'],
   // Codex is not on PATH here; this model is confirmed by the local Codex config.
   'model codex': ['default', 'gpt-6-astra']
@@ -78,7 +82,8 @@ const VALUE_HELP: Record<string, string> = {
   'review off': 'skip the review (faster, cheaper)',
   'full on': 'both agents may run any command',
   'full off': 'edits plus safe commands only',
-  'aura mood': 'colour follows the work'
+  'aura mood': 'colour follows the work',
+  'history clear': "forget mc's history in this repo"
 }
 
 export function suggestions(line: string): Suggestion[] {
