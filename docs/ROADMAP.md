@@ -10,7 +10,7 @@
 
 ## mc slash menu, a short Done card, and arrangeable agent grids (0.40.0)
 
-- [x] mc resize/finish redraws: bounded transient frames, wrapped prompt/menu painting, atomic teardown, screen and Windows PTY regressions (ADR 0047)
+- [x] mc resize/finish redraws: bounded transient frames, wrapped prompt/menu painting, atomic teardown, screen and Windows PTY regressions (ADR 0048)
 
 - [x] mc: typing `/` opens a command menu under the prompt; Tab and ↑↓ move through it, Enter runs or fills, Esc hides it; values (modes, models, views) get their own short help
 - [x] mc: new `/clear`, `/usage` (spend for both agents), `/model` (shows both, with model names), `/new` (forget earlier requests), `/version`, `/report` (everything the agents said in the last run)
