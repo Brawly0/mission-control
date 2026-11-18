@@ -155,8 +155,8 @@ describe('live menu state', () => {
       }
       const opening = press('/')
       // An eight-row terminal has four suggestion rows plus the overflow count and bottom edge.
-      expect(opening).toContain('\x1b[6A')
-      expect(opening).not.toContain('\x1b[10A')
+      expect(opening).toContain('\x1b[H\x1b[0J')
+      expect(opening).toContain('\x1b[2;6H')
       expect(opening).toContain('14 more')
       expect(press('', 'escape')).toContain('normal hint')
       press('m')

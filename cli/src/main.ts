@@ -1,3 +1,4 @@
+import { log, clearHistory } from './viewport'
 import { randomBytes } from 'node:crypto'
 import { basename, relative } from 'node:path'
 import { runAgent, stopAll, which, type Access, type AgentEvent, type AgentResult } from './agents'
@@ -115,7 +116,7 @@ function showPlan(plan: DuoPlan, opts: Options): void {
     ...wrap(plan.halves[side]!.files.join(', '), w).map(c.dim)
   ]))
   if (sides.length === 1) sections.push([c.dim(opts.review ? `${NAME[other(sides[0])]} reviews the diff afterwards.` : 'No review (/review on to add one).')])
-  console.log()
+  log()
   card(sides.length === 2 ? 'Plan · split in two' : 'Plan · one agent', sections)
 }
 
@@ -164,7 +165,7 @@ let current: Run | undefined
 function onInterrupt(): void {
   live?.stop()
   stopAll()
-  console.log()
+  log()
   say(c.yellow('Stopped.'))
   if (current && current.status !== 'done') {
     current.status = 'stopped'
@@ -175,13 +176,13 @@ function onInterrupt(): void {
 }
 
 function banner(root: string | undefined): void {
-  console.log()
-  console.log(`  ${c.claude('◖')}${c.codex('◗')}  ${c.mc(c.bold('mc'))} ${c.dim(VERSION)}  ${c.bold('Claude')} + ${c.bold('Codex')} on one prompt`)
-  console.log(c.dim(`      Ask a question or describe a change. mc answers it, gives it to one agent, or splits it between both;`))
-  console.log(c.dim(`      the other agent reviews. Work happens on a new branch, so your folder is never touched.`))
+  log()
+  log(`  ${c.claude('◖')}${c.codex('◗')}  ${c.mc(c.bold('mc'))} ${c.dim(VERSION)}  ${c.bold('Claude')} + ${c.bold('Codex')} on one prompt`)
+  log(c.dim(`      Ask a question or describe a change. mc answers it, gives it to one agent, or splits it between both;`))
+  log(c.dim(`      the other agent reviews. Work happens on a new branch, so your folder is never touched.`))
   if (root) {
     const room = Math.max(20, (process.stdout.columns || 100) - 8)
-    console.log(c.dim(`      ${root.length > room ? '…' + root.slice(root.length - room + 1) : root}`))
+    log(c.dim(`      ${root.length > room ? '…' + root.slice(root.length - room + 1) : root}`))
   }
 }
 
@@ -202,7 +203,7 @@ function statusLine(root: string, opts: Options): string {
 function showCommands(): void {
   const w = Math.max(...COMMANDS.map(cmd => cmd.usage.length)) + 2
   const inner = cardInner()
-  console.log()
+  log()
   card('Commands', [
     COMMANDS.flatMap(cmd => wrap(cmd.help, Math.max(20, inner - w)).map((l, i) => `${i ? ' '.repeat(w) : c.mc(cmd.usage.padEnd(w))}${c.dim(l)}`)),
     wrap('Anything else you type is a request. Questions get an answer straight away; changes are built on a new branch.', inner).map(c.dim)
@@ -273,7 +274,7 @@ async function slash(cmd: Command | { name: 'unknown'; args: string }, root: str
         break
       }
       case 'status': say(statusLine(root, opts)); break
-      case 'clear': process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); banner(root); break
+      case 'clear': clearHistory(); process.stdout.write('\x1b[2J\x1b[3J\x1b[H'); banner(root); break
       case 'exit': return true
     }
   } catch (err) {
@@ -287,7 +288,7 @@ async function interactive(opts: Options): Promise<number> {
   const root = repoRoot(process.cwd())
   banner(root)
   if (!root) {
-    console.log()
+    log()
     say(c.yellow('This folder is not a git repository. mc builds on a new branch, so it needs git.'))
     say(c.dim('Turn on git first (in Mission Control: Changes tab → Turn on git, or run git init and make a first commit).'))
     if (process.env.MC_FROM_APP) await ask(c.dim('   Press Enter to close. '))
@@ -295,7 +296,7 @@ async function interactive(opts: Options): Promise<number> {
   }
   startSession(complete)
   for (;;) {
-    console.log()
+    log()
     const request = (await promptBox(statusLine(root, opts), PROMPT_HINT, suggestions)).trim()
     if (!request) return 0
     const cmd = parseCommand(request)
@@ -317,7 +318,7 @@ async function interactive(opts: Options): Promise<number> {
 
 async function run(requestParts: string[], opts: Options, interactive = false, earlier: string[] = []): Promise<number> {
   const request = requestParts.join(' ').trim()
-  if (!request) { console.log(HELP); return 1 }
+  if (!request) { log(HELP); return 1 }
   const root = requireRepo()
   for (const side of SIDES) if (!which(side)) throw new Error(`${side} was not found on PATH. Install it first.`)
   if (!tryGit(root, ['rev-parse', '--verify', 'HEAD'])) throw new Error('This repository has no commits yet. Make a first commit, then run mc.')
@@ -459,7 +460,7 @@ async function run(requestParts: string[], opts: Options, interactive = false, e
       remember('answered, no changes')
       return 0
     }
-    console.log()
+    log()
     card(`Nothing to commit · ${took}`, [[c.yellow('The agents made no changes, so nothing was committed.'), spend(costs)]], c.yellow)
     remember('no changes')
     return 1
@@ -489,9 +490,9 @@ function shortStat(stat: string): string {
 }
 
 function showAnswer(text: string, meta: string): void {
-  console.log()
-  console.log(`${c.mc('●')} ${c.bold('Answer')}  ${c.dim(meta)}`)
-  for (const line of md(text, cardInner())) console.log('  ' + line)
+  log()
+  log(`${c.mc('●')} ${c.bold('Answer')}  ${c.dim(meta)}`)
+  for (const line of md(text, cardInner())) log('  ' + line)
 }
 
 /** The run's one result, short: the summary, what each agent delivered, checks, review, at most two notes, cost. */
@@ -509,7 +510,7 @@ function showResult(o: { plan: DuoPlan; builders: Side[]; reports: Partial<Recor
     `${o.spend}${c.dim(' · ' + o.took)}`,
     c.dim(o.next)
   ]]
-  console.log()
+  log()
   card(`Done · ${o.took}`, sections, c.green)
 }
 
@@ -520,11 +521,11 @@ let lastRun: LastRun | undefined
 function showReport(): void {
   if (!lastRun) { say('No finished run in this session yet.'); return }
   for (const r of lastRun.replies) {
-    console.log()
-    console.log(`${c[r.side]('●')} ${c.bold(r.title)}`)
-    for (const line of md(r.text || '(no reply)', cardInner())) console.log('  ' + line)
+    log()
+    log(`${c[r.side]('●')} ${c.bold(r.title)}`)
+    for (const line of md(r.text || '(no reply)', cardInner())) log('  ' + line)
   }
-  console.log()
+  log()
   say(c.dim(`Branch ${lastRun.branch} · worktree ${lastRun.worktree}`))
   for (const hint of lastRun.resume) say(c.dim(hint))
 }
@@ -536,7 +537,7 @@ function list(): number {
   for (const r of runs) {
     const when = new Date(r.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     const status = r.status === 'done' ? c.green(r.status) : r.status === 'failed' || r.status === 'stopped' ? c.red(r.status) : c.yellow(r.status)
-    console.log(`  ${c.bold(r.id)}  ${status.padEnd(18)} ${c.dim(when.padEnd(16))} ${firstLine(r.request, 70)}`)
+    log(`  ${c.bold(r.id)}  ${status.padEnd(18)} ${c.dim(when.padEnd(16))} ${firstLine(r.request, 70)}`)
   }
   return 0
 }
@@ -576,8 +577,8 @@ function clean(id: string | undefined): number {
 async function main(): Promise<number> {
   process.on('SIGINT', onInterrupt)
   const { command, rest, opts } = parse(process.argv.slice(2))
-  if (command === 'help') { console.log(HELP); return 0 }
-  if (command === 'version') { console.log(`mc ${VERSION}`); return 0 }
+  if (command === 'help') { log(HELP); return 0 }
+  if (command === 'version') { log(`mc ${VERSION}`); return 0 }
   if (command === 'list') return list()
   if (command === 'merge') return merge(rest[0])
   if (command === 'clean') return clean(rest[0])

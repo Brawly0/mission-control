@@ -369,7 +369,7 @@ export default function AgentsView(props: Props) {
                     <SessionRecap compact sessionId={a.resumedFrom} tool={a.kind === 'codex' ? 'codex' : 'claude'} onClose={() => setHiddenRecaps((cur) => new Set([...cur, a.id]))} />
                   )}
                   <Suspense fallback={null}>
-                    <TerminalPane id={a.id} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />
+                    <TerminalPane id={a.id} mc={a.kind === 'mc'} visible={visible && shown && a.id === focusId} onExit={(code) => onExit(a.id, code)} />
                   </Suspense>
                 </div>
               )

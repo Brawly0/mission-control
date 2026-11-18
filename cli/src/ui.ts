@@ -1,9 +1,11 @@
 import { createInterface, type Completer, type Interface } from 'node:readline'
+import { Writable } from 'node:stream'
+import { browseHistory, log, restoreScreen, Viewport } from './viewport'
 import type { AgentEvent } from './agents'
 import type { Suggestion } from './commands'
 import { NAME, type Side } from './plan'
 import { settings } from './settings'
-import { addOutput, addTool, finishTree, newTree, renderTree, summary, type AgentTree } from './tree'
+import { addOutput, addTool, cutVisible, finishTree, newTree, renderTree, summary, type AgentTree } from './tree'
 
 const tty = Boolean(process.stdout.isTTY)
 const color = tty && !process.env.NO_COLOR
@@ -23,9 +25,9 @@ export const c = {
 }
 
 /** Real terminal columns (boxes and live rows must never wrap, or redrawing breaks). */
-const columns = () => Math.max(40, process.stdout.columns || 100)
+const columns = () => Math.max(2, process.stdout.columns || 100)
 /** Width of cards, the input box and the transcript. */
-const boxWidth = () => Math.max(40, Math.min(columns() - 1, 110))
+const boxWidth = () => Math.max(1, Math.min(columns() - 1, 110))
 
 export function strip(s: string): string {
   return s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
@@ -44,9 +46,10 @@ export function cut(s: string, max: number): string {
 
 /** Word-wraps plain text to `max` columns, keeping blank lines and breaking words longer than a line. */
 export function wrap(text: string, max: number): string[] {
+  max = Math.max(1, max)
   const out: string[] = []
   for (const para of text.replace(/\t/g, '  ').split(/\r?\n/)) {
-    const indent = /^\s*/.exec(para)![0]
+    const indent = /^\s*/.exec(para)![0].slice(0, max - 1)
     const words = para.trim().split(/\s+/).filter(Boolean)
     if (!words.length) { out.push(''); continue }
     let line = indent
@@ -156,16 +159,16 @@ export function eventLines(side: Side, e: AgentEvent, width = boxWidth()): strin
 }
 
 export function say(text: string): void {
-  console.log(`  ${tag('mc')} ${text}`)
+  log(`  ${tag('mc')} ${text}`)
 }
 
 /** A step of the run: "● Plan  Claude reads the repo and decides who does what". */
 export function heading(title: string, note = ''): void {
-  console.log('\n' + c.mc('● ') + c.bold(title) + (note ? '  ' + c.dim(note) : ''))
+  log('\n' + c.mc('● ') + c.bold(title) + (note ? '  ' + c.dim(note) : ''))
 }
 
 export function block(text: string, indent = '    '): void {
-  for (const line of text.split(/\r?\n/)) console.log(indent + line)
+  for (const line of text.split(/\r?\n/)) log(indent + line)
 }
 
 // ── Cards ───────────────────────────────────────────────────────────────────
@@ -178,28 +181,33 @@ export type Section = string[] | { left: string[]; right: string[] }
 
 export function card(title: string, sections: Section[], paintBorder: (s: string) => string = c.mc): void {
   const w = boxWidth()
+  if (w < 7) {
+    log([title, ...sections.flatMap(s => Array.isArray(s) ? s : [...s.left, ...s.right])].map(l => cutVisible(l, w)).join('\n'))
+    return
+  }
   const inner = w - 4
+  title = cutVisible(title, w - 5)
   const head = `╭─ ${title} `
-  const out = [paintBorder('╭─ ') + c.bold(title) + ' ' + paintBorder('─'.repeat(Math.max(1, w - visible(head) - 1)) + '╮')]
+  const out = [paintBorder('╭─ ') + c.bold(title) + ' ' + paintBorder('─'.repeat(Math.max(0, w - visible(head) - 1)) + '╮')]
   const half = Math.floor((inner - 3) / 2)
   const two = (s: Section | undefined) => Boolean(s && !Array.isArray(s))
   // The column bar sits at position half + 3; a rule joins it from above, below or both.
   const rule = (l: string, up: boolean, down: boolean, r: string) =>
     paintBorder(l + '─'.repeat(half + 2) + (up && down ? '┼' : up ? '┴' : down ? '┬' : '─') + '─'.repeat(w - half - 5) + r)
-  const row = (s: string) => out.push(paintBorder('│') + ' ' + pad(s, inner) + ' ' + paintBorder('│'))
+  const row = (s: string) => out.push(paintBorder('│') + ' ' + pad(cutVisible(s, inner), inner) + ' ' + paintBorder('│'))
   sections.forEach((section, i) => {
     if (i > 0) out.push(rule('├', two(sections[i - 1]), two(section), '┤'))
     if (Array.isArray(section)) { section.forEach(row); return }
     const n = Math.max(section.left.length, section.right.length)
-    for (let k = 0; k < n; k++) row(pad(section.left[k] ?? '', half) + ' ' + paintBorder('│') + ' ' + (section.right[k] ?? ''))
+    for (let k = 0; k < n; k++) row(pad(cutVisible(section.left[k] ?? '', half), half) + ' ' + paintBorder('│') + ' ' + (section.right[k] ?? ''))
   })
   out.push(rule('╰', two(sections[sections.length - 1]), false, '╯'))
-  console.log(out.join('\n'))
+  log(out.join('\n'))
 }
 
 /** Inner width of a card (for wrapping text before it goes in), and of one column in a two-column section. */
-export const cardInner = () => boxWidth() - 4
-export const cardColumn = () => Math.floor((cardInner() - 3) / 2)
+export const cardInner = () => Math.max(1, boxWidth() - 4)
+export const cardColumn = () => Math.max(1, Math.floor((cardInner() - 3) / 2))
 /** Wide enough for the two agents side by side. */
 export const sideBySide = () => cardColumn() >= 36
 
@@ -240,19 +248,23 @@ const treeView = () => settings.view === 'tree' && (process.stdout.rows || 0) >=
  */
 export class Live {
   private rows: Row[] = []
-  /** Visible width of each line of the live area on screen, so it can be cleared even after the terminal re-wrapped it. */
-  private drawn: number[] = []
+  /** Transient rows never enter the normal buffer's scrollback. */
+  private viewport?: Viewport
+  private stopped = false
+  private onResize = () => this.repaint()
   private frame = 0
   private timer?: ReturnType<typeof setInterval>
 
   constructor(private hint = '') {}
 
   start(side: Side, phase: string): void {
+    if (this.stopped) return
     this.rows.push({ side, phase, now: 'starting…', started: Date.now(), tools: 0, files: new Set(), tokens: 0, state: 'run', tree: newTree(side, phase, this.frame) })
     if (!tty) return
     if (!this.timer) {
       holdInput()
-      process.stdout.write('\x1b[?25l')
+      this.viewport = new Viewport()
+      process.stdout.on('resize', this.onResize)
       this.timer = setInterval(() => { this.frame++; this.repaint() }, 100)
     }
     this.repaint()
@@ -292,58 +304,51 @@ export class Live {
 
   /** Clears the live rows and leaves one final line per agent in the scrollback. */
   stop(): void {
-    if (this.timer) { clearInterval(this.timer); releaseInput() }
+    if (this.stopped) return
+    this.stopped = true
+    if (this.timer) clearInterval(this.timer)
     this.timer = undefined
+    process.stdout.off('resize', this.onResize)
     if (tty) {
-      this.clear()
       const tree = treeView()
+      const lines: string[] = []
       for (const r of this.rows) {
         if (r.state === 'run') { r.state = 'fail'; r.now = 'stopped'; r.ms = Date.now() - r.started; finishTree(r.tree, false, r.ms, this.frame) }
         // The tree collapses to one line per agent.
-        console.log(tree ? summary(r.tree, NAME[r.side], duration(r.ms ?? 0)) : this.line(r))
+        lines.push(tree ? summary(r.tree, NAME[r.side], duration(r.ms ?? 0)) : this.line(r))
       }
-      process.stdout.write('\x1b[?25h')
+      this.viewport?.close(lines)
+      releaseInput()
     }
     this.rows = []
   }
 
   private print(lines: string[]): void {
-    if (!tty) { console.log(lines.join('\n')); return }
-    // One write per frame (synchronized output where the terminal supports it), so the tree doesn't flicker.
-    process.stdout.write('\x1b[?2026h' + this.clearCode() + lines.join('\n') + '\n' + this.frameCode() + '\x1b[?2026l')
-  }
-
-  private clear(): void {
-    process.stdout.write(this.clearCode())
-  }
-
-  private clearCode(): string {
-    const code = this.drawn.length ? `\x1b[${rowsTaken(this.drawn)}F\x1b[0J` : ''
-    this.drawn = []
-    return code
+    if (this.stopped) return
+    log(lines.join('\n'))
+    this.repaint()
   }
 
   /** The live area: the work tree (or one row per agent), then the hint line. */
-  private frameCode(): string {
-    if (!tty || !this.rows.length) return ''
-    const hint = c.dim(cut(`  ctrl+c stops${this.hint ? ' · ' + this.hint : ''}`, columns() - 1))
+  private frameLines(): string[] {
+    if (!tty || !this.rows.length) return []
+    const budget = Math.max(0, (process.stdout.rows || 24) - 1)
+    const hint = c.dim(cut(`  ctrl+c stops · pgup history${this.hint ? ' · ' + this.hint : ''}`, columns() - 1))
     let lines: string[]
     if (treeView()) {
       // Leave part of the screen for the transcript above.
-      const height = Math.max(12, Math.floor((process.stdout.rows || 30) * 0.7)) - 1
+      const height = Math.min(budget - 1, Math.max(1, Math.floor((process.stdout.rows || 30) * 0.7) - 1))
       lines = renderTree(this.rows.map(r => r.tree), {
         frame: this.frame, width: columns() - 1, height, aura: settings.aura, phase: this.rows[0].phase,
         names: NAME, duration: t => duration(t.ms ?? Date.now() - t.started)
       })
     } else lines = this.rows.map(r => this.line(r))
-    lines.push(hint)
-    this.drawn = lines.map(visible)
-    return lines.join('\n') + '\n'
+    return [...lines.slice(0, Math.max(0, budget - 1)), ...(budget ? [hint] : [])].map(l => cutVisible(l, columns() - 1))
   }
 
   private repaint(): void {
-    if (!tty) return
-    process.stdout.write('\x1b[?2026h' + this.clearCode() + this.frameCode() + '\x1b[?2026l')
+    if (!tty || this.stopped) return
+    this.viewport?.draw(this.frameLines())
   }
 
   private line(r: Row): string {
@@ -374,7 +379,7 @@ export class Live {
 }
 
 /** Make sure the cursor comes back if mc exits while the live rows are showing. */
-if (tty) process.on('exit', () => process.stdout.write('\x1b[?25h'))
+if (tty) process.on('exit', () => { restoreScreen(); process.stdout.write('\x1b[?25h') })
 
 // ── Input ───────────────────────────────────────────────────────────────────
 
@@ -383,12 +388,18 @@ if (tty) process.on('exit', () => process.stdout.write('\x1b[?25h'))
  * console in and out of raw mode, and keys typed in between (like a quick Enter) can get lost.
  */
 let session: Interface | undefined
+let drawingPrompt = false
 
 export function startSession(completer?: Completer): void {
   if (!process.stdin.isTTY || session) return
-  session = createInterface({ input: process.stdin, output: process.stdout, terminal: true, historySize: 100, removeHistoryDuplicates: true, ...(completer ? { completer } : {}) })
+  // Readline owns editing/history, but not the screen while a framed prompt is open.
+  // Its resize listener is on this sink, so stdout resize has exactly one painter.
+  const output = new Writable({ write(chunk, _encoding, done) { if (!drawingPrompt) process.stdout.write(chunk); done() } })
+  Object.defineProperty(output, 'columns', { get: columns })
+  session = createInterface({ input: process.stdin, output, terminal: true, historySize: 100, removeHistoryDuplicates: true, ...(completer ? { completer } : {}) })
   // Ctrl+C at a prompt quits like it does during a run (readline would otherwise just pause).
   session.on('SIGINT', () => process.emit('SIGINT'))
+  session.on('close', () => { session = undefined })
   session.pause()
 }
 
@@ -398,7 +409,12 @@ export function startSession(completer?: Completer): void {
  * (Switching to cooked mode and back instead loses the first keys typed after a run on Windows.)
  */
 let keypress: Array<(...args: any[]) => void> = []
-const onRunKey = (d: Buffer | string) => { if (String(d).includes('\x03')) process.emit('SIGINT') }
+const onRunKey = (d: Buffer | string) => {
+  const text = String(d)
+  if (text.includes('\x03')) process.emit('SIGINT')
+  else if (text.includes('\x1b[5~')) browseHistory(true)
+  else browseHistory(false)
+}
 function holdInput(): void {
   if (!session || !process.stdin.isTTY || keypress.length) return
   session.pause()
@@ -521,8 +537,8 @@ export function menuLines(items: Suggestion[], highlight: number, width: number,
 
 /**
  * The input box, Claude Code style: a closed frame with the settings in its top edge and a hint line under it.
- * readline clears everything below the cursor whenever it redraws the line, so the bottom edge and the hint are drawn
- * again after each redraw. Pasting several lines sends them as one request. Once sent, the box is closed around what
+ * Readline owns edit state; one viewport painter owns all edges, input and hints.
+ * Pasting several lines sends them as one request. Once sent, the box is closed around what
  * was typed, so the scrollback reads like a chat.
  *
  * With `suggest`, a line starting with '/' shows a menu of matching commands in place of the hint line. Tab and ↓
@@ -533,23 +549,22 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
   // Sizes are read again on every redraw: the pane can be resized while the prompt waits.
   const edges = () => {
     const w = boxWidth()
-    const fill = Math.max(1, w - visible(`╭─ mc · ${status} `) - 1)
+    const title = cut(`mc · ${status}`, Math.max(0, w - 5))
+    const fill = Math.max(0, w - visible(title) - 5)
     return {
       w,
-      top: c.mc('╭─ ') + c.mc(c.bold('mc')) + c.dim(` · ${status} `) + c.mc('─'.repeat(fill) + '╮'),
-      bottom: c.mc('╰' + '─'.repeat(w - 2) + '╯'),
-      hintLine: c.dim(cut('  ' + hint, columns() - 1))
+      top: c.mc('╭─ ') + c.mc(c.bold(title.slice(0, 2))) + c.dim(title.slice(2) + ' ') + c.mc('─'.repeat(fill) + '╮'),
+      bottom: c.mc('╰' + '─'.repeat(Math.max(0, w - 2)) + '╯'),
+      hintLine: c.dim(cut('  ' + hint + ' · pgup history / pgdn returns', columns() - 1))
     }
   }
   let box = edges()
-  console.log(box.top)
   const rl = session
-  if (!tty || !rl) return ask(PROMPT())
-
-  process.stdout.write(c.mc('│') + ' '.repeat(box.w - 2) + c.mc('│') + '\r\n' + box.bottom + '\r\n' + box.hintLine + '\x1b[2F')
+  if (!tty || !rl) { log(box.top); return ask(PROMPT()) }
+  const viewport = new Viewport()
+  drawingPrompt = true
   const key = refreshKey(rl)
   const original = key ? (rl as any)[key] : undefined
-  const fits = () => visible(PROMPT()) + [...rl.line].length < (process.stdout.columns || 100)
 
   // Menu state. `base` is the line as typed before Tab/↑↓ started cycling, so the matches don't collapse to the one
   // just put on the line; `sel` is the item moved to (-1 = none yet); `closedFor` is the line Esc hid the menu for.
@@ -565,23 +580,31 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
     const line = base ?? rl.line
     return line.startsWith('/') ? suggest!(line) : []
   }
-  const below = (): string[] => {
-    const list = items()
-    if (!list.length) return [box.hintLine]
-    // Leave room for the top edge, input, bottom edge and the overflow count.
-    const max = Math.max(1, Math.min(MENU_ROWS, (process.stdout.rows || 24) - 4))
-    return menuLines(list, pickIndex(base ?? rl.line, list, sel), columns() - 1, max)
-  }
-  // Repaints the right edge, bottom edge and the hint or menu under the input line, then puts the cursor back.
+  // Render the whole frame from readline's edit state. Long input gets a bounded
+  // vertical window following the caret, so neither edges nor menus can scroll off.
   const paint = () => {
-    if (!fits()) return
-    const used = visible(PROMPT()) + [...rl.line].length
-    const rows = [box.bottom, ...below()]
-    // Make room first (new lines scroll at the bottom of the screen), then go back to the cursor, so the saved
-    // position stays right when the menu is taller than the space left under the box.
-    const col = rl.getCursorPos().cols + 1
-    process.stdout.write('\r\n'.repeat(rows.length) + `\x1b[${rows.length}A\x1b[${col}G` + '\x1b7' + (used < box.w - 1 ? `\x1b[${box.w}G` + c.mc('│') : '') +
-      rows.map(r => '\r\n\x1b[2K' + r).join('') + '\x1b[0J\x1b8')
+    if (!active) return
+    box = edges()
+    const height = Math.max(1, process.stdout.rows || 24)
+    const room = Math.max(1, box.w - 6)
+    const chars = [...rl.line]
+    const caret = [...rl.line.slice(0, rl.cursor)].length
+    const cursorRow = Math.floor(caret / room)
+    const chunks: string[] = []
+    for (let i = 0; i <= chars.length; i += room) chunks.push(chars.slice(i, i + room).join(''))
+    const count = Math.max(1, Math.min(chunks.length, height - 3))
+    const start = Math.max(0, cursorRow - count + 1)
+    const input = chunks.slice(start, start + count).map((text, i) =>
+      c.mc('│') + ' ' + (start + i === 0 ? c.mc('›') : ' ') + ' ' + pad(text, room) + ' ' + c.mc('│'))
+    const list = items()
+    const spare = Math.max(0, height - input.length - 2)
+    const below = list.length
+      ? menuLines(list, pickIndex(base ?? rl.line, list, sel), columns() - 1, Math.max(1, Math.min(MENU_ROWS, spare - 1))).slice(0, spare)
+      : spare ? [box.hintLine] : []
+    if (height < 3 || box.w < 6) {
+      const offset = Math.max(0, caret - Math.max(1, box.w - 1))
+      viewport.draw([chars.slice(offset, offset + box.w).join('')], { row: 0, col: caret - offset })
+    } else viewport.draw([box.top, ...input, box.bottom, ...below], { row: 1 + cursorRow - start, col: 4 + caret % room })
   }
   const setLine = (value: string) => {
     const r = rl as unknown as { line: string; cursor: number }
@@ -600,12 +623,15 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
       }
     })
   }
-  if (menuOn) {
+  if (tkey && tty0) {
     Object.defineProperty(rl, tkey!, {
       configurable: true, writable: true,
       value: function (this: Interface, s: unknown, k?: { name?: string; ctrl?: boolean; meta?: boolean; shift?: boolean }) {
         if (!active) return tty0.call(this, s, k)
         const name = k?.name
+        if (name === 'pageup') { viewport.browse(true); return }
+        viewport.browse(false)
+        if (name === 'pagedown') return
         const list = items()
         if (list.length && name === 'escape') { base = null; sel = -1; closedFor = rl.line; paint(); return }
         if (list.length && !k?.ctrl && !k?.meta) {
@@ -635,48 +661,47 @@ export async function promptBox(status: string, hint: string, suggest?: (line: s
       }
     })
   }
-  // On a resize the terminal re-wraps the old top edge (a narrower pane makes it two rows); readline has already
-  // redrawn the input line, so go up over the old edge, clear, and draw the whole box again at the new width.
-  const onResize = () => {
-    if (!key || !original || !fits()) return
-    const old = visible(box.top)
-    box = edges()
-    process.stdout.write(`\r\x1b[${rowsTaken([old])}A\x1b[0J` + box.top + '\r\n')
-    ;(rl as any)[key]()
-  }
+  const onResize = () => paint()
   process.stdout.on('resize', onResize)
   const extra: string[] = []
   const onLine = (line: string) => extra.push(line)
   rl.on('line', onLine)
   let first: string
+  let onClose: (() => void) | undefined
   try {
-    first = await new Promise<string>(resolve => rl.question(PROMPT(), a => { active = false; resolve(a) }))
+    first = await new Promise<string>(resolve => {
+      onClose = () => { active = false; resolve('') }
+      rl.once('close', onClose)
+      rl.question(PROMPT(), a => { active = false; resolve(a) })
+      paint()
+    })
     // A multi-line paste arrives as several lines at once; the rest come in right after the first.
     await new Promise(resolve => setTimeout(resolve, 40))
+  } catch (error) {
+    viewport.close()
+    throw error
   } finally {
     active = false
     process.stdout.off('resize', onResize)
     rl.off('line', onLine)
-    rl.pause()
+    if (onClose) rl.off('close', onClose)
+    if (session === rl) rl.pause()
     if (key && original) delete (rl as any)[key]
-    if (menuOn) delete (rl as any)[tkey!]
+    if (tkey && tty0) delete (rl as any)[tkey]
+    drawingPrompt = false
   }
   const answer = unframe([first, ...extra]).join('\n').trim()
 
-  // Replace the typed line(s), bottom edge and hint or menu with the request wrapped inside the box (the clear to
-  // the end of the screen also erases any menu rows, so they never reach the scrollback).
   box = edges()
-  const { w, bottom } = box
-  const cols = process.stdout.columns || 100
-  const rows = Math.max(1, Math.ceil(visible(PROMPT() + first) / cols)) + extra.reduce((n, l) => n + Math.max(1, Math.ceil(visible(l) / cols)), 0)
-  process.stdout.write(`\x1b[${rows}F\x1b[0J`)
-  const inner = w - 4
-  const lines = answer ? wrap(answer, inner - 2) : ['']
+  const inner = Math.max(1, box.w - 4)
+  const lines = answer ? wrap(answer, Math.max(1, inner - 2)) : ['']
+  const submitted = [box.top]
   lines.slice(0, 30).forEach((line, i) => {
     const lead = i === 0 ? c.mc(c.bold('›')) + ' ' : '  '
-    console.log(c.mc('│') + ' ' + pad(lead + line, inner) + ' ' + c.mc('│'))
+    submitted.push(c.mc('│') + ' ' + pad(lead + line, inner) + ' ' + c.mc('│'))
   })
-  if (lines.length > 30) console.log(c.mc('│') + ' ' + pad(c.dim(`  … ${lines.length - 30} more lines`), inner) + ' ' + c.mc('│'))
-  console.log(bottom)
+  if (lines.length > 30) submitted.push(c.mc('│') + ' ' + pad(c.dim(cut('  … ' + (lines.length - 30) + ' more lines', inner)), inner) + ' ' + c.mc('│'))
+  submitted.push(box.bottom)
+  viewport.close(submitted.map(l => cutVisible(l, columns() - 1)))
   return answer
 }
