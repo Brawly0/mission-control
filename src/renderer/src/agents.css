@@ -74,6 +74,23 @@
 /* Minimize / maximize / close in each agent's header. */
 .agent-cell-head {
   user-select: none;
+  flex-shrink: 0;
+}
+/* Reserve the trailing controls even when badges and context details exceed the pane width. */
+.agent-cell-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.agent-cell-info > .strong {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-cell-head > .menu-anchor {
+  flex: 0 0 auto;
 }
 .cell-controls {
   display: inline-flex;
@@ -83,6 +100,7 @@
   flex-shrink: 0;
 }
 .cell-controls button {
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 24px;
@@ -99,6 +117,17 @@
 }
 .agent-stage.tabs .cell-close {
   display: none;
+}
+@container (max-width: 460px) {
+  .agent-cell-info .agent-brief,
+  .agent-cell-info .ctx-compact {
+    display: none;
+  }
+}
+@container (max-width: 340px) {
+  .agent-cell-head { gap: 4px; padding-inline: 6px; }
+  .agent-cell-info { gap: 4px; }
+  .agent-cell-info .ctx-meter { display: none; }
 }
 
 /* Minimized agents. */

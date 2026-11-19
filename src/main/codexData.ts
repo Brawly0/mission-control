@@ -273,10 +273,32 @@ const dayKey = (t: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/**
- * Codex token use since a time, and its newest plan limits. A chat's tokens count on the day it was
- * last active (Codex files hold running totals, so the tail alone is enough).
- */
+type UsagePoint = CodexTokens & { at: number; model: string }
+const usageCache = new Map<string, { size: number; mtime: number; points: UsagePoint[] }>()
+
+/** Read cumulative reports in order: repeated reports contribute zero, and model changes apply only to new tokens. */
+async function usagePoints(file: string): Promise<UsagePoint[]> {
+  const st = await fs.stat(file)
+  const hit = usageCache.get(file)
+  if (hit && hit.size === st.size && hit.mtime === st.mtimeMs) return hit.points
+  const points: UsagePoint[] = []
+  let model = 'unknown'
+  let previous: CodexTokens = { input: 0, cachedInput: 0, output: 0, reasoning: 0 }
+  for await (const e of entries(file)) {
+    if (e.type === 'turn_context' && typeof e.payload?.model === 'string') model = e.payload.model
+    const total = codexTotals(e)
+    if (!total) continue
+    const point: UsagePoint = { at: Date.parse(e.timestamp ?? '') || 0, model, input: 0, cachedInput: 0, output: 0, reasoning: 0 }
+    for (const key of ['input', 'cachedInput', 'output', 'reasoning'] as const) point[key] = total[key] - previous[key]
+    previous = total
+    // Keep signed corrections too, so the all-time sum always equals the final reported total.
+    if (point.input || point.cachedInput || point.output || point.reasoning) points.push(point)
+  }
+  usageCache.set(file, { size: st.size, mtime: st.mtimeMs, points })
+  return points
+}
+
+/** Token deltas belong to their report's timestamp, not the rollout file's modification date. */
 export async function codexUsage(since: number): Promise<CodexUsage> {
   const chats = await allChats()
   const limits = chats.map((c) => c.limits).filter((l): l is RateLimitInfo => !!l).sort((a, b) => b.at - a.at)[0] ?? null
@@ -284,28 +306,32 @@ export async function codexUsage(since: number): Promise<CodexUsage> {
   const byDay = new Map<string, CodexUsage['byDay'][number]>()
   const byProject = new Map<string, CodexUsage['byProject'][number]>()
   const byModel = new Map<string, CodexUsage['byModel'][number]>()
-  const add = <T extends { input: number; cachedInput: number; output: number; sessions: number }>(map: Map<string, T>, key: string, make: () => T, t: CodexTokens) => {
+  const add = <T extends { input: number; cachedInput: number; output: number; sessions: number }>(map: Map<string, T>, key: string, make: () => T, t: CodexTokens, seen: Set<string>) => {
     const row = map.get(key) ?? make()
     row.input += t.input
     row.cachedInput += t.cachedInput
     row.output += t.output
-    row.sessions++
+    if (!seen.has(key)) row.sessions++
+    seen.add(key)
     map.set(key, row)
   }
   for (const c of chats) {
-    if (!c.totals || c.summary.updatedAt < since) continue
-    const t = c.totals
-    totals.input += t.input
-    totals.cachedInput += t.cachedInput
-    totals.output += t.output
-    totals.reasoning += t.reasoning
+    const points = (await usagePoints(c.file)).filter(p => p.at >= since)
+    if (!points.length) continue
     totals.sessions++
-    const zero = { input: 0, cachedInput: 0, output: 0, sessions: 0 }
-    const day = dayKey(c.summary.updatedAt)
-    add(byDay, day, () => ({ day, ...zero }), t)
+    const days = new Set<string>(), projects = new Set<string>(), models = new Set<string>()
     const parent = worktreeParent(c.summary.cwd)?.parent ?? c.summary.cwd
-    add(byProject, norm(parent), () => ({ projectPath: parent, ...zero }), t)
-    add(byModel, c.model || 'unknown', () => ({ model: c.model || 'unknown', ...zero }), t)
+    for (const t of points) {
+      totals.input += t.input
+      totals.cachedInput += t.cachedInput
+      totals.output += t.output
+      totals.reasoning += t.reasoning
+      const zero = { input: 0, cachedInput: 0, output: 0, sessions: 0 }
+      const day = t.at ? dayKey(t.at) : 'unknown'
+      add(byDay, day, () => ({ day, ...zero }), t, days)
+      add(byProject, norm(parent), () => ({ projectPath: parent, ...zero }), t, projects)
+      add(byModel, t.model, () => ({ model: t.model, ...zero }), t, models)
+    }
   }
   const top = <T extends { input: number; output: number }>(m: Map<string, T>) => [...m.values()].sort((a, b) => b.input + b.output - (a.input + a.output))
   return {

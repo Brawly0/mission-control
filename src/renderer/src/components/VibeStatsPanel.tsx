@@ -16,7 +16,7 @@ function modelName(model: string): string {
 }
 
 export const VIBE_HINT =
-  'Time: within one chat, the time between two messages up to 15 minutes apart counts; longer gaps are breaks. Every Claude API call counts as a message, so time an agent spends working on its own is included. Chats running at the same time count once, so this is real clock time. Tokens are read exactly from Claude Code and Codex session files on this computer.'
+  'Time: within one chat, the time between two messages up to 15 minutes apart counts; longer gaps are breaks. Every Claude API call counts as a message, so time an agent spends working on its own is included. Chats running at the same time count once. Active days and streaks combine Claude and Codex using your local timezone. Tokens come from available session files on this computer; repeated Claude API message IDs count once. Claude’s own stats can count repeated transcript entries and use UTC dates.'
 
 interface Fact {
   id: string
@@ -76,7 +76,7 @@ export default function VibeStatsPanel({ stats, error, onRetry }: { stats: VibeS
     {stats && <>
       <h3 className="hd-vibe-facts-head"><Sparkles size={13} /> Fun facts</h3>
       <ul className="hd-vibe-facts">{facts(stats).map(f => <li key={f.id} title={f.hint}>{f.text}</li>)}</ul>
-      <p className="hd-usage-note">Dollar amounts are what this usage would cost at Anthropic’s API list prices, not what your plan charges. Codex has no dollar estimate.</p>
+      <p className="hd-usage-note">Claude tokens count each API message once; chats count those with usage. Days and streaks use your local timezone across both tools, so they can differ from Claude’s UTC stats. Dollar amounts are estimates at Anthropic’s API list prices, not plan charges. Codex has no dollar estimate.</p>
     </>}
   </section>
 }

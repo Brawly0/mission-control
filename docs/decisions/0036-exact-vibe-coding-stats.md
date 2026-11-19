@@ -17,3 +17,10 @@ Users wanted Home to show the tokens they have used with Claude and Codex, how m
 ## Consequences
 
 The weekly time card is lower than before when you run agents in parallel. The time is a definition (message gaps of 15 minutes or less), not keyboard tracking; the hover text says so. `MC_SMOKE_STATS=1` logs the exact figures the app returns and screenshots the panel.
+
+## Stats reconciliation (2026-11-19)
+
+- The index now checks previously indexed source paths. A confirmed missing file invalidates its session's derived rows and offsets, so surviving main/subagent files are reread together. Permission errors do not invalidate data; plan readings are preserved.
+- Codex usage now sums changes between timestamped cumulative reports. Date filters and per-day totals use report timestamps; model changes apply to subsequent usage. Repeated totals contribute zero, and signed corrections preserve the final all-time total. Parsed usage is cached by file size and modification time. Reports without timestamps remain in all-time totals under an unknown date, not in dated periods.
+- Home explains that Claude API message IDs are deduplicated and chats count sessions with usage. Active days and streaks use local calendar dates across both providers. Claude's own stats can count repeated transcript entries and use UTC dates, so the two displays need not match.
+- Verification: regression fixtures cover period boundaries, file modification dates, repeated reports, model changes, appended usage, missing subagents, and permission errors. Independent scans of local Codex reports matched all-time, 7-day and 30-day totals; the built index worker removed stale records from a database snapshot without changing plan readings.

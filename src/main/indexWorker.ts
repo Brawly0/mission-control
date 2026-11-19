@@ -20,6 +20,7 @@ import { codexIdFromFile, codexPrompt, codexReply } from '../shared/codex'
 import { CALIBRATION_DAYS, calibrate, modelPrices, type CostPoint, type PlanReading } from '../shared/planCost'
 import type { ClaudeTokenStats, IndexStatus, SearchHit, UsageReport, UsageTotals, VibeTime } from '../shared/types'
 import { vibeTime, type VibeEvent } from '../shared/vibeTime'
+import { reconcileMissingFiles } from './indexReconcile'
 
 const { dbPath, projectsDir, codexSessionsDir } = workerData as { dbPath: string; projectsDir: string; codexSessionsDir?: string }
 const SCHEMA_VERSION = 8
@@ -415,6 +416,7 @@ async function runOnce() {
   }
 
   if (codexSessionsDir) jobs.push(...codexJobs(codexSessionsDir))
+  reconcileMissingFiles(db)
   // Only files that changed since the last run need work. Checked in slices, so queries are answered in between.
   const pending: typeof jobs = []
   for (let i = 0; i < jobs.length; i++) {
@@ -435,7 +437,7 @@ async function runOnce() {
   pending.sort((a, b) => Number(b.main) - Number(a.main))
 
   if (pending.length === 0) {
-    postStatus({ lastRun: Date.now() })
+    postStatus({ lastRun: Date.now(), ...counts() })
     return
   }
   postStatus({ indexing: true, done: 0, total: pending.length, error: undefined })

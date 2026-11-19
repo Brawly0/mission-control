@@ -237,7 +237,12 @@ function CodexCard({ since, visible, onOpenProject }: { since: number; visible: 
   const look = useLook()
   const [u, setU] = useState<CodexUsage | null>(null)
   useEffect(() => {
-    if (visible) window.mc.codexUsage(since).then(setU, () => setU(null))
+    let active = true
+    if (visible) {
+      setU(null)
+      window.mc.codexUsage(since).then(value => { if (active) setU(value) }, () => { if (active) setU(null) })
+    }
+    return () => { active = false }
   }, [visible, since])
   if (!u || (!u.limits && !u.totals.sessions)) return null
   const now = Date.now()
@@ -302,7 +307,7 @@ function CodexCard({ since, visible, onOpenProject }: { since: number; visible: 
       ) : (
         <p className="muted small">No Codex chats in this period.</p>
       )}
-      <p className="muted small">Tokens count on the day a chat was last active. Codex reports its limits while it runs, so they can be a little behind.</p>
+      <p className="muted small">Tokens count when Codex reports them, using local dates. Cached input and reasoning are already included. Plan limits reflect Codex’s latest report.</p>
     </section>
   )
 }

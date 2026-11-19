@@ -306,46 +306,48 @@ export default function AgentsView(props: Props) {
                 >
                   <div className="agent-cell-head" onDoubleClick={(e) => (e.target as HTMLElement).closest('button') || toggleMax(a.id)} title="Double-click to maximize or restore">
                     {grid && panelGrid.handle(a.id)}
-                    <Avatar name={a.projectName} path={a.projectPath} size={20} />
-                    {isAgentTool(a.kind) ? <ToolBadge tool={a.kind} /> : a.kind === 'mc' && <McBadge />}
-                    <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
-                    {a.worktree ? (
-                      <span className="chip chip-accent" title={a.worktree.path}>
-                        <GitBranch size={11} /> {a.worktree.branch}
-                      </span>
-                    ) : (
-                      git[a.projectPath]?.isRepo && (
-                        <span className="chip">
-                          <GitBranch size={11} /> {git[a.projectPath].branch}
+                    <div className="agent-cell-info">
+                      <Avatar name={a.projectName} path={a.projectPath} size={20} />
+                      {isAgentTool(a.kind) ? <ToolBadge tool={a.kind} /> : a.kind === 'mc' && <McBadge />}
+                      <span className="strong ellipsis">{grid || isMax ? a.title : a.projectName}</span>
+                      {a.worktree ? (
+                        <span className="chip chip-accent" title={a.worktree.path}>
+                          <GitBranch size={11} /> {a.worktree.branch}
                         </span>
-                      )
-                    )}
-                    <span className={`status-pill status-${st.cls}`}>
-                      <span className={`dot ${st.cls}`} />
-                      <span className="ellipsis">{st.label}</span>
-                    </span>
-                    {a.sessionId && contexts[a.sessionId] && (
-                      <ContextMeter
-                        usage={contexts[a.sessionId]}
-                        warnAt={warnAt}
-                        canCompact={!a.exited && st.cls !== 'working'}
-                        onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
-                      />
-                    )}
-                    {isAgentTool(a.kind) && !a.exited && (
-                      <button
-                        className="agent-brief"
-                        disabled={st.cls === 'working'}
-                        title={st.cls === 'working' ? `Wait until ${a.kind === 'codex' ? 'Codex' : 'Claude'} finishes` : withKey('Ask the agent to write a session briefing for the next session', keyFor('writeBriefing'))}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onSelect(a.id)
-                          window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
-                        }}
-                      >
-                        <FileText size={11} /> Briefing
-                      </button>
-                    )}
+                      ) : (
+                        git[a.projectPath]?.isRepo && (
+                          <span className="chip">
+                            <GitBranch size={11} /> {git[a.projectPath].branch}
+                          </span>
+                        )
+                      )}
+                      <span className={`status-pill status-${st.cls}`}>
+                        <span className={`dot ${st.cls}`} />
+                        <span className="ellipsis">{st.label}</span>
+                      </span>
+                      {a.sessionId && contexts[a.sessionId] && (
+                        <ContextMeter
+                          usage={contexts[a.sessionId]}
+                          warnAt={warnAt}
+                          canCompact={!a.exited && st.cls !== 'working'}
+                          onCompact={() => window.mc.ptyWrite(a.id, '/compact\r')}
+                        />
+                      )}
+                      {isAgentTool(a.kind) && !a.exited && (
+                        <button
+                          className="agent-brief"
+                          disabled={st.cls === 'working'}
+                          title={st.cls === 'working' ? `Wait until ${a.kind === 'codex' ? 'Codex' : 'Claude'} finishes` : withKey('Ask the agent to write a session briefing for the next session', keyFor('writeBriefing'))}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSelect(a.id)
+                            window.dispatchEvent(new CustomEvent('mc:run-shortcut', { detail: 'writeBriefing' }))
+                          }}
+                        >
+                          <FileText size={11} /> Briefing
+                        </button>
+                      )}
+                    </div>
                     <MenuButton portal align="right"
                       trigger={(toggle) => <IconButton icon={MoreHorizontal} label={`Actions for ${a.title}`} onClick={() => { onSelect(a.id); toggle() }} />}
                       items={[

@@ -1,5 +1,12 @@
 # Roadmap
 
+## Accurate usage periods and narrow agent headers (0.41.1)
+
+- [x] Agent headers reserve space for close, expand and menu controls in narrow grids
+- [x] Removed transcript files invalidate stale indexed usage; surviving session files are reread without changing plan history
+- [x] Codex usage periods and model totals use timestamped token deltas, rather than assigning whole chats to their last-active day and model
+- [x] Stats explain unique Claude messages, chats with usage and local-date streaks
+
 ## mc memory, project chats and a context bar
 
 - [x] mc keeps its own history per repo (git common dir) and seeds new sessions with it; `/history`, `/history clear` (ADR 0047)
